@@ -1,0 +1,14 @@
+{
+  "ponnuchamy.vellaikannu@sorimtechnologies.com": {
+    "password": "qlikCloud000",
+    "tenant": "https://c8vlzp3sx6akvnh.in.qlikcloud.com"
+  },
+  "user1": {
+    "password": "user123",
+    "tenant": "https://user1.qlikcloud.com"
+  },
+  "user2": {
+    "password": "test123",
+    "tenant": "https://user2.qlikcloud.com"
+  }
+}

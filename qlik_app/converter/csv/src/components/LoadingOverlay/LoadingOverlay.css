@@ -1,0 +1,227 @@
+/* Loading Overlay Styles - Inline Centered */
+.loading-overlay {
+  width: 100%;
+  padding: 60px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  text-align: center;
+  max-width: 600px;
+}
+
+/* Animated Hourglass Icon */
+.loading-icon {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hourglass {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
+}
+
+.hourglass-top {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 35px;
+  height: 20px;
+  background: linear-gradient(135deg, #f4a261 0%, #e76f51 100%);
+  border-radius: 4px 4px 0 0;
+  animation: fillTop 2s ease-in-out infinite;
+}
+
+.hourglass-middle {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 20px;
+  background: linear-gradient(to right, #d4a5a5 0%, #e0c3c3 50%, #d4a5a5 100%);
+  clip-path: polygon(0 0, 100% 0, 80% 100%, 20% 100%);
+}
+
+.hourglass-bottom {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 35px;
+  height: 20px;
+  background: linear-gradient(135deg, #e8f1f5 0%, #d4e4ed 100%);
+  border-radius: 0 0 4px 4px;
+  animation: fillBottom 2s ease-in-out infinite;
+  border: 2px solid #2a9d8f;
+}
+
+@keyframes fillTop {
+  0%, 20% {
+    height: 20px;
+    opacity: 1;
+  }
+  50% {
+    height: 2px;
+    opacity: 0.3;
+  }
+  80%, 100% {
+    height: 20px;
+    opacity: 1;
+  }
+}
+
+@keyframes fillBottom {
+  0%, 20% {
+    height: 2px;
+    opacity: 0.3;
+  }
+  50% {
+    height: 20px;
+    opacity: 1;
+  }
+  80%, 100% {
+    height: 2px;
+    opacity: 0.3;
+  }
+}
+
+/* Pulse animation around icon */
+.loading-icon::after {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  right: -10px;
+  bottom: -10px;
+  border: 2px solid #2a9d8f;
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+}
+
+/* Loading Message */
+.loading-message {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+  letter-spacing: 0.3px;
+}
+
+.loading-subtext {
+  font-size: 13px;
+  color: #7f8c8d;
+  margin: 0;
+  font-style: italic;
+}
+
+/* Timer Badge */
+.loading-timer-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #e8f4f8 0%, #f0f8fc 100%);
+  border: 2px solid #2a9d8f;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #2a9d8f;
+  box-shadow: 0 4px 12px rgba(42, 157, 143, 0.15);
+  animation: slideUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.timer-icon {
+  font-size: 16px;
+  animation: rotate 3s linear infinite;
+}
+
+.timer-label {
+  color: #2a9d8f;
+  font-weight: 600;
+}
+
+.timer-value {
+  color: #0a4d3c;
+  font-family: "Courier New", monospace;
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-size: 14px;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .loading-container {
+    gap: 20px;
+  }
+
+  .loading-message {
+    font-size: 16px;
+  }
+
+  .loading-icon {
+    width: 70px;
+    height: 70px;
+  }
+
+  .hourglass {
+    width: 50px;
+    height: 50px;
+  }
+
+  .loading-timer-badge {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+}

@@ -1,0 +1,128 @@
+
+
+ 
+/* ===== Container ===== */
+.stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 32px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+}
+ 
+/* ===== Each step ===== */
+.step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 180px;
+}
+ 
+/* ===== Icon circle ===== */
+.circle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+ 
+/* icon size */
+.circle img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+ 
+/* ===== Active step ===== */
+.circle.active {
+  background: #208d97; /* blue */
+}
+ 
+.circle.active img {
+  /* filter: brightness(0) invert(1); */
+  border-radius: 5px;
+}
+ 
+/* ===== Text block ===== */
+.step-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+ 
+.step-text .title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+}
+ 
+.step-text .sub {
+  font-size: 12.5px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+ 
+/* ===== Disabled state ===== */
+/* .step.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+} */
+ 
+ 
+.step:not(.disabled):hover .title {
+  color: #2563eb;
+}
+ 
+/* ===== Active step underline ===== */
+.step.active-step {
+  border-bottom: 3px solid #208d97;
+  padding-bottom: 11px;
+}
+
+/* ===== Publish Step (6th step - Same styling as Review/Migration) ===== */
+.step:nth-child(6) .circle.active {
+  background: #208d97;
+  border: 3px solid #208d97;
+  box-shadow: 0 4px 12px rgba(32, 141, 151, 0.4);
+}
+
+.step:nth-child(6) .circle.active img {
+  border-radius: 5px;
+}
+
+.step:nth-child(6).active-step {
+  border-bottom: 3px solid #208d97;
+  padding-bottom: 11px;
+}
+
+.step:nth-child(6):not(.disabled):hover .title {
+  color: #2563eb;
+}
+
+.step:nth-child(6):not(.disabled):hover .circle {
+  background: #f0f9fa;
+  transform: scale(1.05);
+  transition: all 0.3s ease;
+}
+
+.step:nth-child(6) {
+  opacity: 1;
+  cursor: pointer;
+}
+ 
+/* ===== Responsive (optional safety) ===== */
+@media (max-width: 1200px) {
+  .stepper {
+    overflow-x: auto;
+    gap: 24px;
+  }
+ 
+  .step {
+    min-width: 160px;
+  }
+}
