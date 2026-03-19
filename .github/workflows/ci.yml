@@ -10,7 +10,6 @@ jobs:
   ci:
     name: Frontend + Backend CI
     runs-on: ubuntu-latest
-
     steps:
     # -----------------------
     # Checkout code
@@ -18,8 +17,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Required for SonarQube
-
+        fetch-depth: 0
     # =======================
     # FRONTEND (React + TS)
     # =======================
@@ -48,3 +46,33 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
+        python-version: "3.11"
+
+    - name: Install backend dependencies
+      working-directory: qlik_app/qlik/qlik-fastapi-backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Backend syntax check
+      working-directory: qlik_app/qlik/qlik-fastapi-backend
+      run: python -m compileall .
+
+    # =======================
+    # SONARQUBE
+    # =======================
+    - name: SonarQube Scan
+      uses: SonarSource/sonarqube-scan-action@master
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+    # =======================
+    # CI SUMMARY
+    # =======================
+    - name: Add CI Summary
+      run: |
+        echo "## CI Result — ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Backend build success" >> $GITHUB_STEP_SUMMARY
+        echo "🔎 Frontend + Backend CI completed" >> $GITHUB_STEP_SUMMARY
+        echo "📄 Logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
