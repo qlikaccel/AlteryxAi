@@ -13,17 +13,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from urllib.parse import urlparse
+
+
 class QlikWebSocketClient:
     def __init__(self):
-        self.api_key = os.getenv('QLIK_API_KEY')
-        self.tenant_url = os.getenv('QLIK_TENANT_URL')
-        
-        if not self.api_key or not self.tenant_url:
-            raise ValueError("QLIK_API_KEY and QLIK_TENANT_URL must be set in environment variables")
-        
-        # Clean tenant URL
-        self.tenant_url = self.tenant_url.rstrip('/')
-        
+        raw_api_key = os.getenv('QLIK_API_KEY', '')
+        raw_tenant_url = os.getenv('QLIK_TENANT_URL', '') or os.getenv('QLIK_API_BASE_URL', '')
+
+        self.api_key = self._normalize_api_key(raw_api_key)
+        self.tenant_url = self._derive_tenant_url(raw_tenant_url)
+
+        if not self.api_key:
+            raise ValueError("QLIK_API_KEY must be set in environment variables")
+        if not self.tenant_url:
+            raise ValueError("QLIK_TENANT_URL or QLIK_API_BASE_URL must be set in environment variables")
+
         # Decode JWT to get user info
         try:
             decoded = jwt.decode(self.api_key, options={"verify_signature": False})
@@ -33,11 +38,37 @@ class QlikWebSocketClient:
             print(f"Warning: Could not decode JWT: {e}")
             self.user_id = ""
             self.user_directory = "QLIK"
-        
+
         self.ws = None
         self.connected = False
         self.app_handle = None
         self.request_id = 1
+
+    def _normalize_api_key(self, api_key: str) -> str:
+        """Normalize API key for use in Authorization header."""
+        key = api_key.strip().strip('"').strip("'")
+        if key.lower().startswith("bearer "):
+            key = key.split(" ", 1)[1].strip()
+        return key
+
+    def _derive_tenant_url(self, raw_url: str) -> str:
+        """Derive tenant base URL from either QLIK_TENANT_URL or QLIK_API_BASE_URL."""
+        if not raw_url:
+            return ""
+
+        url = raw_url.strip().rstrip('/')
+
+        # If this looks like an API base URL, drop the /api/v1 portion
+        if url.lower().endswith('/api/v1'):
+            url = url[: -len('/api/v1')]
+        elif url.lower().endswith('/api/v2'):
+            url = url[: -len('/api/v2')]
+
+        # Ensure scheme is present
+        parsed = urlparse(url)
+        if not parsed.scheme:
+            url = 'https://' + url
+        return url.rstrip('/')
         
     def _get_next_id(self) -> int:
         """Get next request ID"""

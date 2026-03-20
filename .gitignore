@@ -28,7 +28,6 @@ lerna-debug.log*
 # OS
 .DS_Store
 Thumbs.db
-*.zip
 
 # Editor
 .vscode/

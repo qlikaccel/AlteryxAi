@@ -489,17 +489,13 @@ class LoadScriptParser:
             # Step 5.3 — Tables (now with source_type + source_path per table)
             logger.info("📍 Step 5.3: Extracting table names...")
             self._extract_tables()
-            logger.info(f"✅ Found {len(self.tables)} table(s) before DROP TABLE filter")
+            logger.info(f"✅ Found {len(self.tables)} table(s)")
             for table in self.tables:
                 logger.info(
                     f"   ✓ Table: {table.get('name', 'Unknown')}"
                     f"  [{table.get('source_type', '?')}]"
                     f"  {table.get('source_path', '')}"
                 )
-
-            # Step 5.3b: filter tables dropped by DROP TABLE / MAPPING LOAD
-            self._filter_dropped_tables()
-            logger.info(f"\u2705 {len(self.tables)} table(s) survive after DROP TABLE + MAPPING filter")
 
             # Step 5.4 — Fields with type inference
             logger.info("📍 Step 5.4: Extracting field definitions...")
@@ -566,7 +562,6 @@ class LoadScriptParser:
                 },
                 "details": {
                     "tables":           self.tables,
-                    "all_tables_unfiltered": getattr(self, "_all_tables_unfiltered", self.tables),
                     "fields":           self.fields,
                     "data_connections": self.data_connections,
                     "transformations":  self.transformations,
@@ -633,64 +628,6 @@ class LoadScriptParser:
     # Step 5.3 — Tables
     # ------------------------------------------------------------------
 
-    # ------------------------------------------------------------------
-    # Step 5.3b — Filter DROP TABLE and MAPPING LOAD tables
-    # ------------------------------------------------------------------
-
-    def _filter_dropped_tables(self):
-        """
-        Remove tables from self.tables that Qlik would not retain at the end
-        of script execution:
-
-        1. Tables explicitly removed by DROP TABLE <name>
-           (intermediate staging tables like RawSalesOrders, SalesOrders, etc.)
-
-        2. MAPPING LOAD tables
-           (Qlik auto-discards all MAPPING tables after script completion —
-            they are lookup structures, not data model tables)
-
-        This ensures the converter only produces M expressions for the tables
-        that actually exist in the final Qlik data model.
-        """
-        import re as _re
-
-        # Collect all DROP TABLE targets from the raw script
-        dropped_names = set(
-            m.strip()
-            for m in _re.findall(
-                r'\bDROP\s+TABLE\s+([A-Za-z_][A-Za-z0-9_]*)',
-                self.loadscript,
-                _re.IGNORECASE,
-            )
-        )
-
-        # MAPPING LOAD tables: any table whose name ends in "Map" or whose
-        # source statement starts with MAPPING LOAD.
-        # The parser already sets source_type = 'inline' for MAPPING LOADs,
-        # but the name pattern is a reliable secondary signal.
-        mapping_pattern = _re.compile(
-            r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*\n?\s*MAPPING\s+LOAD',
-            _re.IGNORECASE | _re.MULTILINE,
-        )
-        mapping_names = set(m.group(1) for m in mapping_pattern.finditer(self.loadscript))
-
-        exclude = dropped_names | mapping_names
-
-        # Save full unfiltered copy for RESIDENT chain resolution
-        self._all_tables_unfiltered = list(self.tables)
-
-        before = len(self.tables)
-        self.tables = [t for t in self.tables if t["name"] not in exclude]
-        removed = before - len(self.tables)
-
-        if removed:
-            logger.info(
-                "   [DROP filter] Removed %d table(s): dropped=%s  mapping=%s",
-                removed,
-                sorted(dropped_names & {t["name"] for t in self.tables} | dropped_names),
-                sorted(mapping_names),
-            )
-
     def _extract_tables(self):
         """
         Extract table definitions using the string-aware statement parser.
@@ -703,8 +640,6 @@ class LoadScriptParser:
         stmts = _split_statements(cleaned)
 
         seen_names: set = set()
-        # Track index of last appended table for CONCATENATE field merging
-        name_to_idx: dict = {}
 
         for stmt in stmts:
             td = _parse_single_statement(stmt)
@@ -712,56 +647,13 @@ class LoadScriptParser:
                 continue
 
             name = td['name']
-
-            # ── CONCATENATE: inherit target table name ─────────────────────
-            # CONCATENATE (TargetTable) LOAD ... has no TableName: label.
-            # The parser sets modifier = 'Concatenate(TargetTable)'.
-            # We resolve the target name and merge fields into the existing table.
-            if not name:
-                modifier = td.get('modifier', '')
-                conc_m = re.match(r'Concatenate\(([^)]*)\)', modifier, re.IGNORECASE)
-                if conc_m:
-                    target_name = conc_m.group(1).strip()
-                    if target_name and target_name in name_to_idx:
-                        # Merge new fields into the existing table entry
-                        idx = name_to_idx[target_name]
-                        existing_fields = self.tables[idx]['fields']
-                        existing_field_names = {f['name'] for f in existing_fields}
-                        for f in td['fields']:
-                            if f['name'] not in existing_field_names and f['name'] != '*':
-                                existing_fields.append(f)
-                                existing_field_names.add(f['name'])
-                        self.tables[idx]['field_count'] = len(existing_fields)
-                        logger.info(
-                            "   ✓ CONCATENATE: merged %d field(s) from source '%s' into table '%s'",
-                            len(td['fields']), td.get('source_path', ''), target_name
-                        )
-                    elif target_name:
-                        # Target table not yet seen — treat as new table with inherited name
-                        logger.warning(
-                            "   ⚠ CONCATENATE target '%s' not yet parsed — registering as new table",
-                            target_name
-                        )
-                        name = target_name
-                    else:
-                        # Anonymous CONCATENATE (no explicit target) — skip
-                        logger.debug("   Skipping anonymous CONCATENATE with no target name")
-                        continue
-                else:
-                    # No table name and not a CONCATENATE — skip
-                    continue
-
             if not name:
                 continue
 
-            # Deduplicate by name — only skip if this is a fresh re-declaration,
-            # not a CONCATENATE merge (which was handled above)
+            # Deduplicate by name
             if name in seen_names:
                 continue
             seen_names.add(name)
-
-            idx = len(self.tables)
-            name_to_idx[name] = idx
 
             self.tables.append({
                 "name":        name,

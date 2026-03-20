@@ -28,7 +28,7 @@
   align-items: center;
   justify-content: space-between;
   position: relative;
-  margin-bottom: 24px;
+  border-radius: 12px;
 }
 
 /* .stepper::before {
@@ -256,6 +256,14 @@
 
 .btn-secondary:hover {
   background-color: #e0e0e0;
+}
+
+.btn-secondary:disabled {
+  background-color: #f0f0f0;
+  color: #888;
+  border-color: #ddd;
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .btn-small {

@@ -111,13 +111,17 @@ export default function PublishPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [statusBoxes, setStatusBoxes] = useState({ columns: false, powerbi: false, finished: false });
   const [result, setResult] = useState<any>(null);
-  const [desktopBundle] = useState<any>(null);
-  const [] = useState(false);
-  const [desktopBundleError] = useState<string>("");
-  const [] = useState(false);
-  const [xmlaSemanticError] = useState<string>("");
-  const [xmlaSemanticResult] = useState<any>(null);
+  const [desktopBundle, setDesktopBundle] = useState<any>(null);
+  const [desktopBundleLoading, setDesktopBundleLoading] = useState(false);
+  const [desktopBundleError, setDesktopBundleError] = useState<string>("");
+  const [xmlaSemanticLoading, setXmlaSemanticLoading] = useState(false);
+  const [xmlaSemanticError, setXmlaSemanticError] = useState<string>("");
+  const [xmlaSemanticResult, setXmlaSemanticResult] = useState<any>(null);
   const [showXmlaDiagram, setShowXmlaDiagram] = useState(false);
+
+  // Prevent unused-variable TypeScript errors (these hooks may be used in future updates)
+  void desktopBundleLoading;
+  void xmlaSemanticLoading;
   const [bundlePathCopied, setBundlePathCopied] = useState(false);
 
   const [copied, setCopied] = useState(false);
@@ -825,11 +829,194 @@ export default function PublishPage() {
     }
   };
 
+  const resolveWorkspaceId = () => {
+    const resultWorkspaceId =
+      result?.dataset?.workspaceId ||
+      result?.published_tables?.[0]?.workspaceId ||
+      "";
+    if (resultWorkspaceId) return resultWorkspaceId;
 
+    const urlMatch = datasetURL.match(/groups\/([^/?#]+)/i);
+    return urlMatch?.[1] || "";
+  };
 
+  const resolveAppId = () => {
+    return state?.appId || sessionStorage.getItem("appSelected") || "";
+  };
 
+  const toCsvSample = (
+    csvText: string,
+    maxRows: number = 150,
+    maxChars: number = 120000
+  ) => {
+    const text = (csvText || "").trim();
+    if (!text) return "";
 
+    const lines = text.split(/\r?\n/);
+    if (lines.length === 0) return "";
 
+    const sampledLines = [lines[0]]; // header
+    for (let i = 1; i < lines.length && sampledLines.length <= maxRows; i++) {
+      if (!lines[i]?.trim()) continue;
+      sampledLines.push(lines[i]);
+    }
+
+    let sampled = sampledLines.join("\n");
+    if (sampled.length > maxChars) {
+      sampled = sampled.slice(0, maxChars);
+    }
+    return sampled;
+  };
+
+  const collectCsvPayloadMap = () => {
+    const payloadMap: Record<string, string> = {};
+    // Keep multipart form payload safely below 1MB parser limit.
+    let remainingBudget = 650000;
+
+    if (isMultiTableMode) {
+      const totalTables = Math.max(tableCount, selectedTablesToPublish.length);
+      for (let i = 0; i < totalTables; i++) {
+        if (remainingBudget <= 2000) break;
+
+        const tableNameForCsv = selectedTablesToPublish[i]?.name || `Table_${i + 1}`;
+        const csvText =
+          state?.csvPayloads?.[`migration_csv_${i}`] ||
+          sessionStorage.getItem(`migration_csv_${i}`) ||
+          "";
+
+        const sampled = toCsvSample(csvText, 120, Math.min(100000, remainingBudget));
+        if (sampled.trim()) {
+          payloadMap[tableNameForCsv] = sampled;
+          remainingBudget -= sampled.length + tableNameForCsv.length + 32;
+        }
+      }
+      return payloadMap;
+    }
+
+    const singleCsv =
+      state?.csvPayloads?.["migration_csv"] ||
+      sessionStorage.getItem("migration_csv") ||
+      state?.csvPayloads?.["migration_csv_0"] ||
+      sessionStorage.getItem("migration_csv_0") ||
+      "";
+    const singleTableName = customTableName || tableName || "Data";
+    const sampledSingle = toCsvSample(singleCsv, 200, 250000);
+    if (sampledSingle.trim()) {
+      payloadMap[singleTableName] = sampledSingle;
+    }
+    return payloadMap;
+  };
+
+  const generateXmlaSemanticModel = async () => {
+    try {
+      setXmlaSemanticLoading(true);
+      setXmlaSemanticError("");
+      setXmlaSemanticResult(null);
+      setShowXmlaDiagram(false);
+
+      const appId = resolveAppId();
+      const workspaceId = resolveWorkspaceId();
+
+      if (!appId) {
+        throw new Error("Missing app ID. Please restart from app selection.");
+      }
+      if (!workspaceId) {
+        throw new Error("Missing workspace ID. Publish to cloud first, then enable semantic model.");
+      }
+
+      const datasetNameRaw = publishedTableName || customTableName || tableName || "Model_Master";
+      const datasetName = `${datasetNameRaw.replace(/\s+/g, "_")}_Semantic`;
+      const csvPayloadMap = collectCsvPayloadMap();
+
+      const form = new FormData();
+      form.append("app_id", appId);
+      form.append("dataset_name", datasetName);
+      form.append("workspace_id", workspaceId);
+      if (Object.keys(csvPayloadMap).length > 0) {
+        const csvPayloadJson = JSON.stringify(csvPayloadMap);
+        // Hard guard: avoid multipart part-size failures from large JSON payloads.
+        if (csvPayloadJson.length <= 850000) {
+          form.append("csv_payload_json", csvPayloadJson);
+        } else {
+          console.warn("XMLA CSV payload too large, sending schema-only mode.");
+        }
+      }
+
+      const res = await fetch("http://localhost:8000/api/migration/publish-semantic-model", {
+      // const res = await fetch("https://qliksense-stuv.onrender.com/api/migration/publish-semantic-model", {
+        method: "POST",
+        body: form,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.detail || data?.message || "Failed to create XMLA semantic model");
+      }
+
+      setXmlaSemanticResult(data);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setXmlaSemanticError(msg);
+    } finally {
+      setXmlaSemanticLoading(false);
+    }
+  };
+
+  // Prevent unused symbol warning
+  void generateXmlaSemanticModel;
+
+  const generateDesktopCloudBundle = async () => {
+    try {
+      setDesktopBundleLoading(true);
+      setDesktopBundleError("");
+      setDesktopBundle(null);
+
+      const appId = resolveAppId();
+      const workspaceId = resolveWorkspaceId();
+
+      if (!appId) {
+        throw new Error("Missing app ID. Please restart from app selection.");
+      }
+
+      if (!workspaceId) {
+        throw new Error("Missing workspace ID. Publish to cloud first, then generate desktop bundle.");
+      }
+
+      const datasetNameRaw = publishedTableName || customTableName || tableName || "Model_Master";
+      const datasetName = datasetNameRaw.replace(/\s+/g, "_");
+
+      const params = new URLSearchParams({
+        app_id: appId,
+        dataset_name: datasetName,
+        workspace_id: workspaceId,
+        publish_mode: "desktop_cloud",
+      });
+
+      const res = await fetch(`http://localhost:8000/api/migration/publish-table?${params.toString()}`, {
+      // const res = await fetch(`https://qliksense-stuv.onrender.com/api/migration/publish-table?${params.toString()}`, {
+        method: "POST",
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.detail || data?.message || "Failed to generate Desktop+Cloud bundle");
+      }
+
+      if (!data?.desktop_bundle?.bundle_dir) {
+        throw new Error("Desktop bundle response missing bundle path");
+      }
+
+      setDesktopBundle(data.desktop_bundle);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setDesktopBundleError(msg);
+    } finally {
+      setDesktopBundleLoading(false);
+    }
+  };
+
+  // Prevent unused symbol warning
+  void generateDesktopCloudBundle;
 
   const copyBundlePath = () => {
     const path = desktopBundle?.bundle_dir;
@@ -1506,13 +1693,7 @@ export default function PublishPage() {
         <button
           onClick={() => navigate("/")}
           className="btn btn-secondary"
-          disabled={!statusBoxes.finished}
-          style={{
-            opacity: !statusBoxes.finished ? 0.5 : 1,
-            cursor: !statusBoxes.finished ? "not-allowed" : "pointer",
-            pointerEvents: !statusBoxes.finished ? "none" : "auto"
-          }}
-          title={!statusBoxes.finished ? "Publishing in progress. Please wait for completion." : ""}
+          disabled={publishing}
         >
           ← Back to Connect
         </button>

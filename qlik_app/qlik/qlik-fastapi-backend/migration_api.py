@@ -1,4 +1,4 @@
-# """
+﻿# """
 # Migration API -- FastAPI router for the 6-stage Qlik-to-Power BI pipeline.
 
 # Endpoints:
@@ -1776,11 +1776,6 @@ async def convert_to_mquery_endpoint(
         parse_result.get("details", {}).get("tables", [])
         or parse_result.get("tables", [])
     )
-    # Full unfiltered table list for RESIDENT chain resolution in converter
-    all_tables_unfiltered: List[Dict[str, Any]] = (
-        parse_result.get("details", {}).get("all_tables_unfiltered", [])
-        or tables
-    )
     raw_script: str = parse_result.get("raw_script", "")
 
     if not tables and not raw_script:
@@ -1876,7 +1871,6 @@ async def convert_to_mquery_endpoint(
                 user_tables,
                 base_path=_base_path,
                 connection_string=_connection_str or None,
-                all_tables=all_tables_unfiltered,  # full registry for RESIDENT chain resolution
             )
 
             # Build a combined M script: each table as a named section
@@ -2206,88 +2200,9 @@ def _infer_relationships_from_tables(tables_m: List[Dict[str, Any]]) -> List[Dic
     extractor = RelationshipExtractor(extractor_tables)
     raw_rels = extractor.extract()
 
-    # Filter manyToMany relationships.
-    # Strategy: only keep manyToMany as valid if we can verify the to_column
-    # values are actually unique in the to_table (true dimension key).
-    #
-    # For inline tables (Flow 2), we have the actual row data in tables_m["fields"]
-    # and can check uniqueness directly.
-    # For fact-to-fact joins (ServiceType in both Vehicle_Fact_MASTER and Service_History),
-    # neither side has unique values so both are skipped.
-
-    # Build a lookup: table_name -> set of column values for uniqueness check
-    table_col_values: dict = {}
-    for t in tables_m:
-        tname = t.get("name", "")
-        # rows may be available if source_type == "inline" (Flow 2)
-        # fields is list of {name, type}
-        table_col_values[tname] = {}
-
-    def _column_is_unique_in_table(table_name: str, col_name: str) -> bool:
-        """Check if col_name has unique values in table_name using available row data."""
-        for t in tables_m:
-            if t.get("name") != table_name:
-                continue
-            # Try to get rows from the M expression fields list — not available for inline
-            # Fall back to heuristic: small tables (dim tables) with ID-like names are unique
-            fields = t.get("fields", [])
-            field_names = [f.get("name","") if isinstance(f,dict) else f for f in fields]
-            col_clean = col_name.lower().replace("_","").replace("-","")
-            # If column name ends in id/key/code/vin/sku it's a key — assume unique
-            is_key_name = any(col_clean.endswith(s) for s in
-                ("id","key","code","no","num","number","vin","sku","isbn","ean","upc"))
-            return is_key_name
-        return False
-
-    dim_keywords  = ("master", "dim", "lookup", "ref", "details", "vin_details")
-    fact_keywords = ("fact", "history", "transaction", "sales", "order")
-
-    valid_rels = []
-    for r in raw_rels:
-        if r.get("cardinality") != "manyToMany":
-            valid_rels.append(r)
-            continue
-
-        to_table   = r.get("to_table",   "").lower()
-        from_table = r.get("from_table", "").lower()
-        to_col     = r.get("to_column",  "")
-
-        to_is_dim    = any(kw in to_table   for kw in dim_keywords)
-        from_is_fact = any(kw in from_table for kw in fact_keywords)
-        to_is_fact   = any(kw in to_table   for kw in fact_keywords)
-
-        # Skip if both sides look like fact/history tables
-        if from_is_fact and to_is_fact:
-            logger.info("[infer_relationships] Skipped fact-to-fact manyToMany: %s.%s",
-                        r.get("from_table"), r.get("from_column"))
-            continue
-
-        # Skip if the one-side is not a dimension
-        if not to_is_dim:
-            logger.info("[infer_relationships] Skipped non-dim manyToMany: %s.%s",
-                        r.get("from_table"), r.get("from_column"))
-            continue
-
-        # Only rescue if the column is a genuine key (ID/code suffix)
-        if not _column_is_unique_in_table(r.get("to_table",""), to_col):
-            logger.info("[infer_relationships] Skipped label-field manyToMany: %s.%s (not a key column)",
-                        r.get("from_table"), r.get("from_column"))
-            continue
-
-        # Count tables sharing this column
-        tables_with_col = sum(1 for t in extractor_tables if to_col in t.get("fields", []))
-        if tables_with_col != 2:
-            logger.info("[infer_relationships] Skipped omnipresent manyToMany: %s.%s (in %d tables)",
-                        r.get("from_table"), r.get("from_column"), tables_with_col)
-            continue
-
-        rescued = dict(r)
-        rescued["cardinality"] = "oneToMany"
-        rescued["note"] = (rescued.get("note","") + " [rescued: dim key join]").strip()
-        logger.info("[infer_relationships] Rescued dim-join: %s.%s → %s.%s",
-                    rescued.get("from_table"), rescued.get("from_column"),
-                    rescued.get("to_table"),   rescued.get("to_column"))
-        valid_rels.append(rescued)
+    # Filter out manyToMany — these are denormalised fields (e.g. ServiceType)
+    # Power BI requires the one-side to have unique values; manyToMany breaks this
+    valid_rels = [r for r in raw_rels if r.get("cardinality") != "manyToMany"]
 
     if not valid_rels:
         return []

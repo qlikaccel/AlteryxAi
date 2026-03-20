@@ -5195,6 +5195,9 @@ export default function PublishPage() {
 
   // Get export options from navigation state
   const exportOptions = state?.exportOptions || { combined: true, separate: false };
+  const isSeparateMode = exportOptions.separate;
+  // Prevent unused variable warning
+  void isSeparateMode;
 
   // Selected tables to publish: prefer `state.selectedTables` (in-memory), fallback to lightweight metadata
   const selectedTablesToPublish = state?.selectedTables || (() => {

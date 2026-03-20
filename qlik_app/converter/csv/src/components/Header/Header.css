@@ -9,25 +9,32 @@
   gap: 24px;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex: 1;
+  min-width: 0;
+}
+
 .logo-section {
- display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    flex-shrink: 0;
-    flex-direction: column;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
 }
 
 .logo-image {
-  height: 155px;
+  height: 56px;
   width: auto;
   object-fit: contain;
 }
 
-.logo-description {
+.header-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  /* max-width: 1200px; */
+  gap: 6px;
+  min-width: 0;
 }
 
 .logo-text {
@@ -41,16 +48,16 @@
 
 .logo-subtitle {
   font-family: "Inter", "Segoe UI", sans-serif;
-  font-size: 16px;
-  color: #7a869a;
+  font-size: 14px;
+  color: #556174;
   margin: 0;
-  line-height: 1.4;
+  line-height: 1.5;
   font-weight: 500;
   font-style: italic;
-   border-bottom: 1px solid #e6ebf2;
-   padding-left: 20px;
-       width: 95vw;
-   
+  max-width: none;
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
 }
 
 .header-right {
