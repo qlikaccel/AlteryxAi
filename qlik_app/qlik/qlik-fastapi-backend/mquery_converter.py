@@ -2278,13 +2278,7 @@ class MQueryConverter:
         tables: List[Dict[str, Any]],
         base_path: str = "[DataSourcePath]",
         connection_string: Optional[str] = None,
-        all_tables: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
-        # Store full table registry so _m_resident can resolve chains
-        # all_tables may contain dropped intermediates not in tables list
-        self._all_tables_registry: Dict[str, Dict[str, Any]] = {
-            t["name"]: t for t in (all_tables or tables)
-        }
 
         results = []
 
@@ -2843,67 +2837,9 @@ class MQueryConverter:
     # ============================================================
 
     def _m_resident(self, table, base_path, _cs):
-        """
-        Resolve a RESIDENT table to its root data source.
-
-        Walks the RESIDENT chain (e.g. FactTransactions -> SalesOrders ->
-        RawSalesOrders -> SalesOrders.csv) and delegates to the handler for
-        the root source type (csv, inline, sql, etc.).
-
-        This ensures that RESIDENT tables which reference dropped intermediates
-        still produce valid M expressions pointing at the real data source,
-        rather than referencing a Power BI query that no longer exists.
-        """
-        registry = getattr(self, "_all_tables_registry", {})
-        fields   = table["fields"]
-
-        # Walk the RESIDENT chain to find the root non-RESIDENT table
-        visited = set()
-        cur = table
-        chain = [cur["name"]]
-
-        while cur.get("source_type") == "resident":
-            parent_name = cur.get("source_path", "")
-            if not parent_name or parent_name in visited:
-                break
-            parent = registry.get(parent_name)
-            if parent is None:
-                break
-            visited.add(parent_name)
-            cur = parent
-            chain.append(cur["name"])
-
-        root_source_type = cur.get("source_type", "unknown")
-
-        # If root is not resident, delegate to the appropriate handler
-        if root_source_type != "resident" and cur["name"] != table["name"]:
-            logger.info(
-                "[MQuery] RESIDENT chain resolved: %s  root=[%s] %s",
-                " -> ".join(chain), root_source_type, cur.get("source_path", "")
-            )
-            # Use root table's source but the current table's fields for column typing
-            root_table = dict(cur)
-            root_table["fields"] = fields  # apply current table's field/type metadata
-            dispatch = {
-                "csv":     self._m_csv,
-                "excel":   self._m_excel,
-                "json":    self._m_json,
-                "xml":     self._m_xml,
-                "parquet": self._m_parquet,
-                "qvd":     self._m_qvd,
-                "sql":     self._m_sql,
-                "inline":  self._m_inline,
-            }
-            handler = dispatch.get(root_source_type)
-            if handler:
-                m_expr, _ = handler(root_table, base_path, _cs)
-                return m_expr, (
-                    f"RESIDENT chain {' -> '.join(chain)} "
-                    f"resolved to [{root_source_type}] {cur.get('source_path', '')}"
-                )
-
-        # Fallback: emit a reference query (chain could not be fully resolved)
         source_table = table.get("source_path", "UnknownTable")
+        fields       = table["fields"]
+
         selected = [f.get("alias") or f["name"] for f in fields if f["name"] != "*"]
 
         if selected:
@@ -2928,7 +2864,7 @@ class MQueryConverter:
             f"in\n"
             f"    {final}"
         )
-        return m, f"RESIDENT load from '{source_table}' (chain unresolved)."
+        return m, f"RESIDENT load from '{source_table}'."
 
     # ============================================================
     # SQL

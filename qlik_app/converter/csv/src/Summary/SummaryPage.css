@@ -20,6 +20,7 @@ PAGE WRAP
   /* height: 100vh; */
   overflow-y: auto;
   flex-direction: column;
+  margin-top: 22px;
 }
  
 .panel-header {
@@ -64,7 +65,50 @@ PAGE WRAP
   background: #e0e0e0;
   border-color: #999;
 }
- 
+
+/* Tab / Top button styles (glassmorphism) */
+.tab-button {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid currentColor;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--btn-color);
+  opacity: 0.75;
+}
+
+.tab-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.14);
+  opacity: 0.95;
+}
+
+.tab-button.active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
+}
+
+.tab-button--sourceTypes {
+  --btn-color: #16a34a;
+}
+
+.tab-button--summary {
+  --btn-color: #d97706;
+}
+
+.tab-button--er {
+  --btn-color: #2563eb;
+}
+
 .title {
   margin: 0;
   font-size: 14px;
@@ -155,7 +199,6 @@ PAGE WRAP
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   margin-bottom: 20px;
-  overflow-x: auto;
   padding-top: 20px;
 }
  
@@ -525,7 +568,7 @@ PAGE WRAP
 } */
  
 .summary-report{
-  height: 40vh;
+  height: 60vh;
 }
  
  
@@ -747,7 +790,8 @@ PAGE WRAP
 
 /* CONTINUE TO EXPORT BUTTON */
 .continue-export-btn {
-  padding: 10px 24px;
+  padding: 10px 16px;
+  margin-left:148px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
@@ -1299,7 +1343,7 @@ PAGE WRAP
   flex-direction: column;
   gap: 10px;
   flex: 1;
-  padding-top: 0;
+  padding-top: 30px;
 }
  
 .legend-item {
@@ -1527,7 +1571,7 @@ PAGE WRAP
 .loadscript-displays {
   display: flex;
   gap: 12px;
-  height: 750px;
+  height: 850px;
   flex-shrink: 0;
 }
 
@@ -1627,14 +1671,14 @@ PAGE WRAP
 
 /* ===== TAB STYLING ===== */
 .tab-button {
-  padding: 10px 20px;
+  padding: 10px 18px;
   border: none;
   background-color: transparent;
   color: #6b7280;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  border-radius: 6px 6px 0 0;
+  border-radius: 7px 7px 0 0;
   transition: all 0.3s ease;
   border-bottom: 3px solid transparent;
   position: relative;
@@ -1677,7 +1721,7 @@ PAGE WRAP
 }
 
 .summary-tab {
-  min-height: 400px;
+  min-height: 500px;
 }
 
 .mquery-tab {

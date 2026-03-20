@@ -40,11 +40,13 @@
  
 /* ===== Active step ===== */
 .circle.active {
-  background: #208d97; /* blue */
+  background: #ffffff;
+  border: 2px solid #3b82f6;
+  box-shadow: 0 6px 14px rgba(59, 130, 246, 0.25);
 }
  
 .circle.active img {
-  /* filter: brightness(0) invert(1); */
+  filter: none;
   border-radius: 5px;
 }
  
@@ -78,17 +80,23 @@
   color: #2563eb;
 }
  
-/* ===== Active step underline ===== */
+/* ===== Active step styling ===== */
 .step.active-step {
-  border-bottom: 3px solid #208d97;
-  padding-bottom: 11px;
+  background: rgba(59, 130, 246, 0.12);
+  border-radius: 14px;
+  padding: 16px 14px;
+  border-bottom: 3px solid rgba(59, 130, 246, 0.35);
 }
 
-/* ===== Publish Step (6th step - Same styling as Review/Migration) ===== */
+.step.active-step .title {
+  color: #1d4ed8;
+}
+
+/* ===== Publish Step (6th step - Same styling as other steps) ===== */
 .step:nth-child(6) .circle.active {
-  background: #208d97;
-  border: 3px solid #208d97;
-  box-shadow: 0 4px 12px rgba(32, 141, 151, 0.4);
+  background: #ffffff;
+  border: 2px solid #3b82f6;
+  box-shadow: 0 6px 14px rgba(59, 130, 246, 0.25);
 }
 
 .step:nth-child(6) .circle.active img {
@@ -96,12 +104,14 @@
 }
 
 .step:nth-child(6).active-step {
-  border-bottom: 3px solid #208d97;
-  padding-bottom: 11px;
+  background: rgba(59, 130, 246, 0.12);
+  border-radius: 14px;
+  border-bottom: 3px solid rgba(59, 130, 246, 0.35);
+  padding: 10px 10px 8px;
 }
 
 .step:nth-child(6):not(.disabled):hover .title {
-  color: #2563eb;
+  color: #1d4ed8;
 }
 
 .step:nth-child(6):not(.disabled):hover .circle {

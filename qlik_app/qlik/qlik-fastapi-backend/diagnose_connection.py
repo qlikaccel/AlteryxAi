@@ -26,15 +26,15 @@ def test_environment():
     tenant_url = os.getenv('QLIK_TENANT_URL')
     
     if not api_key:
-        print("❌ QLIK_API_KEY is not set!")
+        print("ERROR: QLIK_API_KEY is not set!")
         return False
     else:
-        print(f"✅ QLIK_API_KEY is set (length: {len(api_key)} characters)")
+        print(f"OK: QLIK_API_KEY is set (length: {len(api_key)} characters)")
         
         # Decode JWT to check validity
         try:
             decoded = jwt.decode(api_key, options={"verify_signature": False})
-            print(f"✅ API Key is valid JWT")
+            print(f"OK: API Key is valid JWT")
             print(f"   - Subject (user ID): {decoded.get('sub', 'N/A')}")
             print(f"   - Tenant ID: {decoded.get('tenantId', 'N/A')}")
             print(f"   - Issuer: {decoded.get('iss', 'N/A')}")
@@ -45,26 +45,26 @@ def test_environment():
                 exp_time = datetime.datetime.fromtimestamp(decoded['exp'])
                 now = datetime.datetime.now()
                 if exp_time < now:
-                    print(f"❌ API Key has EXPIRED (expired at {exp_time})")
+                    print(f"ERROR: API Key has EXPIRED (expired at {exp_time})")
                     return False
                 else:
-                    print(f"✅ API Key is valid until {exp_time}")
+                    print(f"OK: API Key is valid until {exp_time}")
         except Exception as e:
-            print(f"⚠️  Could not decode JWT: {e}")
+            print(f"WARNING:  Could not decode JWT: {e}")
     
     if not tenant_url:
-        print("❌ QLIK_TENANT_URL is not set!")
+        print("ERROR: QLIK_TENANT_URL is not set!")
         return False
     else:
-        print(f"✅ QLIK_TENANT_URL is set: {tenant_url}")
+        print(f"OK: QLIK_TENANT_URL is set: {tenant_url}")
         
         # Clean URL
         if tenant_url.endswith('/'):
-            print("⚠️  Warning: URL has trailing slash, will be removed")
+            print("WARNING:  Warning: URL has trailing slash, will be removed")
             tenant_url = tenant_url.rstrip('/')
         
         if not tenant_url.startswith('https://'):
-            print("❌ URL must start with https://")
+            print("ERROR: URL must start with https://")
             return False
     
     return True
@@ -93,34 +93,34 @@ def test_rest_api():
         print(f"Status Code: {response.status_code}")
         
         if response.status_code == 200:
-            print("✅ REST API authentication successful!")
+            print("OK: REST API authentication successful!")
             data = response.json()
             print(f"   - User ID: {data.get('id', 'N/A')}")
             print(f"   - User Name: {data.get('name', 'N/A')}")
             print(f"   - Email: {data.get('email', 'N/A')}")
             return True
         elif response.status_code == 401:
-            print("❌ Authentication failed - API key is invalid or expired")
+            print("ERROR: Authentication failed - API key is invalid or expired")
             print(f"   Response: {response.text}")
             return False
         elif response.status_code == 403:
-            print("❌ Forbidden - API key doesn't have required permissions")
+            print("ERROR: Forbidden - API key doesn't have required permissions")
             print(f"   Response: {response.text}")
             return False
         else:
-            print(f"❌ Unexpected status code: {response.status_code}")
+            print(f"ERROR: Unexpected status code: {response.status_code}")
             print(f"   Response: {response.text}")
             return False
             
     except requests.exceptions.Timeout:
-        print("❌ Request timed out - check your internet connection")
+        print("ERROR: Request timed out - check your internet connection")
         return False
     except requests.exceptions.ConnectionError as e:
-        print(f"❌ Connection error: {e}")
+        print(f"ERROR: Connection error: {e}")
         print("   Check if the tenant URL is correct")
         return False
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"ERROR: Error: {e}")
         return False
 
 def test_apps_list():
@@ -157,7 +157,7 @@ def test_apps_list():
             elif isinstance(data, dict) and 'items' in data:
                 apps = data['items']
             
-            print(f"✅ Found {len(apps)} apps")
+            print(f"OK: Found {len(apps)} apps")
             
             if len(apps) > 0:
                 print("\nApps available:")
@@ -185,15 +185,15 @@ def test_apps_list():
                 if isinstance(apps[0], dict):
                     return apps[0].get('attributes', {}).get('id')
             else:
-                print("⚠️  No apps found. You need to create or have access to apps.")
+                print("WARNING:  No apps found. You need to create or have access to apps.")
                 return None
         else:
-            print(f"❌ Failed to get apps: {response.status_code}")
+            print(f"ERROR: Failed to get apps: {response.status_code}")
             print(f"   Response: {response.text}")
             return None
             
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"ERROR: Error: {e}")
         return None
 
 def test_websocket_connection(app_id):
@@ -201,7 +201,7 @@ def test_websocket_connection(app_id):
     print_header("4. Testing WebSocket Connection")
     
     if not app_id:
-        print("❌ No app ID provided, skipping WebSocket test")
+        print("ERROR: No app ID provided, skipping WebSocket test")
         return False
     
     print(f"\nTesting WebSocket connection to app: {app_id}")
@@ -231,7 +231,7 @@ def test_websocket_connection(app_id):
         print(f"User Directory: {user_directory}")
         
         # Create WebSocket
-        print("\n➤ Creating WebSocket connection...")
+        print("\n-> Creating WebSocket connection...")
         ws = websocket.WebSocket(sslopt={"cert_reqs": ssl.CERT_NONE})
         
         # Prepare headers
@@ -242,33 +242,33 @@ def test_websocket_connection(app_id):
         if user_id:
             headers["X-Qlik-User"] = f"UserDirectory={user_directory};UserId={user_id}"
         
-        print("➤ Connecting...")
+        print("-> Connecting...")
         try:
             ws.connect(ws_url, header=headers, timeout=10)
-            print("✅ WebSocket connected successfully!")
+            print("OK: WebSocket connected successfully!")
         except websocket.WebSocketTimeoutException:
-            print("❌ WebSocket connection timed out")
+            print("ERROR: WebSocket connection timed out")
             print("   Possible causes:")
             print("   - Firewall blocking WebSocket connections")
             print("   - App ID is invalid")
             print("   - Network/proxy issues")
             return False
         except websocket.WebSocketBadStatusException as e:
-            print(f"❌ WebSocket connection rejected: {e}")
+            print(f"ERROR: WebSocket connection rejected: {e}")
             print(f"   Status code: {e.status_code}")
             if e.status_code == 401:
-                print("   → Authentication failed")
+                print("   -> Authentication failed")
             elif e.status_code == 403:
-                print("   → Access forbidden - check app permissions")
+                print("   -> Access forbidden - check app permissions")
             elif e.status_code == 404:
-                print("   → App not found - check app ID")
+                print("   -> App not found - check app ID")
             return False
         except Exception as e:
-            print(f"❌ WebSocket connection failed: {e}")
+            print(f"ERROR: WebSocket connection failed: {e}")
             return False
         
         # Try to open the app
-        print("\n➤ Opening app...")
+        print("\n-> Opening app...")
         open_msg = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -293,39 +293,39 @@ def test_websocket_connection(app_id):
             if 'result' in response_data:
                 if 'qReturn' in response_data['result']:
                     app_handle = response_data['result']['qReturn']['qHandle']
-                    print(f"\n✅ App opened successfully!")
+                    print(f"\nOK: App opened successfully!")
                     print(f"   App handle: {app_handle}")
                     
                     ws.close()
                     return True
                 else:
-                    print("\n❌ Unexpected response structure")
+                    print("\nERROR: Unexpected response structure")
                     print("   Expected 'qReturn' in result")
                     ws.close()
                     return False
             elif 'error' in response_data:
                 error = response_data['error']
-                print(f"\n❌ Error opening app:")
+                print(f"\nERROR: Error opening app:")
                 print(f"   Code: {error.get('code', 'N/A')}")
                 print(f"   Message: {error.get('message', 'N/A')}")
                 ws.close()
                 return False
             else:
-                print("\n❌ Unexpected response format")
+                print("\nERROR: Unexpected response format")
                 ws.close()
                 return False
                 
         except Exception as e:
-            print(f"❌ Error during OpenDoc: {e}")
+            print(f"ERROR: Error during OpenDoc: {e}")
             ws.close()
             return False
             
     except ImportError:
-        print("❌ websocket-client library not installed")
+        print("ERROR: websocket-client library not installed")
         print("   Run: pip install websocket-client")
         return False
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        print(f"ERROR: Unexpected error: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -338,12 +338,12 @@ def main():
     
     # Test 1: Environment
     if not test_environment():
-        print("\n❌ Environment check failed. Please fix environment variables.")
+        print("\nERROR: Environment check failed. Please fix environment variables.")
         return
     
     # Test 2: REST API
     if not test_rest_api():
-        print("\n❌ REST API connection failed. Check your API key and tenant URL.")
+        print("\nERROR: REST API connection failed. Check your API key and tenant URL.")
         return
     
     # Test 3: Apps list
@@ -357,11 +357,11 @@ def main():
     print("\nIf all tests passed, your connection should work.")
     print("If any tests failed, check the error messages above.")
     print("\nCommon issues:")
-    print("  1. Expired API key → Generate a new one in Qlik Cloud")
-    print("  2. Wrong tenant URL → Check it matches your Qlik Cloud URL")
-    print("  3. App has no data → App must be reloaded at least once")
-    print("  4. No app access → Check permissions in Qlik Cloud")
-    print("  5. Firewall blocking WebSocket → Check network/proxy settings")
+    print("  1. Expired API key -> Generate a new one in Qlik Cloud")
+    print("  2. Wrong tenant URL -> Check it matches your Qlik Cloud URL")
+    print("  3. App has no data -> App must be reloaded at least once")
+    print("  4. No app access -> Check permissions in Qlik Cloud")
+    print("  5. Firewall blocking WebSocket -> Check network/proxy settings")
 
 if __name__ == "__main__":
     main()

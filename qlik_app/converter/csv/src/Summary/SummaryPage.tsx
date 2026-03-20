@@ -1,11 +1,9 @@
-
 import "./SummaryPage.css";
 import { useEffect, useState, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { fetchTables, fetchTableData, fetchTableDataSimple, exportTableAsCSV, fetchLoadScript, parseLoadScript } from "../api/qlikApi";
 import Csvicon from "../assets/Csvicon.png";
 import { useWizard } from "../context/WizardContext";
-import SchemaModal from "../components/SchemaModal/SchemaModal";
 import LoadingOverlay from "../components/LoadingOverlay/LoadingOverlay";
 import Paper from "@mui/material/Paper";
 import Table from "@mui/material/Table";
@@ -33,20 +31,23 @@ export default function SummaryPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [summary, setSummary] = useState<any>(null);
   const [pageLoadTime, setPageLoadTime] = useState<string | null>(null);
-  const [totalRows, setTotalRows] = useState<number>(0); // server-reported total for selected table
+  const [totalRows, setTotalRows] = useState<number>(0);
 
-  // Maximum rows we'll request from the backend in a single call (matches backend limit)
-  // Raised to match backend cap so large tables (e.g. 12k+) are fully retrieved
   const SERVER_FETCH_MAX = 200000;
 
   // Relationship / star-schema helpers
-  const [mainTable, setMainTable] = useState<string | null>(null); // detected hub table
-  const [relations, setRelations] = useState<Record<string, string[]>>({}); // name -> related table names
-  const [isSchemaModalOpen, setIsSchemaModalOpen] = useState(false);
-  const [] = useState(false); // ER Diagram modal
-  const [activeTab, setActiveTab] = useState<"summary" | "mquery" | "er">("summary");
+  const [mainTable, setMainTable] = useState<string | null>(null);
+  const [relations, setRelations] = useState<Record<string, string[]>>({});
+
+  // ── TABS ──────────────────────────────────────────────────────────────────
+  // "sourceTypes" | "summary" | "mquery" | "er"
+  // "er" replaces the old Schema modal button.
+  // ──────────────────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<"sourceTypes" | "summary" | "mquery" | "er">("sourceTypes");
+  const [sourceTypesTab, setSourceTypesTab] = useState<"database" | "scripts" | "csv" | null>(null);
 
   // LoadScript and MQuery Display States
   const [loadscript, setLoadscript] = useState<string>("");
@@ -59,11 +60,13 @@ export default function SummaryPage() {
   const [publishingMQuery, setPublishingMQuery] = useState(false);
   const [publishStatus, setPublishStatus] = useState<"idle" | "success" | "error">("idle");
   const [publishMessage, setPublishMessage] = useState<string>("");
-  const [dataSourcePath, setDataSourcePath] = useState<string>("https://sorimtechnologies.sharepoint.com");
+  const [dataSourcePath, setDataSourcePath] = useState<string>("");
+
+  const DEFAULT_SHAREPOINT_URL = "https://sorimtechnologies.sharepoint.com";
 
   // LoadScript type detection and URL validation
   const [isCsvLoadscript, setIsCsvLoadscript] = useState<boolean>(false);
-  const [isValidUrl, setIsValidUrl] = useState<boolean>(true);
+  const [isValidUrl, setIsValidUrl] = useState<boolean>(false);
   const [urlValidationError, setUrlValidationError] = useState<string>("");
 
   // AI Executive Summary
@@ -72,34 +75,30 @@ export default function SummaryPage() {
   const [_aiSummaryError, setAiSummaryError] = useState<string>("");
 
   // URL autocomplete history
-  // (removed - not needed for testing)
+  const [urlHistory, setUrlHistory] = useState<string[]>([]);
+  const [showUrlSuggestions, setShowUrlSuggestions] = useState(false);
+  const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([]);
 
   // Helper: Detect if loadscript is CSV-based or inline
   const detectCsvLoadscript = (script: string): boolean => {
     if (!script) return false;
     const lower = script.toLowerCase();
-    // If it has INLINE keyword, it's definitely inline (not CSV)
     if (/inline\s*\[/.test(lower)) return false;
-    // CSV/QVD-based if it has FROM with file paths/protocols
     return /from\s+[\[\']?(?:lib:\/\/|file:\/\/|https?:\/\/|\/|[a-z]:[\\\/]).*?(?:\.csv|\.qvd|\.xlsx?|\.txt|\])/i.test(lower);
   };
 
-  // Helper: Validate ONLY SharePoint URLs - STRICT validation
+  // Helper: Validate ONLY SharePoint URLs
   const validateSharePointUrl = (url: string): { isValid: boolean; error?: string } => {
     if (!url || url.trim().length === 0) {
       return { isValid: false, error: "URL cannot be empty" };
     }
-
     const trimmed = url.trim();
-
     if (!trimmed.toLowerCase().startsWith("https://")) {
       return { isValid: false, error: "❌ Must start with https://" };
     }
-
-    if (trimmed.toLowerCase().startsWith("http://") && !trimmed.toLowerCase().startsWith("https://")) {
+    if (trimmed.toLowerCase().startsWith("http://")) {
       return { isValid: false, error: "❌ Must use HTTPS (not HTTP). Use: https://" };
     }
-
     const hasSharePointDomain = trimmed.toLowerCase().includes(".sharepoint.com");
     if (!hasSharePointDomain) {
       if (!trimmed.includes(".com")) {
@@ -110,39 +109,28 @@ export default function SummaryPage() {
       }
       return { isValid: false, error: "❌ Invalid format. Should be: https://COMPANYNAME.sharepoint.com" };
     }
-
-    // Updated regex to capture company name before .sharepoint.com
-    const sharepointMatch = trimmed.match(/https:\/\/([a-z0-9\-]+)\.sharepoint\.com/i);
+    const sharepointMatch = trimmed.match(/https:\/\/([^.]+)\.sharepoint\.com/i);
     if (!sharepointMatch || !sharepointMatch[1]) {
       return { isValid: false, error: "❌ Missing company name - Should be: https://COMPANYNAME.sharepoint.com" };
     }
-
     const companyName = sharepointMatch[1];
-
-    if (companyName.length === 0) {
+    if (companyName.length === 0 || !/[a-z0-9]/i.test(companyName)) {
       return { isValid: false, error: "❌ Invalid company name - Should be: https://COMPANYNAME.sharepoint.com" };
     }
-
     return { isValid: true };
   };
 
-
-  // Helper: build relation graph from `tables` (uses fields when available)
+  // Helper: build relation graph from `tables`
   const buildRelations = (tableList: TableInfo[]) => {
     const map: Record<string, Set<string>> = {};
 
     const normalizeFields = (t: TableInfo): Set<string> => {
       const out = new Set<string>();
       if (!t || typeof t === "string") return out;
-
       const raw = (t as any).fields || (t as any).columns || [];
       for (const f of (raw || [])) {
         if (!f) continue;
-        if (typeof f === "string") {
-          out.add(f.toLowerCase());
-          continue;
-        }
-
+        if (typeof f === "string") { out.add(f.toLowerCase()); continue; }
         const fname = (f.name || f.qName || f.field || f.key || "").toString();
         if (fname) out.add(fname.toLowerCase());
       }
@@ -150,7 +138,6 @@ export default function SummaryPage() {
     };
 
     const names = (tableList || []).map((t) => (typeof t === 'string' ? t : t?.name || '')).filter(Boolean);
-
     const fieldSets: Record<string, Set<string>> = {};
     for (const t of tableList) {
       const name = typeof t === 'string' ? t : t?.name || '';
@@ -159,7 +146,6 @@ export default function SummaryPage() {
       map[name] = new Set();
     }
 
-    // Two tables are related if they share at least one field name (case-insensitive)
     for (let i = 0; i < names.length; i++) {
       for (let j = i + 1; j < names.length; j++) {
         const a = names[i];
@@ -168,116 +154,96 @@ export default function SummaryPage() {
         const setB = fieldSets[b] || new Set();
         let shared = 0;
         for (const f of setA) {
-          if (setB.has(f)) {
-            shared++;
-            break;
-          }
+          if (setB.has(f)) { shared++; break; }
         }
-        if (shared > 0) {
-          map[a].add(b);
-          map[b].add(a);
-        }
+        if (shared > 0) { map[a].add(b); map[b].add(a); }
       }
     }
 
     const out: Record<string, string[]> = {};
-    for (const k of Object.keys(map)) {
-      out[k] = Array.from(map[k]);
-    }
+    for (const k of Object.keys(map)) { out[k] = Array.from(map[k]); }
     return out;
   };
 
-  // Helper: check whether two tables share at least one field (case-insensitive)
+  // Helper: check whether two tables share at least one field
   const shareFields = (aName: string, bName: string) => {
     if (!aName || !bName) return false;
     const find = (n: string) => (tables || []).find(t => (typeof t === 'string' ? t : t?.name) === n) as any;
     const a = find(aName);
     const b = find(bName);
-
     const getNames = (tbl: any) => {
       const raw = tbl && typeof tbl !== 'string' ? (tbl.fields || tbl.columns || []) : [];
       return (raw || []).map((x: any) => (typeof x === 'string' ? x : (x.name || x.qName || String(x))).toLowerCase());
     };
-
     const fieldsA = getNames(a);
     const fieldsB = getNames(b);
     if (!fieldsA.length || !fieldsB.length) return false;
-
     const setA = new Set(fieldsA);
-    for (const f of fieldsB) {
-      if (setA.has(f)) return true;
-    }
+    for (const f of fieldsB) { if (setA.has(f)) return true; }
     return false;
   };
-
 
   // Track page load start time
   useEffect(() => {
     pageStartTimeRef.current = Date.now();
   }, []);
 
-  // Save activeTab to sessionStorage so Stepper can read it and hide Export step if needed
+  // Save activeTab to sessionStorage
   useEffect(() => {
     sessionStorage.setItem("summaryActiveTab", activeTab);
   }, [activeTab]);
 
-  // Load URL history from localStorage on component mount
-  // (removed - not needed for testing)
-
-  // Validate hardcoded SharePoint URL on component mount
+  // When user navigates to the M Query tab, pre-fill the SharePoint URL
   useEffect(() => {
-    const validation = validateSharePointUrl(dataSourcePath);
+    if (activeTab !== "mquery") return;
+    const defaultUrl = DEFAULT_SHAREPOINT_URL;
+    setDataSourcePath(defaultUrl);
+    const validation = validateSharePointUrl(defaultUrl);
     setIsValidUrl(validation.isValid);
     setUrlValidationError(validation.error || "");
+  }, [activeTab]);
+
+  // Load URL history from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem("sharepoint_url_history");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) setUrlHistory(parsed);
+      } catch (e) {}
+    }
   }, []);
 
   // Data-table controls
   const [tableQuery, setTableQuery] = useState<string>("");
   const [pageSize, setPageSize] = useState<number>(10);
   const [currentPage, setCurrentPage] = useState<number>(1);
-  // Search for table list on the left panel
   const [tableListQuery, setTableListQuery] = useState<string>("");
-
-  // Derived pagination lists with search + sorting
   const [orderBy, setOrderBy] = useState<string>("");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
 
   const processedRows = useMemo(() => {
     let out = rows || [];
-
-    // search filter
     if (tableQuery.trim()) {
       const q = tableQuery.toLowerCase();
-      out = out.filter((r) =>
-        Object.values(r).some((v) =>
-          String(v ?? "").toLowerCase().includes(q)
-        )
-      );
+      out = out.filter((r) => Object.values(r).some((v) => String(v ?? "").toLowerCase().includes(q)));
     }
-
-    // sorting
     if (orderBy) {
       out = out.slice().sort((a: any, b: any) => {
-        const va = a[orderBy];
-        const vb = b[orderBy];
+        const va = a[orderBy]; const vb = b[orderBy];
         if (va === vb) return 0;
         if (va == null) return 1;
         if (vb == null) return -1;
-        if (typeof va === "number" && typeof vb === "number") {
-          return order === "asc" ? va - vb : vb - va;
-        }
-        const sa = String(va).toLowerCase();
-        const sb = String(vb).toLowerCase();
+        if (typeof va === "number" && typeof vb === "number") return order === "asc" ? va - vb : vb - va;
+        const sa = String(va).toLowerCase(); const sb = String(vb).toLowerCase();
         if (sa < sb) return order === "asc" ? -1 : 1;
         if (sa > sb) return order === "asc" ? 1 : -1;
         return 0;
       });
     }
-
     return out;
   }, [rows, tableQuery, orderBy, order]);
 
-  // For server-side paging use `totalRows` reported by backend; fall back to local data length
   const totalEntries = totalRows && totalRows > 0 ? totalRows : processedRows.length;
   const totalPages = Math.max(1, Math.ceil(totalEntries / pageSize));
   const current = Math.min(currentPage, totalPages);
@@ -286,25 +252,18 @@ export default function SummaryPage() {
   const visibleRows = processedRows;
 
   const handleRequestSort = (property: string) => {
-    if (orderBy === property) {
-      setOrder((o) => (o === "asc" ? "desc" : "asc"));
-    } else {
-      setOrderBy(property);
-      setOrder("asc");
-    }
+    if (orderBy === property) { setOrder((o) => (o === "asc" ? "desc" : "asc")); }
+    else { setOrderBy(property); setOrder("asc"); }
   };
 
   const pageNumbers = useMemo<(number | string)[]>(() => {
     const nums: (number | string)[] = [];
-    const max = totalPages;
-    const cur = current;
-    if (max <= 7) {
-      for (let i = 1; i <= max; i++) nums.push(i);
-    } else {
+    const max = totalPages; const cur = current;
+    if (max <= 7) { for (let i = 1; i <= max; i++) nums.push(i); }
+    else {
       nums.push(1);
       if (cur > 3) nums.push("...");
-      const start = Math.max(2, cur - 1);
-      const end = Math.min(max - 1, cur + 1);
+      const start = Math.max(2, cur - 1); const end = Math.min(max - 1, cur + 1);
       for (let i = start; i <= end; i++) nums.push(i);
       if (cur < max - 2) nums.push("...");
       nums.push(max);
@@ -312,58 +271,37 @@ export default function SummaryPage() {
     return nums;
   }, [totalPages, current]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [pageSize, tableQuery]);
+  useEffect(() => { setCurrentPage(1); }, [pageSize, tableQuery]);
 
-  // Server-side paging: fetch the selected page when page/size/table changes
   useEffect(() => {
     if (!selectedTable) return;
-
     const loadPage = async () => {
       setTableLoading(true);
       try {
         const offset = (currentPage - 1) * pageSize;
         const data = await fetchTableData(appId, selectedTable, pageSize, offset);
         setRows(data || []);
-      } catch (e) {
-        console.error("❌ Failed to load page:", e);
-      } finally {
-        setTableLoading(false);
-      }
+      } catch (e) { console.error("❌ Failed to load page:", e); }
+      finally { setTableLoading(false); }
     };
-
     loadPage();
   }, [currentPage, pageSize, selectedTable, appId]);
 
-  // Filter the left-side table list when the user types in the table search box
   useEffect(() => {
-    if (!tableListQuery) {
-      setFilteredTables((tables || []).slice());
-      return;
-    }
-
+    if (!tableListQuery) { setFilteredTables((tables || []).slice()); return; }
     const q = tableListQuery.toLowerCase();
-    const filtered = (tables || [])
-      .filter((t) => {
-        const name = typeof t === "string" ? t : t?.name || "";
-        return String(name).toLowerCase().includes(q);
-      })
-      .slice();
+    const filtered = (tables || []).filter((t) => {
+      const name = typeof t === "string" ? t : t?.name || "";
+      return String(name).toLowerCase().includes(q);
+    }).slice();
     setFilteredTables(filtered);
   }, [tableListQuery, tables]);
 
-  // 1 → GET APP ID FROM NAVIGATION STATE
+  // 1 → GET APP ID
   useEffect(() => {
     const state = location.state as any;
     const passedAppId = state?.appId || sessionStorage.getItem("appSelected");
-
-    if (!passedAppId) {
-      alert("No app selected. Please go back and select an app.");
-      navigate("/apps");
-      return;
-    }
-
+    if (!passedAppId) { alert("No app selected. Please go back and select an app."); navigate("/apps"); return; }
     setAppId(passedAppId);
   }, [location, navigate]);
 
@@ -372,10 +310,7 @@ export default function SummaryPage() {
 
   useEffect(() => {
     if (!appId) return;
-
-    if (sessionStorage.getItem("lastTimerTarget") !== "/summary") {
-      startTimer?.("/summary");
-    }
+    if (sessionStorage.getItem("lastTimerTarget") !== "/summary") startTimer?.("/summary");
 
     fetchTables(appId)
       .then((data) => {
@@ -401,15 +336,11 @@ export default function SummaryPage() {
         };
 
         const sorted = (cleaned || []).slice().sort((x: any, y: any) => {
-          const tx = getTimestamp(x);
-          const ty = getTimestamp(y);
+          const tx = getTimestamp(x); const ty = getTimestamp(y);
           if (tx !== ty) return ty - tx;
-
           const xi = (typeof x === 'string') ? false : !!x.is_new;
           const yi = (typeof y === 'string') ? false : !!y.is_new;
-          if (xi && !yi) return -1;
-          if (!xi && yi) return 1;
-
+          if (xi && !yi) return -1; if (!xi && yi) return 1;
           const nx = typeof x === 'string' ? x : x?.name || '';
           const ny = typeof y === 'string' ? y : y?.name || '';
           return String(nx).localeCompare(String(ny), undefined, { sensitivity: 'base' });
@@ -421,27 +352,20 @@ export default function SummaryPage() {
 
         const degreeOf = (n: string) => (rel[n] || []).length || 0;
         const nameOf = (t: any) => (typeof t === 'string' ? t : t?.name || '');
-
         let detectedMain: string | null = null;
+
         for (const t of sorted) {
           const n = nameOf(t);
           if (!n) continue;
-          if (/\b(master|fact|main)\b/i.test(n) && degreeOf(n) > 0) {
-            detectedMain = n;
-            break;
-          }
+          if (/\b(master|fact|main)\b/i.test(n) && degreeOf(n) > 0) { detectedMain = n; break; }
         }
 
         if (!detectedMain) {
-          let bestName: string | null = null;
-          let bestDeg = -1;
+          let bestName: string | null = null; let bestDeg = -1;
           for (const t of sorted) {
-            const n = nameOf(t);
-            const deg = degreeOf(n);
-            if (deg > bestDeg) {
-              bestDeg = deg;
-              bestName = n;
-            } else if (deg === bestDeg && deg > 0) {
+            const n = nameOf(t); const deg = degreeOf(n);
+            if (deg > bestDeg) { bestDeg = deg; bestName = n; }
+            else if (deg === bestDeg && deg > 0) {
               const fcount = typeof t === 'string' ? 0 : (t?.fields || []).length || 0;
               const found = sorted.find((s: TableInfo) => nameOf(s) === bestName);
               const currentFcount = typeof found === 'string' ? 0 : ((found as any)?.fields || []).length || 0;
@@ -459,32 +383,22 @@ export default function SummaryPage() {
         if (detectedMain) {
           const degree = (rel[detectedMain] || []).length || 0;
           const isExplicit = /\b(master|fact|main)\b/i.test(detectedMain);
-          if (degree > 0 || isExplicit) {
-            setMainTable(detectedMain);
-          } else {
-            setMainTable(null);
-          }
-        } else {
-          setMainTable(null);
-        }
+          if (degree > 0 || isExplicit) setMainTable(detectedMain);
+          else setMainTable(null);
+        } else { setMainTable(null); }
 
         setFilteredTables(sorted);
-        console.log("All tables fetched (sorted by recency, @syn filtered). Detected main:", detectedMain, "relations:", rel);
+        console.log("All tables fetched. Detected main:", detectedMain, "relations:", rel);
 
-        if (detectedMain) {
-          loadData(detectedMain);
-        } else if (sorted && sorted.length > 0) {
+        if (detectedMain) loadData(detectedMain);
+        else if (sorted && sorted.length > 0) {
           const firstTableName = typeof sorted[0] === "string" ? sorted[0] : sorted[0]?.name;
           if (firstTableName) loadData(firstTableName);
         }
       })
       .catch(() => {})
-      .finally(() => {
-        setLoading(false);
-      });
+      .finally(() => { setLoading(false); });
   }, [appId, stopTimer, startTimer]);
-
-
 
   // 3 → LOAD DATA FOR SELECTED TABLE
   const formatElapsed = (msTotal: number) => {
@@ -497,7 +411,6 @@ export default function SummaryPage() {
 
   const loadData = async (tableName: string) => {
     if (!tableName || tableName === selectedTable) return;
-
     setSelectedTable(tableName);
     setTableLoading(true);
     setRows([]);
@@ -512,9 +425,7 @@ export default function SummaryPage() {
       setTotalRows(total || 0);
 
       const firstPageLimit = Math.min(pageSize, total > 0 ? total : pageSize);
-      if (total > SERVER_FETCH_MAX) {
-        console.warn(`Table ${tableName} contains ${total} rows — UI will page on demand (server capped at ${SERVER_FETCH_MAX})`);
-      }
+      if (total > SERVER_FETCH_MAX) console.warn(`Table ${tableName} has ${total} rows — paging on demand`);
 
       const data = await fetchTableData(appId, tableName, firstPageLimit, 0);
       setRows(data || []);
@@ -523,9 +434,7 @@ export default function SummaryPage() {
       try {
         sessionStorage.setItem("selectedTable", tableName);
         sessionStorage.setItem("selectedRows", JSON.stringify(data || []));
-      } catch (e) {
-        // ignore storage errors
-      }
+      } catch (e) {}
 
       const { generateSummaryFromData } = await import("../api/qlikApi");
       const summary = generateSummaryFromData(data, tableName);
@@ -534,185 +443,100 @@ export default function SummaryPage() {
       fetchAiSummary(data, tableName);
 
       try {
-        console.log("📍 Auto-fetching LoadScript for table:", tableName);
         const scriptResult = await fetchLoadScript(appId, tableName);
-
         if (scriptResult.status === "success" || scriptResult.status === "partial_success") {
           const script = scriptResult.loadscript || "";
           setLoadscript(script);
-
           const isCsv = detectCsvLoadscript(script);
           setIsCsvLoadscript(isCsv);
           if (isCsv) {
-            const validation = validateSharePointUrl(dataSourcePath);
+            setDataSourcePath(DEFAULT_SHAREPOINT_URL);
+            const validation = validateSharePointUrl(DEFAULT_SHAREPOINT_URL);
             setIsValidUrl(validation.isValid);
+            setUrlValidationError(validation.error || "");
           }
-
           if (script) {
             try {
               const parseResult = await parseLoadScript(script);
-              if (parseResult.status === "success") {
-                setParsedScript(parseResult);
-                console.log("✅ LoadScript auto-parsed for table:", tableName);
-              }
-            } catch (parseError) {
-              console.warn("Auto-parse failed, keeping raw loadscript", parseError);
-            }
+              if (parseResult.status === "success") { setParsedScript(parseResult); }
+            } catch (parseError) { console.warn("Auto-parse failed", parseError); }
           }
-
-          console.log("✅ LoadScript auto-loaded for table:", tableName);
         }
-      } catch (scriptError) {
-        console.warn("⚠️ Could not auto-fetch LoadScript:", scriptError);
-      }
+      } catch (scriptError) { console.warn("⚠️ Could not auto-fetch LoadScript:", scriptError); }
 
     } catch (e) {
       console.error("❌ Error loading table data:", e);
-
       const errorMessage = e instanceof Error ? e.message : String(e);
-      alert(
-        `Failed to load table "${tableName}".\n\n` +
-        `Error: ${errorMessage}\n\n` +
-        `Suggestions:\n` +
-        `1. Verify the table name is correct\n` +
-        `2. Ensure the app has been reloaded with the latest data in QlikCloud\n` +
-        `3. Check the backend is running (http://127.0.0.1:8000)`
-      );
+      alert(`Failed to load table "${tableName}".\n\nError: ${errorMessage}\n\nSuggestions:\n1. Verify the table name\n2. Ensure the app has been reloaded\n3. Check the backend is running`);
     } finally {
       setTableLoading(false);
-
       const tableElapsed = stopTimer?.(`/summary/data/${tableName}`);
-      if (tableElapsed) {
-        console.debug(`Table ${tableName} load time:`, tableElapsed);
-        setPageLoadTime(tableElapsed);
-      } else {
+      if (tableElapsed) { setPageLoadTime(tableElapsed); }
+      else {
         const navElapsed = getLastElapsed?.("/summary");
-        if (navElapsed) {
-          setPageLoadTime(navElapsed);
-        } else if (pageStartTimeRef.current) {
-          const totalTime = Date.now() - pageStartTimeRef.current;
-          setPageLoadTime(formatElapsed(totalTime));
-        }
+        if (navElapsed) setPageLoadTime(navElapsed);
+        else if (pageStartTimeRef.current) setPageLoadTime(formatElapsed(Date.now() - pageStartTimeRef.current));
       }
     }
   };
 
   // CSV DOWNLOAD
   const downloadCSV = async () => {
-    if (!rows.length && !totalRows) {
-      alert("No data");
-      return;
-    }
-
+    if (!rows.length && !totalRows) { alert("No data"); return; }
     if (totalRows && totalRows > rows.length) {
       try {
         const csv = await exportTableAsCSV(appId, selectedTable);
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = url;
-        a.download = `${selectedTable || "data"}.csv`;
-        a.click();
+        a.href = url; a.download = `${selectedTable || "data"}.csv`; a.click();
         window.URL.revokeObjectURL(url);
         return;
-      } catch (e) {
-        console.error("Export failed, falling back to page CSV:", e);
-      }
+      } catch (e) { console.error("Export failed, falling back to page CSV:", e); }
     }
-
     const headers = Object.keys(rows[0] || {});
-    const csv = [
-      headers.join(","),
-      ...rows.map((r) => headers.map((h) => `"${r[h] ?? ""}"`).join(",")),
-    ].join("\n");
-
+    const csv = [headers.join(","), ...rows.map((r) => headers.map((h) => `"${r[h] ?? ""}"`).join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = window.URL.createObjectURL(blob);
-
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `${selectedTable || "data"}.csv`;
-    a.click();
+    a.href = url; a.download = `${selectedTable || "data"}.csv`; a.click();
     window.URL.revokeObjectURL(url);
   };
 
-  // ✅ CONVERT TO MQUERY from parsed loadscript
+  // CONVERT TO MQUERY
   const handleConvertToMQuery = async () => {
-    if (!loadscript) {
-      setLoadscriptError("No LoadScript available");
-      return;
-    }
-
-    if (!selectedTable) {
-      setLoadscriptError("Please select a table first");
-      return;
-    }
-
+    if (!loadscript) { setLoadscriptError("No LoadScript available"); return; }
+    if (!selectedTable) { setLoadscriptError("Please select a table first"); return; }
     try {
-      setConvertingToMquery(true);
-      setLoadscriptError("");
-      setMquery("");
-
-      console.log("📍 Converting LoadScript to M Query for table:", selectedTable);
-
+      setConvertingToMquery(true); setLoadscriptError(""); setMquery("");
       let scriptToConvert = parsedScript;
       if (!scriptToConvert) {
-        console.log("Parsing LoadScript first...");
         const parseResult = await parseLoadScript(loadscript);
-        if (parseResult.status === "success") {
-          scriptToConvert = parseResult;
-          setParsedScript(parseResult);
-        } else {
-          throw new Error("Failed to parse LoadScript");
-        }
+        if (parseResult.status === "success") { scriptToConvert = parseResult; setParsedScript(parseResult); }
+        else throw new Error("Failed to parse LoadScript");
       }
-
       const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
-        ? 'http://127.0.0.1:8000'
-        : 'https://qliksense-stuv.onrender.com';
+        ? 'http://127.0.0.1:8000' : 'https://qliksense-stuv.onrender.com';
       const convertResponse = await fetch(`${apiBase}/api/migration/convert-to-mquery`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          parsed_script_json: JSON.stringify(scriptToConvert),
-          table_name: "",
-          base_path: dataSourcePath.trim() || "",
-        }),
+        body: JSON.stringify({ parsed_script_json: JSON.stringify(scriptToConvert), table_name: "", base_path: dataSourcePath.trim() || "" }),
       });
-      if (!convertResponse.ok) {
-        throw new Error(`Failed to convert to M Query: ${convertResponse.status}`);
-      }
+      if (!convertResponse.ok) throw new Error(`Failed to convert to M Query: ${convertResponse.status}`);
       const convertResult = await convertResponse.json();
-
-      if (convertResult.status !== "success" && convertResult.status !== "partial_success") {
-        throw new Error(convertResult.message || "Failed to convert to M Query");
-      }
-
-      const finalMQuery = convertResult.m_query || "";
-      setMquery(finalMQuery);
-      console.log(
-        "✅ Converted to M Query successfully —",
-        convertResult.statistics?.total_tables_converted ?? "?",
-        "table(s)"
-      );
+      if (convertResult.status !== "success" && convertResult.status !== "partial_success") throw new Error(convertResult.message || "Failed to convert to M Query");
+      setMquery(convertResult.m_query || "");
     } catch (error: any) {
-      const errorMsg = error.message || "Failed to convert to M Query";
-      setLoadscriptError(errorMsg);
-      console.error("❌ Error converting to M Query:", error);
-    } finally {
-      setConvertingToMquery(false);
-    }
+      setLoadscriptError(error.message || "Failed to convert to M Query");
+    } finally { setConvertingToMquery(false); }
   };
 
   const fetchAiSummary = async (tableRows: any[], tableName: string) => {
     if (!tableRows || tableRows.length === 0) return;
-    setAiSummaryLoading(true);
-    setAiSummaryError("");
-    setAiSummaryBullets([]);
+    setAiSummaryLoading(true); setAiSummaryError(""); setAiSummaryBullets([]);
     try {
       const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
-        ? 'http://127.0.0.1:8000'
-        : 'https://qliksense-stuv.onrender.com';
+        ? 'http://127.0.0.1:8000' : 'https://qliksense-stuv.onrender.com';
       const res = await fetch(`${apiBase}/chat/summary-hf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -721,81 +545,43 @@ export default function SummaryPage() {
       const rawText = await res.text();
       let result: any = {};
       try { result = rawText ? JSON.parse(rawText) : {}; } catch {
-        setAiSummaryError(`Server error: ${rawText.slice(0, 200) || "Empty response"}`);
-        return;
+        setAiSummaryError(`Server error: ${rawText.slice(0, 200) || "Empty response"}`); return;
       }
-      if (!res.ok || !result.success) {
-        setAiSummaryError(result.detail || result.error || `HTTP ${res.status}`);
-        return;
-      }
+      if (!res.ok || !result.success) { setAiSummaryError(result.detail || result.error || `HTTP ${res.status}`); return; }
       setAiSummaryBullets(result.bullets || []);
-    } catch (e: any) {
-      setAiSummaryError(e.message || "Error calling AI summary");
-    } finally {
-      setAiSummaryLoading(false);
-    }
+    } catch (e: any) { setAiSummaryError(e.message || "Error calling AI summary"); }
+    finally { setAiSummaryLoading(false); }
   };
 
   const handlePublishMQuery = async () => {
-    if (!mquery && !loadscript) {
-      setPublishStatus("error");
-      setPublishMessage("No M Query available. Click 'Convert to MQuery' first.");
-      return;
-    }
-
+    if (!mquery && !loadscript) { setPublishStatus("error"); setPublishMessage("No M Query available. Click 'Convert to MQuery' first."); return; }
     try {
       setPublishingMQuery(true);
-
       let masterRowCount = totalRows || (rows?.length || 0);
       let relatedTables: string[] = [];
       let relatedTablesCount = 1;
-
-      if (selectedTable && relations[selectedTable]) {
-        relatedTables = relations[selectedTable].slice();
-        relatedTablesCount = 1 + relatedTables.length;
-      } else if (mainTable && relations[mainTable]) {
-        relatedTables = relations[mainTable].slice();
-        relatedTablesCount = 1 + relatedTables.length;
-      }
-
+      if (selectedTable && relations[selectedTable]) { relatedTables = relations[selectedTable].slice(); relatedTablesCount = 1 + relatedTables.length; }
+      else if (mainTable && relations[mainTable]) { relatedTables = relations[mainTable].slice(); relatedTablesCount = 1 + relatedTables.length; }
       let totalRowsAllTables = masterRowCount;
       for (const relTable of relatedTables) {
         try {
           const relMeta = await fetchTableDataSimple(appId, relTable).catch(() => null);
-          const relRowCount = relMeta?.row_count || relMeta?.rowCount || relMeta?.no_of_rows || 0;
-          totalRowsAllTables += relRowCount;
-          console.log(`📊 Related table "${relTable}": ${relRowCount} rows`);
-        } catch (e) {
-          console.warn(`Failed to fetch row count for related table: ${relTable}`, e);
-        }
+          totalRowsAllTables += relMeta?.row_count || relMeta?.rowCount || relMeta?.no_of_rows || 0;
+        } catch (e) {}
       }
-
-      console.log(`📊 Master table "${selectedTable}": ${masterRowCount} rows`);
-      console.log(`📊 Total rows (master + all related): ${totalRowsAllTables} rows`);
-
       if (isCsvLoadscript && isValidUrl && dataSourcePath.trim()) {
-        // URL validation passed
+        const updatedHistory = [dataSourcePath, ...urlHistory.filter(url => url !== dataSourcePath)].slice(0, 10);
+        setUrlHistory(updatedHistory);
+        localStorage.setItem("sharepoint_url_history", JSON.stringify(updatedHistory));
       }
-
       sessionStorage.setItem("publishMethod", "M_QUERY");
       sessionStorage.setItem("exportComplete", "true");
-
       navigate("/publish", {
         state: {
-          appId: appId,
-          selectedTable: selectedTable,
-          publishMethod: "M_QUERY",
-          showWorkflow: true,
-          tableCount: relatedTablesCount,
-          totalRows: totalRowsAllTables,
-          rowCount: totalRowsAllTables,
+          appId, selectedTable, publishMethod: "M_QUERY", showWorkflow: true,
+          tableCount: relatedTablesCount, totalRows: totalRowsAllTables, rowCount: totalRowsAllTables,
           columns: rows && rows.length > 0 ? Object.keys(rows[0]) : [],
-          mqueryData: {
-            dataset_name: selectedTable || "Qlik_Dataset",
-            combined_mquery: mquery || "",
-            raw_script: mquery ? "" : loadscript,
-            data_source_path: dataSourcePath?.trim() || "",
-          },
+          mqueryData: { dataset_name: selectedTable || "Qlik_Dataset", combined_mquery: mquery || "", raw_script: mquery ? "" : loadscript, data_source_path: dataSourcePath?.trim() || "" },
         },
       });
     } catch (error: any) {
@@ -805,7 +591,6 @@ export default function SummaryPage() {
     }
   };
 
-  // Compute master table per-prefix
   const masterMap = useMemo(() => {
     const map = new Map<string, string>();
     const groups: Record<string, any[]> = {};
@@ -816,40 +601,27 @@ export default function SummaryPage() {
       groups[prefix] = groups[prefix] || [];
       groups[prefix].push(t);
     });
-
     Object.keys(groups).forEach((prefix) => {
       const group = groups[prefix];
       if (!group || group.length <= 1) return;
-
       const candidates = group.map((g: any) => {
         const name = typeof g === "string" ? g : g?.name || "";
         const fields = typeof g === "string" ? 0 : (g?.fields || []).length || 0;
         return { name, fields };
       });
-
       const fordExplicit = candidates.find((c: any) => c.name.toLowerCase() === 'ford_vehicle_fact');
-      if (fordExplicit) {
-        map.set(prefix, fordExplicit.name);
-        return;
-      }
-
+      if (fordExplicit) { map.set(prefix, fordExplicit.name); return; }
       const explicit = candidates.find((c: any) => /fact|master|main/i.test(c.name));
-      if (explicit) {
-        map.set(prefix, explicit.name);
-        return;
-      }
-
+      if (explicit) { map.set(prefix, explicit.name); return; }
       candidates.sort((a: any, b: any) => (b.fields || 0) - (a.fields || 0));
       map.set(prefix, candidates[0].name);
     });
-
     return map;
   }, [tables]);
 
   const isMasterTable = (name: string) => {
     if (!name) return false;
     if (mainTable) return name === mainTable || name.toLowerCase() === "ford_vehicle_fact";
-
     const lower = name.toLowerCase();
     if (lower === "ford_vehicle_fact") return true;
     const prefix = name.includes("_") ? name.split("_")[0] : null;
@@ -859,54 +631,37 @@ export default function SummaryPage() {
 
   const isRelatedTable = (name: string) => {
     if (!name) return false;
-    if (mainTable && relations && relations[mainTable]) {
-      return relations[mainTable].includes(name);
-    }
-
+    if (mainTable && relations && relations[mainTable]) return relations[mainTable].includes(name);
     const prefix = name.includes("_") ? name.split("_")[0] : null;
     if (!prefix) return false;
     const master = masterMap.get(prefix);
     if (!master || master === name) return false;
-
     if (shareFields(master, name)) return true;
-
     return false;
   };
 
   const sortedFilteredTables = useMemo(() => {
     const arr = (filteredTables || []).slice();
-
     if (mainTable) {
       arr.sort((a, b) => {
         const an = typeof a === 'string' ? a : a?.name || '';
         const bn = typeof b === 'string' ? b : b?.name || '';
-
         if (an === mainTable && bn !== mainTable) return -1;
         if (bn === mainTable && an !== mainTable) return 1;
-
         const relSet = new Set(relations[mainTable] || []);
-        const aRel = relSet.has(an);
-        const bRel = relSet.has(bn);
-        if (aRel && !bRel) return -1;
-        if (!aRel && bRel) return 1;
-
-        const aMaster = isMasterTable(an);
-        const bMaster = isMasterTable(bn);
-        if (aMaster && !bMaster) return -1;
-        if (!aMaster && bMaster) return 1;
-
+        const aRel = relSet.has(an); const bRel = relSet.has(bn);
+        if (aRel && !bRel) return -1; if (!aRel && bRel) return 1;
+        const aMaster = isMasterTable(an); const bMaster = isMasterTable(bn);
+        if (aMaster && !bMaster) return -1; if (!aMaster && bMaster) return 1;
         return an.localeCompare(bn);
       });
       return arr;
     }
-
     arr.sort((a, b) => {
       const an = typeof a === 'string' ? a : a?.name || '';
       const bn = typeof b === 'string' ? b : b?.name || '';
-      const aMaster = isMasterTable(an);
-      const bMaster = isMasterTable(bn);
-      if (aMaster && !bMaster) return -1;
-      if (!aMaster && bMaster) return 1;
+      const aMaster = isMasterTable(an); const bMaster = isMasterTable(bn);
+      if (aMaster && !bMaster) return -1; if (!aMaster && bMaster) return 1;
       return an.localeCompare(bn);
     });
     return arr;
@@ -915,18 +670,14 @@ export default function SummaryPage() {
   const isSelectionMaster = !!(selectedTable && isMasterTable(selectedTable));
   const isExportAllowed = Boolean(selectedTable && (isSelectionMaster || !isRelatedTable(selectedTable)));
 
-  // Helper: prepare export payload and navigate to /publish
   const prepareAndNavigateToExport = async (tableToExport?: string) => {
+    setExporting(true);
     try {
       stopTimer?.("/summary");
       sessionStorage.setItem("summaryComplete", "true");
       startTimer?.("/publish");
-
       const sel = tableToExport || selectedTable || (sessionStorage.getItem("selectedTable") || "");
-      if (!sel) {
-        alert("No table selected for export.");
-        return;
-      }
+      if (!sel) { setExporting(false); alert("No table selected for export."); return; }
 
       let masterRows = rows;
       let masterRowCount = (rows || []).length;
@@ -939,44 +690,31 @@ export default function SummaryPage() {
           const loadLimit = masterRowCount > 0 ? Math.min(masterRowCount, SERVER_FETCH_MAX) : SERVER_FETCH_MAX;
           const loaded = await fetchTableData(appId, sel, loadLimit);
           masterRows = loaded || [];
-          setSelectedTable(sel);
-          setRows(masterRows);
+          setSelectedTable(sel); setRows(masterRows);
           const { generateSummaryFromData } = await import("../api/qlikApi");
           setSummary(generateSummaryFromData(masterRows, sel));
         } catch (e) {
           console.warn("Failed to load table prior to publish:", e);
           alert("Failed to load table data for publish. See console for details.");
           setTableLoading(false);
+          setExporting(false);
           return;
-        } finally {
-          setTableLoading(false);
-        }
+        } finally { setTableLoading(false); }
       } else {
         try {
           const meta = await fetchTableDataSimple(appId, sel).catch(() => null);
           masterRowCount = meta?.row_count || meta?.rowCount || meta?.no_of_rows || (masterRows || []).length;
-        } catch (e) {
-          masterRowCount = (masterRows || []).length;
-        }
+        } catch (e) { masterRowCount = (masterRows || []).length; }
       }
 
       const prefix = sel && sel.includes("_") ? sel.split("_")[0] : null;
       const candidateNames = (tables || []).map((t) => (typeof t === "string" ? t : t?.name)).filter(Boolean) as string[];
       let related: string[] = [];
-      if (mainTable && sel === mainTable && relations && relations[mainTable]) {
-        related = relations[mainTable].slice();
-      } else if (prefix) {
-        related = candidateNames
-          .filter(n => n.startsWith(prefix + "_") && n !== sel)
-          .filter(n => shareFields(sel, n));
-      }
+      if (mainTable && sel === mainTable && relations && relations[mainTable]) related = relations[mainTable].slice();
+      else if (prefix) related = candidateNames.filter(n => n.startsWith(prefix + "_") && n !== sel).filter(n => shareFields(sel, n));
 
       const headers = masterRows.length > 0 ? Object.keys(masterRows[0]) : [];
-      const csv = [
-        headers.join(","),
-        ...masterRows.map((r: any) => headers.map((h) => `"${r[h] ?? ""}"`).join(",")),
-      ].join("\n");
-
+      const csv = [headers.join(","), ...masterRows.map((r: any) => headers.map((h) => `"${r[h] ?? ""}"`).join(","))].join("\n");
       const cols = headers;
       const daxLines = [] as string[];
       daxLines.push(`-- DAX export skeleton for table: ${sel}`);
@@ -987,21 +725,18 @@ export default function SummaryPage() {
       const daxContent = daxLines.join("\n");
 
       if (isCsvLoadscript && isValidUrl && dataSourcePath.trim()) {
-        // URL validation passed
+        const updatedHistory = [dataSourcePath, ...urlHistory.filter(url => url !== dataSourcePath)].slice(0, 10);
+        setUrlHistory(updatedHistory);
+        localStorage.setItem("sharepoint_url_history", JSON.stringify(updatedHistory));
       }
 
       if (!related || related.length === 0) {
         navigate("/export", {
           state: {
-            appId,
-            appName: location.state?.appName || sessionStorage.getItem("appName") || appId,
-            selectedTable: sel,
-            rows: masterRows || [],
-            totalRows: masterRowCount,
-            totalTablesCount: 1,
+            appId, appName: location.state?.appName || sessionStorage.getItem("appName") || appId,
+            selectedTable: sel, rows: masterRows || [], totalRows: masterRowCount, totalTablesCount: 1,
             exportOptions: { combined: true, separate: false },
-            csvPayloads: { migration_csv: csv },
-            daxPayloads: { migration_dax: daxContent },
+            csvPayloads: { migration_csv: csv }, daxPayloads: { migration_dax: daxContent },
           },
         });
         return;
@@ -1011,12 +746,7 @@ export default function SummaryPage() {
       const selectedData: any[] = [];
       const csvPayloads: Record<string, string> = { migration_csv_0: csv };
       const daxPayloads: Record<string, string> = { migration_dax: daxContent };
-
-      selectedData.push({
-        name: sel,
-        data: { name: sel, rows: masterRows || [], summary },
-        actualRowCount: masterRowCount
-      });
+      selectedData.push({ name: sel, data: { name: sel, rows: masterRows || [], summary }, actualRowCount: masterRowCount });
 
       for (let idx = 0; idx < related.length; idx++) {
         const relName = related[idx];
@@ -1027,56 +757,37 @@ export default function SummaryPage() {
           const relRows = await fetchTableData(appId, relName, relLimit);
           const { generateSummaryFromData } = await import("../api/qlikApi");
           const relSummary = generateSummaryFromData(relRows, relName);
-
-          selectedData.push({
-            name: relName,
-            data: { name: relName, rows: relRows, summary: relSummary },
-            actualRowCount: relTotal
-          });
-
+          selectedData.push({ name: relName, data: { name: relName, rows: relRows, summary: relSummary }, actualRowCount: relTotal });
           const relHeaders = relRows.length > 0 ? Object.keys(relRows[0]) : [];
-          const relCsv = [
-            relHeaders.join(","),
-            ...relRows.map((r: any) => relHeaders.map((h) => `"${r[h] ?? ""}"`).join(",")),
-          ].join("\n");
+          const relCsv = [relHeaders.join(","), ...relRows.map((r: any) => relHeaders.map((h) => `"${r[h] ?? ""}"`).join(","))].join("\n");
           csvPayloads[`migration_csv_${idx + 1}`] = relCsv;
-        } catch (e) {
-          console.warn("Failed to load related table:", relName, e);
-        }
+        } catch (e) { console.warn("Failed to load related table:", relName, e); }
       }
 
       setTableLoading(false);
-
       const totalAllRows = selectedData.reduce((sum, table) => sum + (table.actualRowCount || table.data?.rows?.length || 0), 0);
-      const totalTablesCount = selectedData.length;
-
       navigate("/export", {
         state: {
-          appId,
-          appName: location.state?.appName || sessionStorage.getItem("appName") || appId,
-          selectedTables: selectedData,
-          totalRows: totalAllRows,
-          totalTablesCount: totalTablesCount,
-          exportOptions: { combined: true, separate: true },
-          csvPayloads,
-          daxPayloads,
+          appId, appName: location.state?.appName || sessionStorage.getItem("appName") || appId,
+          selectedTables: selectedData, totalRows: totalAllRows, totalTablesCount: selectedData.length,
+          exportOptions: { combined: true, separate: true }, csvPayloads, daxPayloads,
         },
       });
     } catch (err) {
       setTableLoading(false);
+      setExporting(false);
       console.error(err);
       alert("Failed to prepare related tables for export. See console for details.");
     }
   };
 
 
+  if (exporting) {
+    return <LoadingOverlay isVisible={exporting} message="Exporting your data..." />;
+  }
+
   if (loading) {
-    return (
-      <LoadingOverlay
-        isVisible={loading}
-        message="Loading tables from QlikSense..."
-      />
-    );
+    return <LoadingOverlay isVisible={loading} message="Loading tables from QlikSense..." />;
   }
 
   return (
@@ -1085,14 +796,13 @@ export default function SummaryPage() {
       <div className="left-panel">
         <div className="panel-header">
           <h3 className="title">Tables {`(${tables.length})`}</h3>
-          {mainTable && (
+          {/* {mainTable && (
             <div style={{ marginTop: 6, fontSize: 12, color: '#444' }}>
               Detected main table: <strong style={{ color: '#0b3a66' }}>{mainTable}</strong>
             </div>
-          )}
+          )} */}
         </div>
 
-        {/* Table list search */}
         <div className="table-search">
           <input
             type="search"
@@ -1103,206 +813,230 @@ export default function SummaryPage() {
           />
         </div>
 
-        {tables.length === 0 && (
-          <p className="no-tables">No tables found</p>
-        )}
+        {tables.length === 0 && <p className="no-tables">No tables found</p>}
 
         {sortedFilteredTables.map((t, i) => {
           const tableName = typeof t === "string" ? t : t?.name;
           const isNew = typeof t === "string" ? false : t?.is_new;
           if (!tableName) return null;
-
           const master = isMasterTable(tableName);
           const related = isRelatedTable(tableName);
           const cls = `${tableName === selectedTable ? "table-item active" : "table-item"}${master ? " master-row" : ""}${related && !master ? " related-row" : ""}`;
-
           return (
             <div
-              key={i}
-              className={cls}
-              onClick={() => loadData(tableName)}
-              title={master ? "Master table — click to export master + its related tables" : related ? "Related table — preview only — export disabled (select master to export)" : "Click to preview table"}
+              key={i} className={cls} onClick={() => loadData(tableName)}
+              title={master ? "Master table — click to export master + its related tables" : related ? "Related table — preview only" : "Click to preview table"}
             >
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{tableName}</span>
               </span>
-
-              {/* Inline export button for standalone or master tables (hidden for related-only tables) */}
               {!related && (
                 <button
                   className="inline-export"
                   title={master ? "Export master + related tables" : "Export this standalone table"}
                   onClick={(e) => { e.stopPropagation(); prepareAndNavigateToExport(tableName); }}
-                >
-                  {/* <img src={exportImg} alt="Export" style={{ width: 16 }} /> */}
-                </button>
+                />
               )}
-
               {isNew && <span className="new-badge">NEW</span>}
             </div>
           );
         })}
       </div>
 
-      {/* RIGHT – SUMMARY + DATA */}
+      {/* RIGHT – CONTENT */}
       <div className="right-panel">
         {!selectedTable && (
-          <div className="empty">
-            <p>👈 Select a table on the left to view its data</p>
-          </div>
+          <div className="empty"><p>👈 Select a table on the left to view its data</p></div>
         )}
 
         {selectedTable && (
           <>
-            {/* HEADER WITH TITLE + TABS ON LEFT, TIME ON RIGHT */}
+            {/* HEADER */}
             <div className="header">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: "20px" }}>
-                {/* LEFT: Title + Master Badge + Tabs */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                   <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     {selectedTable}
                     {isSelectionMaster && <span className="master-indicator" style={{ marginLeft: '0px' }}>master</span>}
                   </h2>
 
-                  {/* MODERN TAB BAR */}
-                  <div style={{
-                    display: "flex",
-                    gap: "14px",
-                    borderBottom: "none",
-                    paddingBottom: "0px",
-                    marginLeft: '12px',
-                    borderRadius: '6px',
-                    padding: '4px',
-                  }}>
+                  {/* ── TAB BAR: Source Types · Summary · ER Diagram ── */}
+                  <div style={{ display: "flex", gap: "14px", borderBottom: "none", marginLeft: '12px', borderRadius: '6px', padding: '4px' }}>
+
+                    {/* Source Types Tab */}
                     <button
+                      type="button"
+                      className={`tab-button tab-button--sourceTypes ${activeTab === "sourceTypes" ? "active" : ""}`}
+                      onClick={() => setActiveTab("sourceTypes")}
+                    >
+                      🗂️ Source Types
+                    </button>
+
+                    {/* Summary Tab */}
+                    <button
+                      type="button"
+                      className={`tab-button tab-button--summary ${activeTab === "summary" ? "active" : ""}`}
                       onClick={() => setActiveTab("summary")}
-                      style={{
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        fontWeight: activeTab === "summary" ? 600 : 500,
-                        color: activeTab === "summary" ? '#fff' : '#6b7280',
-                        backgroundColor: activeTab === "summary" ? '#667eea' : 'transparent',
-                        border: 'none',
-                        borderBottom: '3px solid #938d8d',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (activeTab !== "summary") {
-                          e.currentTarget.style.backgroundColor = 'rgba(102, 126, 234, 0.1)';
-                          e.currentTarget.style.color = '#4f46e5';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (activeTab !== "summary") {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                          e.currentTarget.style.color = '#6b7280';
-                        }
-                      }}
                     >
                       📊 Summary
                     </button>
 
+                    {/* ER Diagram Tab — replaces old Schema modal button */}
                     <button
-                      onClick={() => setActiveTab("mquery")}
-                      style={{
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        fontWeight: activeTab === "mquery" ? 600 : 500,
-                        color: activeTab === "mquery" ? '#fff' : '#6b7280',
-                        backgroundColor: activeTab === "mquery" ? '#059669' : 'transparent',
-                        border: 'none',
-                        borderRadius: '4px',
-                        borderBottom: '3px solid #938d8d',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (activeTab !== "mquery") {
-                          e.currentTarget.style.backgroundColor = 'rgba(5, 150, 105, 0.1)';
-                          e.currentTarget.style.color = '#069669';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (activeTab !== "mquery") {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                          e.currentTarget.style.color = '#6b7280';
-                        }
-                      }}
-                    >
-                      📋 Query
-                    </button>
-
-                    {/* Schema Button → opens SchemaModal */}
-                    {/* <button
-                      onClick={() => setIsSchemaModalOpen(true)}
-                      style={{
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        color: '#6b7280',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        borderRadius: '4px',
-                        borderBottom: '3px solid #938d8d',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
-                        e.currentTarget.style.color = '#f59e0b';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'transparent';
-                        e.currentTarget.style.color = '#6b7280';
-                      }}
-                    >
-                      🔷 Schema
-                    </button> */}
-
-                    {/* ER Diagram Tab → displays as tab content */}
-                    <button
+                      type="button"
+                      className={`tab-button tab-button--er ${activeTab === "er" ? "active" : ""}`}
                       onClick={() => setActiveTab("er")}
-                      style={{
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        fontWeight: activeTab === "er" ? 600 : 500,
-                        color: activeTab === "er" ? '#fff' : '#6b7280',
-                        backgroundColor: activeTab === "er" ? '#7c3aed' : 'transparent',
-                        border: 'none',
-                        borderRadius: '4px',
-                        borderBottom: '3px solid #938d8d',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (activeTab !== "er") {
-                          e.currentTarget.style.backgroundColor = 'rgba(124, 58, 237, 0.1)';
-                          e.currentTarget.style.color = '#7c3aed';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (activeTab !== "er") {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                          e.currentTarget.style.color = '#6b7280';
-                        }
-                      }}
                     >
                       🔷 ER Diagram
                     </button>
                   </div>
                 </div>
 
-                {/* RIGHT: Analysis Time only */}
-                {pageLoadTime && (
-                  <div className="timer-badge">Analysis Time: {pageLoadTime}</div>
-                )}
+                {pageLoadTime && <div className="timer-badge">Analysis Time: {pageLoadTime}</div>}
               </div>
             </div>
 
             {/* ===== TAB CONTENT ===== */}
             <div className="tabs-content">
+
+              {/* SOURCE TYPES TAB */}
+              {activeTab === "sourceTypes" && (
+                <div className="tab-content source-types-tab">
+                  <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 16 }}>
+
+                    {/* Database card */}
+                    <div
+                      onClick={() => setSourceTypesTab('database')}
+                      style={{
+                        flex: '1 1 260px', minWidth: 260,
+                        border: sourceTypesTab === 'database' ? '2px solid #0ea5e9' : '1px solid #e5e7eb',
+                        borderRadius: 12, padding: 16, cursor: 'pointer',
+                        background: sourceTypesTab === 'database' ? 'rgba(14,165,233,0.08)' : '#fff',
+                        boxShadow: sourceTypesTab === 'database' ? '0 8px 20px rgba(14,165,233,0.12)' : '0 4px 12px rgba(0,0,0,0.04)',
+                        transition: 'all 0.2s ease', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ width: 18, height: 18, borderRadius: '50%', border: sourceTypesTab === 'database' ? '2px solid #0ea5e9' : '2px solid #cbd5e1', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: sourceTypesTab === 'database' ? '#0ea5e9' : 'transparent' }}>
+                            {sourceTypesTab === 'database' && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🗄️</div>
+                            <div>
+                              <div style={{ fontSize: 16, fontWeight: 700, color: '#1f2937' }}>Database</div>
+                              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Direct ODBC/JDBC connection</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <p style={{ marginTop: 12, fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+                        Connect directly to the source database via ODBC/JDBC. Schema is inferred automatically. Best for live systems where data lives in SQL Server, Oracle, or Snowflake.
+                      </p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#f3f4f6', fontSize: 11, fontWeight: 600, color: '#1f2937' }}>ODBC / JDBC</span>
+                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#f3f4f6', fontSize: 11, fontWeight: 600, color: '#1f2937' }}>Live schema</span>
+                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#f3f4f6', fontSize: 11, fontWeight: 600, color: '#1f2937' }}>SQL Server • Oracle</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }} />
+                    </div>
+
+                    {/* Scripts card */}
+                    <div
+                      onClick={() => setSourceTypesTab('scripts')}
+                      style={{
+                        flex: '1 1 260px', minWidth: 260,
+                        border: sourceTypesTab === 'scripts' ? '2px solid #14b8a6' : '1px solid #e5e7eb',
+                        borderRadius: 12, padding: 16, cursor: 'pointer',
+                        background: sourceTypesTab === 'scripts' ? 'rgba(20,184,166,0.08)' : '#fff',
+                        boxShadow: sourceTypesTab === 'scripts' ? '0 8px 20px rgba(20,184,166,0.12)' : '0 4px 12px rgba(0,0,0,0.04)',
+                        transition: 'all 0.2s ease', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ width: 18, height: 18, borderRadius: '50%', border: sourceTypesTab === 'scripts' ? '2px solid #14b8a6' : '2px solid #cbd5e1', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: sourceTypesTab === 'scripts' ? '#14b8a6' : 'transparent' }}>
+                            {sourceTypesTab === 'scripts' && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>📜</div>
+                            <div>
+                              <div style={{ fontSize: 16, fontWeight: 700, color: '#1f2937' }}>Scripts</div>
+                              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Qlik Load Script → M-Query</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <p style={{ marginTop: 12, fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+                        Parse the Qlik Load Script from your application. Transforms APPLYMAP, INLINE, and RESIDENT tables into Power Query M-code. Full schema and relationship preservation.
+                      </p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#fde68a', fontSize: 11, fontWeight: 600, color: '#92400e' }}>M-QUERY</span>
+                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#fde68a', fontSize: 11, fontWeight: 600, color: '#92400e' }}>XMLA</span>
+                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#fde68a', fontSize: 11, fontWeight: 600, color: '#92400e' }}>RELATIONSHIPS</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+                        <button className="continue-export-btn" onClick={() => { setActiveTab('mquery'); setSourceTypesTab('scripts'); }}>
+                          Go to Scripts
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Export CSV card */}
+                    <div
+                      onClick={() => setSourceTypesTab('csv')}
+                      style={{
+                        flex: '1 1 260px', minWidth: 260,
+                        border: sourceTypesTab === 'csv' ? '2px solid #f97316' : '1px solid #e5e7eb',
+                        borderRadius: 12, padding: 16, cursor: 'pointer',
+                        background: sourceTypesTab === 'csv' ? 'rgba(251,146,60,0.08)' : '#fff',
+                        boxShadow: sourceTypesTab === 'csv' ? '0 8px 20px rgba(249,115,22,0.12)' : '0 4px 12px rgba(0,0,0,0.04)',
+                        transition: 'all 0.2s ease', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ width: 18, height: 18, borderRadius: '50%', border: sourceTypesTab === 'csv' ? '2px solid #f97316' : '2px solid #cbd5e1', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: sourceTypesTab === 'csv' ? '#f97316' : 'transparent' }}>
+                            {sourceTypesTab === 'csv' && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#ffedd5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>📦</div>
+                            <div>
+                              <div style={{ fontSize: 16, fontWeight: 700, color: '#1f2937' }}>Export CSV</div>
+                              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Data export via REST API</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <p style={{ marginTop: 12, fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+                        Export all table data as CSV and push to Power BI as a push dataset via REST API. Works on any Power BI license. Ideal for flat tables without complex transformations.
+                      </p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#dbeafe', fontSize: 11, fontWeight: 600, color: '#1e40af' }}>ANY LICENSE</span>
+                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#dbeafe', fontSize: 11, fontWeight: 600, color: '#1e40af' }}>REST API</span>
+                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#dbeafe', fontSize: 11, fontWeight: 600, color: '#1e40af' }}>FAST DEPLOY</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+                        <button
+                          className="continue-export-btn"
+                          disabled={!isExportAllowed || tableLoading}
+                          onClick={() => prepareAndNavigateToExport()}
+                          style={{ padding: '10px 14px', fontWeight: 600 }}
+                        >
+                          Export as CSV
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {!sourceTypesTab && (
+                    <div style={{ padding: 14, borderRadius: 10, background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#475569', marginTop: 8 }}>
+                      Select a source type above to continue.
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* SUMMARY TAB */}
               {activeTab === "summary" && (
                 <div className="tab-content summary-tab">
@@ -1320,68 +1054,55 @@ export default function SummaryPage() {
                       <h3>LoadScript Conversion - {selectedTable}</h3>
                     </div>
 
-                    {loadscriptError && (
-                      <div className="error-message">
-                        ⚠️ {loadscriptError}
-                      </div>
-                    )}
+                    {loadscriptError && <div className="error-message">⚠️ {loadscriptError}</div>}
 
                     <div className="loadscript-displays">
-                      {/* First Display: LoadScript */}
                       <div className="display-section loadscript-display">
                         <h4>Qlik LoadScript</h4>
-                        {!loadscript && (
-                          <div className="empty-display">Select a table to auto-load its LoadScript</div>
-                        )}
+                        {!loadscript && <div className="empty-display">Select a table to auto-load its LoadScript</div>}
                         {loadscript && (
                           <>
-                            <div className="script-content">
-                              <pre>{loadscript}</pre>
-                            </div>
-                            {/* DataSourcePath input — for CSV/QVD file sources only */}
-                            {isCsvLoadscript && (
-                            <div style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: "4px",
-                              marginBottom: "10px",
-                              padding: "10px 12px",
-                              background: isValidUrl ? "#ecfdf5" : "#fef2f2",
-                              borderRadius: "6px",
-                              border: isValidUrl ? "1px solid #86efac" : "1px solid #fecaca",
-                              position: "relative",
-                            }}>
-                              <label style={{ fontSize: "12px", fontWeight: 600, color: "#0369a1" }}>
-                                📁 Data Source Path <span style={{ fontWeight: 400, color: "#64748b" }}>(required for CSV)</span>
-                              </label>
-                              <div style={{ position: "relative" }}>
-                                <input
-                                  type="text"
-                                  // value={dataSourcePath}
-                                  value="https://sorimtechnologies.sharepoint.com"
-                                  onChange={() => {
-                                    const val = "https://sorimtechnologies.sharepoint.com";
-                                    console.log("Data source path input changed:", val);
-                                    setDataSourcePath(val);
-                                    const validation = validateSharePointUrl(val);
-                                    setIsValidUrl(validation.isValid);
-                                    setUrlValidationError(validation.error || "");
-                                  }}
-                                  placeholder="e.g. https://company.sharepoint.com/Shared Documents/Data/"
-                                  style={{
-                                    padding: "6px 10px",
-                                    fontSize: "12px",
-                                    fontFamily: "monospace",
-                                    border: isValidUrl ? "1px solid #86efac" : "1px solid #fecaca",
-                                    transition: "border-color 0.3s ease",
-                                    borderRadius: "4px",
-                                    outline: "none",
-                                    width: "100%",
-                                    boxSizing: "border-box" as const,
-                                    background: "#fff",
-                                  }}
-                                />
+                            <div className="script-content"><pre>{loadscript}</pre></div>
 
+                            {isCsvLoadscript && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "10px", padding: "10px 12px", background: isValidUrl ? "#ecfdf5" : "#fef2f2", borderRadius: "6px", border: isValidUrl ? "1px solid #86efac" : "1px solid #fecaca", position: "relative" }}>
+                                <label style={{ fontSize: "12px", fontWeight: 600, color: "#0369a1" }}>
+                                  📁 Data Source Path <span style={{ fontWeight: 400, color: "#64748b" }}>(required for CSV)</span>
+                                </label>
+                                <div style={{ position: "relative" }}>
+                                  <input
+                                    type="text"
+                                    value={dataSourcePath}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setDataSourcePath(val);
+                                      const validation = validateSharePointUrl(val);
+                                      setIsValidUrl(validation.isValid);
+                                      setUrlValidationError(validation.error || "");
+                                      if (val.trim().length > 0) {
+                                        const filtered = urlHistory.filter(url => url.toLowerCase().includes(val.toLowerCase()));
+                                        setFilteredSuggestions(filtered);
+                                        setShowUrlSuggestions(filtered.length > 0);
+                                      } else { setShowUrlSuggestions(false); }
+                                    }}
+                                    onFocus={() => { if (urlHistory.length > 0) { setFilteredSuggestions(urlHistory); setShowUrlSuggestions(true); } }}
+                                    onBlur={() => { setTimeout(() => setShowUrlSuggestions(false), 200); }}
+                                    placeholder="e.g. https://company.sharepoint.com/Shared Documents/Data/"
+                                    style={{ padding: "6px 10px", fontSize: "12px", fontFamily: "monospace", border: isValidUrl ? "1px solid #86efac" : "1px solid #fecaca", transition: "border-color 0.3s ease", borderRadius: "4px", outline: "none", width: "100%", boxSizing: "border-box" as const, background: "#fff" }}
+                                  />
+                                  {showUrlSuggestions && filteredSuggestions.length > 0 && (
+                                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, backgroundColor: "#fff", border: "1px solid #ddd", borderTop: "none", borderRadius: "0 0 4px 4px", maxHeight: "200px", overflowY: "auto", zIndex: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+                                      {filteredSuggestions.map((url, idx) => (
+                                        <div key={idx}
+                                          onClick={() => { setDataSourcePath(url); const v = validateSharePointUrl(url); setIsValidUrl(v.isValid); setUrlValidationError(v.error || ""); setShowUrlSuggestions(false); }}
+                                          style={{ padding: "8px 10px", borderBottom: idx < filteredSuggestions.length - 1 ? "1px solid #eee" : "none", cursor: "pointer", fontSize: "12px", fontFamily: "monospace", backgroundColor: "#f9f9f9" }}
+                                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f0f0f0")}
+                                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f9f9f9")}
+                                        >{url}</div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
                                 {dataSourcePath && (
                                   <span style={{ fontSize: "11px", color: isValidUrl ? "#059669" : "#dc2626", fontWeight: 500 }}>
                                     {isValidUrl ? "✅ Valid SharePoint URL" : (urlValidationError || "❌ Invalid SharePoint URL")}
@@ -1391,23 +1112,11 @@ export default function SummaryPage() {
                                   SharePoint URL only. Format: https://companyname.sharepoint.com
                                 </span>
                               </div>
-                            </div>
                             )}
 
                             {!isCsvLoadscript && (
-                              <div style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "4px",
-                                marginBottom: "10px",
-                                padding: "8px 12px",
-                                background: "#f0fdf4",
-                                borderRadius: "6px",
-                                border: "1px solid #bbf7d0",
-                              }}>
-                                <span style={{ fontSize: "11px", color: "#059669", fontWeight: 500 }}>
-                                  ℹ️ Inline LoadScript - No URL required
-                                </span>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "10px", padding: "8px 12px", background: "#f0fdf4", borderRadius: "6px", border: "1px solid #bbf7d0" }}>
+                                <span style={{ fontSize: "11px", color: "#059669", fontWeight: 500 }}>ℹ️ Inline LoadScript - No URL required</span>
                               </div>
                             )}
 
@@ -1415,15 +1124,7 @@ export default function SummaryPage() {
                               onClick={handleConvertToMQuery}
                               disabled={convertingToMquery || !selectedTable || (isCsvLoadscript && !isValidUrl)}
                               className="convert-btn"
-                              title={
-                                !selectedTable ? "Please select a table first" :
-                                isCsvLoadscript && !isValidUrl ? "Please enter a valid data source URL for CSV loadscript" :
-                                "Convert to M Query"
-                              }
-                              style={{
-                                opacity: (isCsvLoadscript && !isValidUrl) ? 0.5 : 1,
-                                cursor: (isCsvLoadscript && !isValidUrl) ? "not-allowed" : "pointer",
-                              }}
+                              style={{ opacity: (isCsvLoadscript && !isValidUrl) ? 0.5 : 1, cursor: (isCsvLoadscript && !isValidUrl) ? "not-allowed" : "pointer" }}
                             >
                               {convertingToMquery ? "⏳ Converting..." : "🔄 Convert to MQuery"}
                             </button>
@@ -1431,64 +1132,27 @@ export default function SummaryPage() {
                         )}
                       </div>
 
-                      {/* Second Display: MQuery */}
                       <div className="display-section mquery-display">
                         <h4>Generated M Query</h4>
-                        {!mquery && !convertingToMquery && (
-                          <div className="empty-display">M Query will appear here after conversion</div>
-                        )}
+                        {!mquery && !convertingToMquery && <div className="empty-display">M Query will appear here after conversion</div>}
                         {mquery && (
                           <>
-                            <div className="script-content">
-                              <pre>{mquery}</pre>
-                            </div>
-                            {/* Download and Publish buttons side by side */}
+                            <div className="script-content"><pre>{mquery}</pre></div>
                             <div className="mquery-button-group">
                               <button
-                                onClick={() => {
-                                  const element = document.createElement("a");
-                                  const file = new Blob([mquery], { type: "text/plain" });
-                                  element.href = URL.createObjectURL(file);
-                                  element.download = `${selectedTable || "query"}_mquery.m`;
-                                  document.body.appendChild(element);
-                                  element.click();
-                                  document.body.removeChild(element);
-                                }}
+                                onClick={() => { const element = document.createElement("a"); const file = new Blob([mquery], { type: "text/plain" }); element.href = URL.createObjectURL(file); element.download = `${selectedTable || "query"}_mquery.m`; document.body.appendChild(element); element.click(); document.body.removeChild(element); }}
                                 className="download-btn"
-                                title="Download M Query"
                               >
                                 ⬇️ Download M Query
                               </button>
-                              <button
-                                onClick={handlePublishMQuery}
-                                disabled={publishingMQuery}
-                                className="publish-pbi-btn"
-                                title="Publish Push dataset to Power BI Service (schema only — no file data)"
-                              >
-                                {publishingMQuery ? (
-                                  <>
-                                    <span className="publish-spinner" />
-                                    Publishing…
-                                  </>
-                                ) : (
-                                  <>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                                      <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                                      <path d="M2 17l10 5 10-5"/>
-                                      <path d="M2 12l10 5 10-5"/>
-                                    </svg>
-                                    Publish MQuery to PowerBI
-                                  </>
+                              <button onClick={handlePublishMQuery} disabled={publishingMQuery} className="publish-pbi-btn">
+                                {publishingMQuery ? (<><span className="publish-spinner" />Publishing…</>) : (
+                                  <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>Publish MQuery to PowerBI</>
                                 )}
                               </button>
                             </div>
-
                             {publishStatus !== "idle" && publishMessage && (
-                              <div
-                                className={`publish-status-msg ${publishStatus === "success" ? "publish-success" : "publish-error"}`}
-                              >
-                                {publishMessage}
-                              </div>
+                              <div className={`publish-status-msg ${publishStatus === "success" ? "publish-success" : "publish-error"}`}>{publishMessage}</div>
                             )}
                           </>
                         )}
@@ -1498,39 +1162,35 @@ export default function SummaryPage() {
                 </div>
               )}
 
-              {/* ER DIAGRAM TAB */}
+              {/* ── ER DIAGRAM TAB ──────────────────────────────────────────
+                  Replaces the old SchemaModal popup.
+                  Renders an inline Mermaid erDiagram inside the tab panel.
+              ─────────────────────────────────────────────────────────────── */}
               {activeTab === "er" && (
                 <div className="tab-content er-tab">
                   <div className="summary-div er-diagram-div">
-                    <ERDiagramModal
+                    <ERDiagramView
                       tables={tables}
                       relations={relations}
                       mainTable={mainTable}
-                      onClose={() => {}}
-                      isModal={false}
                     />
                   </div>
                 </div>
               )}
+
             </div>
 
-            {/* ===== SEPARATE DIV FOR TABLE ===== */}
+            {/* DATA TABLE SECTION */}
             <div className="data-section">
-
               {tableLoading && <p>Loading data…</p>}
-
               {!tableLoading && (
                 <>
                   {rows.length > 0 ? (
                     <>
-                      {/* Top controls: page length + search */}
                       <div className="data-controls">
                         <div className="length">
                           <label>
-                            <select
-                              value={pageSize}
-                              onChange={(e) => setPageSize(parseInt(e.target.value, 10))}
-                            >
+                            <select value={pageSize} onChange={(e) => setPageSize(parseInt(e.target.value, 10))}>
                               <option value={10}>10</option>
                               <option value={25}>25</option>
                               <option value={50}>50</option>
@@ -1542,19 +1202,10 @@ export default function SummaryPage() {
                         <div className="searchfilter">
                           <label className="lable-search">
                             Search:
-                            <input
-                              type="search"
-                              value={tableQuery}
-                              onChange={(e) => setTableQuery(e.target.value)}
-                              placeholder="Search..."
-                            />
+                            <input type="search" value={tableQuery} onChange={(e) => setTableQuery(e.target.value)} placeholder="Search..." />
                           </label>
-                          <button
-                            className="csv-btn"
-                            disabled={!rows.length}
-                            onClick={downloadCSV}
-                          >
-                            <img src={Csvicon} alt="csv " className="btn-icon" />
+                          <button className="csv-btn" disabled={!rows.length} onClick={downloadCSV}>
+                            <img src={Csvicon} alt="csv" className="btn-icon" />
                           </button>
                         </div>
                       </div>
@@ -1566,18 +1217,13 @@ export default function SummaryPage() {
                               <TableRow>
                                 {rows[0] && Object.keys(rows[0]).map((k) => (
                                   <TableCell key={k} sortDirection={orderBy === k ? order : false}>
-                                    <TableSortLabel
-                                      active={orderBy === k}
-                                      direction={orderBy === k ? order : 'asc'}
-                                      onClick={() => handleRequestSort(k)}
-                                    >
+                                    <TableSortLabel active={orderBy === k} direction={orderBy === k ? order : 'asc'} onClick={() => handleRequestSort(k)}>
                                       {k}
                                     </TableSortLabel>
                                   </TableCell>
                                 ))}
                               </TableRow>
                             </TableHead>
-
                             <TableBody>
                               {visibleRows.map((r, i) => (
                                 <TableRow key={i} hover>
@@ -1589,41 +1235,21 @@ export default function SummaryPage() {
                             </TableBody>
                           </Table>
                         </TableContainer>
-
                         <div className="table-footer">
                           {`Showing ${totalEntries ? startIndex + 1 : 0} to ${endIndex} of ${totalEntries} entries`}
                         </div>
                       </div>
 
-                      {/* Pagination */}
                       <div className="pagination-bar">
-                        <button
-                          className="page-btn"
-                          disabled={current === 1}
-                          onClick={() => setCurrentPage(current - 1)}
-                        >
-                          Previous
-                        </button>
+                        <button className="page-btn" disabled={current === 1} onClick={() => setCurrentPage(current - 1)}>Previous</button>
                         {pageNumbers.map((p, idx) =>
                           typeof p === "number" ? (
-                            <button
-                              key={idx}
-                              className={`page-btn ${p === current ? "active" : ""}`}
-                              onClick={() => setCurrentPage(p)}
-                            >
-                              {p}
-                            </button>
+                            <button key={idx} className={`page-btn ${p === current ? "active" : ""}`} onClick={() => setCurrentPage(p)}>{p}</button>
                           ) : (
                             <span key={idx} className="ellipsis">…</span>
                           )
                         )}
-                        <button
-                          className="page-btn"
-                          disabled={current === totalPages}
-                          onClick={() => setCurrentPage(current + 1)}
-                        >
-                          Next
-                        </button>
+                        <button className="page-btn" disabled={current === totalPages} onClick={() => setCurrentPage(current + 1)}>Next</button>
                       </div>
                     </>
                   ) : (
@@ -1633,60 +1259,46 @@ export default function SummaryPage() {
                     </div>
                   )}
 
-                  {/* BOTTOM RIGHT BUTTON - Export (single table or auto-include related tables for master) */}
                   {activeTab === "summary" && (
-                  <div className="bottom-actions">
-                    <button
-                      className="continue-export-btn"
-                      disabled={!isExportAllowed || tableLoading}
-                      onClick={() => prepareAndNavigateToExport()}
-                      title={!selectedTable ? "Select a table first" : isRelatedTable(selectedTable) ? "Select master table or standalone table to export" : "Proceed to Export page"}
-                    >
-                      Continue to Export
-                    </button>
-                  </div>
+                    <div className="bottom-actions">
+                      <button
+                        className="continue-export-btn"
+                        disabled={!isExportAllowed || tableLoading}
+                        onClick={() => prepareAndNavigateToExport()}
+                        title={!selectedTable ? "Select a table first" : isRelatedTable(selectedTable) ? "Select master table or standalone table to export" : "Proceed to Export page"}
+                      >
+                        Continue to Export
+                      </button>
+                    </div>
                   )}
                 </>
               )}
-
             </div>
-
           </>
         )}
       </div>
-
-      {/* Schema Modal */}
-      <SchemaModal
-        isOpen={isSchemaModalOpen}
-        onClose={() => setIsSchemaModalOpen(false)}
-        appId={appId}
-        masterTable={mainTable || selectedTable}
-        tables={tables}
-      />
-
     </div>
   );
 }
 
 
-// ================= ER DIAGRAM MODAL =================
-// Shows a mermaid erDiagram popup matching the Qlik Sense ER structure.
-// Relationship direction: fact/history tables are many-side pointing
-// to dimension/master tables as one-side. This matches Power BI model view.
+// =============================================================================
+// ER DIAGRAM VIEW (inline tab — uses Mermaid, no modal)
+// Replaces the old SchemaModal popup.
+// Relationship direction: fact/history/mainTable = many-side → dim/master = one-side
+// =============================================================================
 
-interface ERDiagramModalProps {
+interface ERDiagramViewProps {
   tables: any[];
   relations: Record<string, string[]>;
   mainTable: string | null;
-  onClose: () => void;
-  isModal?: boolean;
 }
 
-function ERDiagramModal({ tables, relations, mainTable, onClose, isModal = true }: ERDiagramModalProps) {
+function ERDiagramView({ tables, relations, mainTable }: ERDiagramViewProps) {
   const ref = useRef<HTMLDivElement>(null);
 
-  const factKeywords  = ["fact", "history", "transaction", "detail", "sales", "order"];
-  const dimKeywords   = ["master", "dim", "lookup", "ref", "details"];
+  const factKeywords = ["fact", "history", "transaction", "detail", "sales", "order"];
+  const dimKeywords  = ["master", "dim", "lookup", "ref", "details"];
 
   const isFact = (name: string) => factKeywords.some(k => name.toLowerCase().includes(k));
   const isDim  = (name: string) => dimKeywords.some(k => name.toLowerCase().includes(k));
@@ -1694,7 +1306,7 @@ function ERDiagramModal({ tables, relations, mainTable, onClose, isModal = true 
   const buildErSource = (): string => {
     let src = "erDiagram\n";
 
-    // Entity definitions — limit fields to avoid overflow
+    // Entity definitions — limit to 10 fields per table to avoid SVG overflow
     for (const t of tables) {
       const name = typeof t === "string" ? t : t?.name;
       if (!name) continue;
@@ -1708,8 +1320,7 @@ function ERDiagramModal({ tables, relations, mainTable, onClose, isModal = true 
       src += "  }\n";
     }
 
-    // Relationships with correct direction
-    // many-side (fact/history or mainTable) --> one-side (dim/master)
+    // Relationships with correct many-to-one direction
     const seen = new Set<string>();
     for (const [a, toList] of Object.entries(relations)) {
       for (const b of toList) {
@@ -1717,10 +1328,10 @@ function ERDiagramModal({ tables, relations, mainTable, onClose, isModal = true 
         if (seen.has(key)) continue;
         seen.add(key);
 
-        const aIsFact = isFact(a) || a === mainTable;
-        const bIsFact = isFact(b) || b === mainTable;
         const aIsDim  = isDim(a);
         const bIsDim  = isDim(b);
+        const aIsFact = isFact(a) || a === mainTable;
+        const bIsFact = isFact(b) || b === mainTable;
 
         let many: string, one: string;
         if (aIsDim && !bIsDim)       { one = a; many = b; }
@@ -1737,7 +1348,7 @@ function ERDiagramModal({ tables, relations, mainTable, onClose, isModal = true 
 
   useEffect(() => {
     if (!ref.current) return;
-    ref.current.innerHTML = '<p style="color:#888;font-size:13px;padding:16px">Rendering diagram...</p>';
+    ref.current.innerHTML = '<p style="color:#888;font-size:13px;padding:16px">⏳ Rendering ER Diagram...</p>';
 
     import("mermaid").then(async (mod: any) => {
       const mermaid = mod.default;
@@ -1755,85 +1366,72 @@ function ERDiagramModal({ tables, relations, mainTable, onClose, isModal = true 
         },
       });
       try {
-        const { svg } = await mermaid.render("er-modal-svg-" + Date.now(), buildErSource());
+        const { svg } = await mermaid.render("er-inline-" + Date.now(), buildErSource());
         if (ref.current) ref.current.innerHTML = svg;
       } catch (e) {
         console.error("ER render error:", e);
-        if (ref.current) ref.current.innerHTML = '<p style="color:#e11d48;font-size:13px;padding:16px">Could not render diagram. Check console for details.</p>';
+        if (ref.current)
+          ref.current.innerHTML = '<p style="color:#e11d48;font-size:13px;padding:16px">⚠️ Could not render diagram. Check console for details.</p>';
       }
     });
   }, [tables, relations]);
 
+  const hasRelations = Object.keys(relations).some(k => (relations[k] || []).length > 0);
+
+  if (!tables || tables.length === 0) {
+    return (
+      <div style={{ padding: 24, color: '#6b7280', fontSize: 14 }}>
+        No tables loaded yet. Select a table from the left panel.
+      </div>
+    );
+  }
+
   return (
-    <>
-      {isModal ? (
-        <div
-          onClick={onClose}
-          style={{
-            position: "fixed", inset: 0, zIndex: 9999,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "#fff", borderRadius: 12,
-              width: "min(90vw, 900px)", maxHeight: "85vh",
-              display: "flex", flexDirection: "column",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-            }}
-          >
-            {/* Header */}
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "16px 20px", borderBottom: "1px solid #e5e7eb",
-            }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "#111827" }}>
-                  ER Diagram — from Qlik Sense
-                </h3>
-                <p style={{ margin: "2px 0 0", fontSize: 12, color: "#6b7280" }}>
-                  Entity relationships detected from the Qlik associative model
-                </p>
-              </div>
-              <button
-                onClick={onClose}
-                style={{
-                  background: "none", border: "none", cursor: "pointer",
-                  fontSize: 20, color: "#9ca3af", lineHeight: 1, padding: "4px 8px",
-                  borderRadius: 4,
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Diagram */}
-            <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-              <div ref={ref} style={{ fontSize: 12 }} />
-            </div>
-
-            {/* Footer note */}
-            <div style={{
-              padding: "10px 20px", borderTop: "1px solid #e5e7eb",
-              fontSize: 11, color: "#9ca3af",
-            }}>
-              Arrows show many-to-one direction. Qlik associative joins on shared field names.
-            </div>
-          </div>
+    <div style={{ width: "100%", padding: "16px 0" }}>
+      {/* Header */}
+      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#111827' }}>
+            ER Diagram — from Qlik Sense
+          </h3>
+          <p style={{ margin: "3px 0 0", fontSize: 12, color: '#6b7280' }}>
+            Entity relationships detected from the Qlik associative model
+            {mainTable && <> · Main table: <strong style={{ color: '#7c3aed' }}>{mainTable}</strong></>}
+          </p>
         </div>
-      ) : (
-        <div style={{ width: "100%", padding: "20px", fontSize: 12 }}>
-          <div ref={ref} />
-        </div>
-      )}
-    </>
+        {!hasRelations && (
+          <span style={{ fontSize: 11, color: '#f59e0b', background: '#fef3c7', padding: '4px 10px', borderRadius: 999, fontWeight: 600 }}>
+            ⚠️ No relationships detected
+          </span>
+        )}
+      </div>
+
+      {/* Mermaid diagram */}
+      <div
+        ref={ref}
+        style={{
+          fontSize: 12,
+          background: '#faf9ff',
+          border: '1px solid #e5e7eb',
+          borderRadius: 10,
+          padding: 16,
+          minHeight: 200,
+          overflowX: 'auto',
+        }}
+      />
+
+      {/* Footer note */}
+      <p style={{ marginTop: 10, fontSize: 11, color: '#9ca3af' }}>
+        Arrows show many-to-one direction. Qlik associative joins on shared field names.
+      </p>
+    </div>
   );
 }
 
 
-// ================= SUMMARY REPORT COMPONENT =================
+// =============================================================================
+// SUMMARY REPORT COMPONENT
+// =============================================================================
 import React from "react";
 
 interface SummaryReportProps {
@@ -1843,67 +1441,28 @@ interface SummaryReportProps {
   aiLoading?: boolean;
 }
 
-// Pie Chart Component
 const PieChart: React.FC<{ data: Record<string, number>; title: string }> = ({ data, title }) => {
-  const entries = Object.entries(data)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8);
-
+  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 8);
   const total = entries.reduce((sum, [_, val]) => sum + val, 0);
-
-  const colors = [
-    "#FF6B6B",
-    "#4ECDC4",
-    "#45B7D1",
-    "#FFA07A",
-    "#98D8C8",
-    "#F7DC6F",
-    "#BB8FCE",
-    "#85C1E2",
-  ];
-
+  const colors = ["#FF6B6B","#4ECDC4","#45B7D1","#FFA07A","#98D8C8","#F7DC6F","#BB8FCE","#85C1E2"];
   let currentAngle = 0;
   const slices = entries.map(([label, value], i) => {
     const percentage = (value / total) * 100;
     const sliceAngle = (percentage / 100) * 360;
     const startAngle = currentAngle;
     const endAngle = currentAngle + sliceAngle;
-
     const startRad = (startAngle - 90) * (Math.PI / 180);
     const endRad = (endAngle - 90) * (Math.PI / 180);
-
-    const x1 = 100 + 80 * Math.cos(startRad);
-    const y1 = 100 + 80 * Math.sin(startRad);
-    const x2 = 100 + 80 * Math.cos(endRad);
-    const y2 = 100 + 80 * Math.sin(endRad);
-
+    const x1 = 100 + 80 * Math.cos(startRad); const y1 = 100 + 80 * Math.sin(startRad);
+    const x2 = 100 + 80 * Math.cos(endRad);   const y2 = 100 + 80 * Math.sin(endRad);
     const largeArc = sliceAngle > 180 ? 1 : 0;
-
-    const pathData = [
-      `M 100 100`,
-      `L ${x1} ${y1}`,
-      `A 80 80 0 ${largeArc} 1 ${x2} ${y2}`,
-      `Z`,
-    ].join(" ");
-
+    const pathData = [`M 100 100`, `L ${x1} ${y1}`, `A 80 80 0 ${largeArc} 1 ${x2} ${y2}`, `Z`].join(" ");
     const labelAngle = (startAngle + endAngle) / 2;
     const labelRad = (labelAngle - 90) * (Math.PI / 180);
-    const labelX = 100 + 50 * Math.cos(labelRad);
-    const labelY = 100 + 50 * Math.sin(labelRad);
-
+    const labelX = 100 + 50 * Math.cos(labelRad); const labelY = 100 + 50 * Math.sin(labelRad);
     currentAngle = endAngle;
-
-    return {
-      pathData,
-      color: colors[i % colors.length],
-      label,
-      percentage,
-      value,
-      labelX,
-      labelY,
-    };
+    return { pathData, color: colors[i % colors.length], label, percentage, value, labelX, labelY };
   });
-
   return (
     <div className="pie-chart-container">
       <div className="pie-chart-content">
@@ -1914,13 +1473,7 @@ const PieChart: React.FC<{ data: Record<string, number>; title: string }> = ({ d
               <g key={i}>
                 <path d={slice.pathData} fill={slice.color} stroke="white" strokeWidth="2" />
                 {slice.percentage > 8 && (
-                  <text
-                    x={slice.labelX}
-                    y={slice.labelY}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    className="pie-label"
-                  >
+                  <text x={slice.labelX} y={slice.labelY} textAnchor="middle" dominantBaseline="middle" className="pie-label">
                     {slice.percentage.toFixed(0)}%
                   </text>
                 )}
@@ -1932,9 +1485,7 @@ const PieChart: React.FC<{ data: Record<string, number>; title: string }> = ({ d
           {slices.map((slice, i) => (
             <div key={i} className="legend-item">
               <span className="legend-color" style={{ backgroundColor: slice.color }}></span>
-              <span className="legend-text">
-                {slice.label.substring(0, 20)}: {slice.percentage.toFixed(1)}%
-              </span>
+              <span className="legend-text">{slice.label.substring(0, 20)}: {slice.percentage.toFixed(1)}%</span>
             </div>
           ))}
         </div>
@@ -1943,59 +1494,41 @@ const PieChart: React.FC<{ data: Record<string, number>; title: string }> = ({ d
   );
 };
 
-export const SummaryReport: React.FC<SummaryReportProps> = ({
-  summary,
-  rows,
-  aiBullets = [],
-  aiLoading = false,
-}) => {
+export const SummaryReport: React.FC<SummaryReportProps> = ({ summary, rows, aiBullets = [], aiLoading = false }) => {
   if (!summary && rows.length === 0) return null;
-
   const allCategoricalCounts: Record<string, number> = {};
   let topCityCount = 0;
   const cityCount: Record<string, number> = {};
-
   rows.forEach((row) => {
     Object.entries(row).forEach(([key, value]) => {
       if (key.toLowerCase().includes('id')) return;
-
       const num = Number(value);
       if (isNaN(num) || num === null || num === 0) {
         const strValue = String(value);
         const label = `${key}: ${strValue}`;
         allCategoricalCounts[label] = (allCategoricalCounts[label] || 0) + 1;
-
         if (key.toLowerCase().includes('city')) {
           cityCount[strValue] = (cityCount[strValue] || 0) + 1;
-          if (cityCount[strValue] > topCityCount) {
-            topCityCount = cityCount[strValue];
-          }
+          if (cityCount[strValue] > topCityCount) topCityCount = cityCount[strValue];
         }
       }
     });
   });
-
   return (
     <div className="summary-report">
-      {/* Analytics Container - Pie Chart and Summary Side by Side */}
       <div className="analytics-container">
-        {/* Left: Chart Section */}
         {Object.keys(allCategoricalCounts).length > 0 && (
           <div className="chart-section">
             <PieChart data={allCategoricalCounts} title="" />
           </div>
         )}
-
-        {/* Right: AI Summary Section */}
         <div className="hf-summary-section">
           <h4>Executive Summary</h4>
           <ul className="hf-summary-content">
             {aiLoading ? (
               <li style={{ color: "#6366f1" }}>⏳ Generating AI insights...</li>
             ) : aiBullets.length > 0 ? (
-              aiBullets.map((point, idx) => (
-                <li key={idx}>{point.replace(/^[-•]\s*/, "")}</li>
-              ))
+              aiBullets.map((point, idx) => <li key={idx}>{point.replace(/^[-•]\s*/, "")}</li>)
             ) : null}
           </ul>
         </div>

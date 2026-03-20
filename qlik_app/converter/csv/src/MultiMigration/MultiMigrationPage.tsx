@@ -430,6 +430,22 @@ export default function MultiMigrationPage() {
   };
 
   // Helper: Create DAX content for each table
+  const generateDAXContent = (tableName: string, rows: any[]) => {
+    if (!rows.length) return "";
+
+    const cols = Object.keys(rows[0]);
+    const daxLines = [] as string[];
+    daxLines.push(`-- DAX export skeleton for table: ${tableName}`);
+    daxLines.push(`-- Columns:`);
+    cols.forEach((c) => daxLines.push(`-- ${c}`));
+    daxLines.push(`\n-- Sample measure`);
+    daxLines.push(`[${tableName} Count] = COUNTROWS('${tableName}')`);
+
+    return daxLines.join("\n");
+  };
+
+  // Prevent unused warning (may be used in future)
+  void generateDAXContent;
 
   // Helper: Migrate tables to Power BI
   const handleMigrate = async () => {
