@@ -54,8 +54,8 @@ def test_convert_to_mquery_endpoint():
     print("TEST 1: /convert-to-mquery Endpoint")
     print("=" * 80)
     
-    url = "http://localhost:8000/api/migration/convert-to-mquery"
-    # url = "https://qliksense-stuv.onrender.com/api/migration/convert-to-mquery"
+    # url = "http://localhost:8000/api/migration/convert-to-mquery"
+    url = "https://qlikaiv2.onrender.com/api/migration/convert-to-mquery"
     
     try:
         response = requests.post(
@@ -105,8 +105,8 @@ def test_full_pipeline_endpoint():
     
     # You would need a real Qlik app ID
     # For now, we'll just check if the endpoint can be called
-    url = "http://localhost:8000/api/migration/full-pipeline"
-    # url = "https://qliksense-stuv.onrender.com/api/migration/full-pipeline"
+    # url = "http://localhost:8000/api/migration/full-pipeline"
+    url = "https://qlikaiv2.onrender.com/api/migration/full-pipeline"
 
     app_id = "764185f-b9cc-4dab-8f72-35e1ba8d1547"  # Example app ID
     
@@ -158,8 +158,8 @@ def test_download_endpoint():
     print("TEST 3: /download-mquery Endpoint")
     print("=" * 80)
     
-    url = "http://localhost:8000/api/migration/download-mquery"
-    # url = "https://qliksense-stuv.onrender.com/api/migration/download-mquery"
+    # url = "http://localhost:8000/api/migration/download-mquery"
+    url = "https://qlikaiv2.onrender.com/api/migration/download-mquery"
     
     # Generate a sample complete M query
     complete_m_query = """// Power Query - Converted from Qlik LoadScript

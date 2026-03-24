@@ -51,8 +51,8 @@ def run_complete_workflow(app_id):
     print("╚" + "═"*78 + "╝")
     print(f"{Color.END}\n")
     
-    api_base = "http://127.0.0.1:8000/api/migration"
-    # api_base = "https://qliksense-stuv.onrender.com/api/migration"
+    # api_base = "http://127.0.0.1:8000/api/migration"
+    api_base = "https://qlikaiv2.onrender.com/api/migration"
     
     # ============================================================================
     # STEP 1: FETCH FULL LOADSCRIPT

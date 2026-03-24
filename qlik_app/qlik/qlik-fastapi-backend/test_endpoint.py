@@ -30,8 +30,8 @@ if apps:
     print(f"\n✓ App: {app_id}")
     
     # Test the backend endpoint
-    backend_url = f"http://127.0.0.1:8000/applications/{app_id}/table/Ford_Dealer_Master/data"
-    # backend_url = f"https://qliksense-stuv.onrender.com/applications/{app_id}/table/Ford_Dealer_Master/data"
+    # backend_url = f"http://127.0.0.1:8000/applications/{app_id}/table/Ford_Dealer_Master/data"
+    backend_url = f"https://qlikaiv2.onrender.com/applications/{app_id}/table/Ford_Dealer_Master/data"
     print(f"✓ Endpoint: {backend_url}\n")
     
     try:

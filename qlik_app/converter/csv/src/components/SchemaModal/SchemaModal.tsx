@@ -35,7 +35,7 @@ export default function SchemaModal({
         // use local backend when running on localhost (dev); otherwise use deployed API
         const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
           ? 'http://127.0.0.1:8000'
-          : 'https://qliksense-stuv.onrender.com';
+          : 'https://qlikaiv2.onrender.com';
 
         const response = await fetch(
           `${apiBase}/api/app/${appId}/schema/base64`,

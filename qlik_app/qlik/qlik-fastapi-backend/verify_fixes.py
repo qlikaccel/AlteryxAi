@@ -68,7 +68,7 @@ def main():
         all_good = False
     
     if not check_file_content(migration_file,
-        '7219790d-ee43-4137-b293-e3c477a754f0',
+        '01b07483-f683-47bb-9c7c-8e3e5e3b7e11',
         "6. Correct workspace ID configured"):
         all_good = False
     

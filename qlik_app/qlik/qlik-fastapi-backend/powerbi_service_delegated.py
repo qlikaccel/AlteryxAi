@@ -15,7 +15,7 @@ ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=ENV_PATH)
 
 PBI_API_ROOT = "https://api.powerbi.com/v1.0/myorg"
-PBI_WORKSPACE_ID = os.getenv("POWERBI_WORKSPACE_ID", "7219790d-ee43-4137-b293-e3c477a754f0")
+PBI_WORKSPACE_ID = os.getenv("POWERBI_WORKSPACE_ID", "01b07483-f683-47bb-9c7c-8e3e5e3b7e11")
 
 
 class PowerBIAuthError(Exception):

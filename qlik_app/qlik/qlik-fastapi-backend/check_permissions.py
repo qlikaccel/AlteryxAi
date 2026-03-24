@@ -46,7 +46,7 @@ def check_permissions():
             print("\n🔧 REQUIRED ACTIONS:")
             print("1. Go to Azure Portal: https://portal.azure.com")
             print("2. Navigate to Azure Active Directory")
-            print("3. Find your app registration (Client ID: 6413a69e-b951-4d7f-9c8e-af5f040ca3ea)")
+            print("3. Find your app registration (Client ID: 24a540bc-c770-4e07-a92d-503a1dd7ac80)")
             print("4. Go to 'API permissions'")
             print("5. Add the following permissions:")
             print("   - https://analysis.windows.net/powerbi/api/Dataset.ReadWrite.All")
@@ -64,7 +64,7 @@ def check_permissions():
             print("The service principal doesn't have access to the specified workspace.")
             print("\n🔧 REQUIRED ACTIONS:")
             print("1. Go to Power BI Service: https://app.powerbi.com")
-            print("2. Navigate to the workspace: 7219790d-ee43-4137-b293-e3c477a754f0")
+            print("2. Navigate to the workspace: 01b07483-f683-47bb-9c7c-8e3e5e3b7e11")
             print("3. Add the service principal as a member or admin")
             print("4. Use the service principal's object ID or app ID")
     

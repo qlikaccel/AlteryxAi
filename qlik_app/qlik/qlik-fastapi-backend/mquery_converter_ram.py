@@ -1229,29 +1229,6 @@ def _infer_type_from_name(col_name: str) -> str:
     return "type text"
 
 
-def _wrap_columns_in_brackets(expr: str) -> str:
-    """
-    Convert bare column names in an expression to bracket-wrapped form.
-    E.g., "quantity * amount" -> "[quantity] * [amount]"
-    Preserves existing brackets and handles special characters.
-    """
-    # Skip if already wrapped or empty
-    if not expr or "[" in expr:
-        return expr
-    
-    # Match bare identifiers (alphanumeric + underscore) that aren't already bracketed
-    # and wrap them in brackets for Power Query M lambda expressions
-    result = re.sub(
-        r'\b([A-Za-z_][A-Za-z0-9_]*)\b(?![\]])',
-        r'[\1]',
-        expr
-    )
-    # Clean up double-wrapped cases like [[col]]
-    result = re.sub(r'\[\[([^\[\]]+)\]\]', r'[\1]', result)
-    
-    return result
-
-
 def _m_type(qlik_type: str, col_name: str = "") -> str:
     if "-" in col_name:
         return "type text"
@@ -1464,6 +1441,170 @@ def _build_azure_blob_m(
 # MAIN CONVERTER
 # ─────────────────────────────────────────────────────────────────────────────
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# QLIK → M EXPRESSION TRANSLATOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+_QLIK_FUNC_TO_M: dict = {
+    "round": "Number.Round", "floor": "Number.RoundDown",
+    "ceil": "Number.RoundUp", "ceiling": "Number.RoundUp",
+    "abs": "Number.Abs", "sqrt": "Number.Sqrt", "mod": "Number.Mod",
+    "pow": "Number.Power", "log": "Number.Log", "log10": "Number.Log10",
+    "exp": "Number.Exp", "sign": "Number.Sign", "rangesum": "List.Sum",
+    "len": "Text.Length", "lower": "Text.Lower", "upper": "Text.Upper",
+    "ltrim": "Text.TrimStart", "rtrim": "Text.TrimEnd", "trim": "Text.Trim",
+    "left": "Text.Start", "right": "Text.End", "mid": "Text.Middle",
+    "index": "Text.PositionOf", "replace": "Text.Replace",
+    "text": "Text.From", "num": "Number.From",
+    "year": "Date.Year", "month": "Date.Month", "day": "Date.Day",
+    "today": "DateTime.LocalNow", "now": "DateTime.LocalNow",
+    "date": "Date.From", "num#": "Number.From", "date#": "Date.From",
+    "timestamp#": "DateTime.From", "time#": "Time.From",
+}
+
+
+def translate_qlik_expr_to_m(expr: str) -> str:
+    """Translate a Qlik load script expression to a Power Query M expression."""
+    from typing import Optional as _Opt
+    expr = expr.strip()
+    if not expr:
+        return "null"
+    upper = expr.upper()
+    if upper.startswith("APPLYMAP"):
+        return "/* APPLYMAP — convert to Table.Join or use a lookup table */ null"
+    if upper.startswith("AGGR(") or upper.startswith("SUM(") or upper.startswith("COUNT("):
+        return f"/* Aggregation not valid in row context: {expr} */ null"
+    if "{<" in expr:
+        return f"/* Set analysis not supported in M row context: {expr} */ null"
+    if re.match(r"^null\s*\(\s*\)$", expr, re.I):
+        return "null"
+    if_match = re.match(r"^IF\s*\((.+)\)$", expr, re.I)
+    if if_match:
+        return _translate_if_qlik(if_match.group(1))
+    tokens = _tokenize_qlik(expr)
+    return _translate_tokens_qlik(tokens)
+
+
+def _translate_if_qlik(args_str: str) -> str:
+    parts = _split_top_level_qlik(args_str, ",")
+    if len(parts) < 2:
+        return f"/* malformed IF: {args_str} */ null"
+    condition = translate_qlik_expr_to_m(parts[0].strip())
+    true_val  = translate_qlik_expr_to_m(parts[1].strip())
+    false_val = translate_qlik_expr_to_m(parts[2].strip()) if len(parts) > 2 else "null"
+    return f"if {condition} then {true_val} else {false_val}"
+
+
+def _split_top_level_qlik(s: str, sep: str) -> list:
+    parts, depth, current = [], 0, []
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if ch in "([":   depth += 1; current.append(ch)
+        elif ch in ")]": depth -= 1; current.append(ch)
+        elif s[i:i+len(sep)] == sep and depth == 0:
+            parts.append("".join(current)); current = []; i += len(sep); continue
+        else: current.append(ch)
+        i += 1
+    if current: parts.append("".join(current))
+    return parts
+
+
+def _tokenize_qlik(expr: str) -> list:
+    tokens = []
+    i = 0
+    while i < len(expr):
+        ch = expr[i]
+        if ch == "[":
+            j = expr.index("]", i) if "]" in expr[i:] else len(expr)
+            tokens.append({"type": "bracket_col", "value": expr[i:j+1]}); i = j + 1
+        elif ch == "'":
+            j = i + 1
+            while j < len(expr):
+                if expr[j] == "'" and (j+1 >= len(expr) or expr[j+1] != "'"): break
+                if expr[j] == "'" and expr[j+1] == "'": j += 2; continue
+                j += 1
+            tokens.append({"type": "single_quote", "value": expr[i:j+1]}); i = j + 1
+        elif ch == '"':
+            j = i + 1
+            while j < len(expr) and expr[j] != '"': j += 1
+            tokens.append({"type": "double_quote", "value": expr[i:j+1]}); i = j + 1
+        elif ch.isdigit() or (ch == '-' and i+1 < len(expr) and expr[i+1].isdigit()
+                               and (not tokens or tokens[-1]["type"] == "operator")):
+            j = i + 1
+            while j < len(expr) and (expr[j].isdigit() or expr[j] == '.'): j += 1
+            tokens.append({"type": "number", "value": expr[i:j]}); i = j
+        elif expr[i:i+2] in ("<>", "<=", ">="):
+            tokens.append({"type": "operator", "value": expr[i:i+2]}); i += 2
+        elif ch in "+-*/&=<>(),":
+            tokens.append({"type": "operator", "value": ch}); i += 1
+        elif ch in " \t\n\r":
+            j = i
+            while j < len(expr) and expr[j] in " \t\n\r": j += 1
+            tokens.append({"type": "whitespace", "value": " "}); i = j
+        elif ch.isalpha() or ch == "_":
+            j = i
+            while j < len(expr) and (expr[j].isalnum() or expr[j] in "_#"): j += 1
+            tokens.append({"type": "identifier", "value": expr[i:j]}); i = j
+        else:
+            tokens.append({"type": "operator", "value": ch}); i += 1
+    return tokens
+
+
+def _translate_tokens_qlik(tokens: list) -> str:
+    result = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        t, v = tok["type"], tok["value"]
+        if t == "bracket_col":
+            result.append(v)
+        elif t == "single_quote":
+            inner = v[1:-1].replace("''", '"')
+            result.append(f'"{inner}"')
+        elif t in ("double_quote", "number", "operator", "whitespace"):
+            result.append(v)
+        elif t == "identifier":
+            upper_v = v.upper()
+            if upper_v in ("AND", "OR", "NOT", "TRUE", "FALSE"):
+                result.append(v.lower())
+            elif upper_v == "NULL":
+                result.append("null")
+            elif v.lower() in _QLIK_FUNC_TO_M:
+                m_func = _QLIK_FUNC_TO_M[v.lower()]
+                nws = next((j for j in range(i+1, len(tokens)) if tokens[j]["type"] != "whitespace"), None)
+                if nws is not None and tokens[nws]["value"] == "(":
+                    inner, consumed = _collect_paren_qlik(tokens, nws)
+                    args = ", ".join(translate_qlik_expr_to_m(p.strip()) for p in _split_top_level_qlik(inner, ","))
+                    result.append(f"{m_func}({args})")
+                    i = consumed
+                    i += 1; continue
+                result.append(m_func)
+            else:
+                result.append(f"[{v}]")
+        i += 1
+    return "".join(result)
+
+
+def _collect_paren_qlik(tokens: list, open_idx: int):
+    depth = 0; inner = []; i = open_idx
+    while i < len(tokens):
+        v = tokens[i]["value"]
+        if v == "(":
+            depth += 1
+            if depth > 1: inner.append(v)
+        elif v == ")":
+            depth -= 1
+            if depth == 0: return "".join(inner), i
+            else: inner.append(v)
+        else:
+            inner.append(v if tokens[i]["type"] != "single_quote"
+                         else f'"{tokens[i]["value"][1:-1]}"')
+        i += 1
+    return "".join(inner), i
+
+
 class MQueryConverter:
 
     # ============================================================
@@ -1536,19 +1677,13 @@ class MQueryConverter:
         pairs = []
         for f in fields:
             expr = f.get("expression", "")
-            alias = f.get("alias", "")
             if not expr or expr == "*":
                 continue
-            
-            # SKIP ApplyMap and other function-based fields entirely
-            # They will be created by the ApplyMap join+expand logic, NOT by type transform
             if "(" in expr or expr.upper().startswith("APPLYMAP") or expr.upper().startswith("IF"):
                 continue
-            
             # Skip arithmetic expressions (calculated columns — handled separately)
             if re.search(r'[\+\-\*\/]', expr):
                 continue
-            
             if expr.startswith("[") and expr.endswith("]"):
                 col_name = expr[1:-1]
             elif re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", expr):
@@ -1580,18 +1715,10 @@ class MQueryConverter:
 
         pairs = []
         for f in typed:
-            # Skip ApplyMap and calculated fields — they're handled separately
-            expr = f.get("expression", "") or f.get("name", "")
-            if "(" in expr or expr.upper().startswith("APPLYMAP") or expr.upper().startswith("IF"):
-                continue
-            
             raw_name = f.get("alias") or f["name"]
             col_name = _strip_qlik_qualifier(raw_name)
             m_type = _m_type(f.get("type", "string"), raw_name)
             pairs.append(f'{{"{col_name}", {m_type}}}')
-
-        if not pairs:
-            return "", previous_step
 
         pairs_str = ",\n        ".join(pairs)
         transform = (
@@ -2009,10 +2136,9 @@ class MQueryConverter:
         delimiter = opts.get("delimiter", ",")
         encoding  = 65001
 
-        # ── Separate plain columns, ApplyMap, and calculated ones ───────────────
+        # ── Separate plain columns from calculated ones ───────────────────────
         plain_fields = []
-        applymap_fields = []  # ApplyMap fields need special handling
-        calc_fields  = []     # Arithmetic expressions
+        calc_fields  = []   # list of (alias, m_expression)
 
         for f in fields:
             if f["name"] == "*":
@@ -2020,13 +2146,10 @@ class MQueryConverter:
             expr  = f.get("expression", "") or f.get("name", "")
             alias = f.get("alias") or f["name"]
 
-            # ApplyMap requires loading the mapping table and doing a join
-            if expr.upper().startswith("APPLYMAP"):
-                applymap_fields.append((alias, expr))
-            # Calculated: arithmetic operators
-            elif re.search(r'[\+\-\*\/]', expr):
-                m_expr = expr.strip()
-                m_expr = _wrap_columns_in_brackets(m_expr)
+            # Calculated: contains arithmetic operators
+            if re.search(r'[\+\-\*\/]', expr):
+                # Translate Qlik expression to Power Query M
+                m_expr = translate_qlik_expr_to_m(expr)
                 calc_fields.append((alias, m_expr))
             else:
                 plain_fields.append(f)
@@ -2034,82 +2157,11 @@ class MQueryConverter:
         # ── Build type transform for plain columns ────────────────────────────
         sp_transform, sp_final = self._apply_types_as_is(plain_fields, "PromotedHeaders")
 
-        # ── Build ApplyMap join logic (CORRECT approach from screenshot) ──────
-        mapping_steps = ""
+        # ── Build Table.AddColumn steps for calculated fields ─────────────────
+        add_col_steps = ""
         prev_step = sp_final
         last_step = sp_final
 
-        for alias, expr in applymap_fields:
-            # Parse: ApplyMap('RegionMap', city, 'Unknown')
-            # More flexible regex to handle variations in quotes, spacing, and parameter formats
-            m = re.search(
-                r"APPLYMAP\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*(\w+)\s*,\s*['\"]([^'\"]*)['\"]?\s*\)",
-                expr,
-                re.IGNORECASE
-            )
-            if m:
-                map_table = m.group(1).strip()      # e.g., 'RegionMap'
-                source_col = m.group(2).strip()     # e.g., 'city'
-                default_val = m.group(3).strip()    # e.g., 'Unknown'
-                
-                # Build the nested join + expand pattern with GENERIC column detection
-                # (dynamically expands all non-key columns from the mapping table)
-                merge_step = f"Merged_{map_table}"
-                expand_step = f"Expanded_{map_table}"
-                replace_step = f"Final_{alias}"
-                
-                # GENERIC: Load table headers, then expand all columns except the key column
-                # This replaces the hardcoded "region" with a dynamic approach
-                mapping_steps += (
-                    f",\n    // Load {map_table} for ApplyMap lookup — GENERIC\n"
-                    f"    {map_table}Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),\n"
-                    f"    {map_table}File = Table.SelectRows({map_table}Source, each Text.Lower([Name]) = Text.Lower(\"dim_{map_table.lower()}.csv\")),\n"
-                    f"    {map_table}Csv = Csv.Document({map_table}File{{0}}[Content], [Delimiter=\",\", Encoding=65001]),\n"
-                    f"    {map_table}Table = Table.PromoteHeaders({map_table}Csv),\n"
-                    f"    {map_table}Cols = Table.ColumnNames({map_table}Table),\n"
-                    f"    {map_table}ExpandCols = List.Except({map_table}Cols, {{\"{source_col}\"}}),\n"
-                    f"    \n"
-                    f"    {merge_step} = Table.NestedJoin(\n"
-                    f"        {prev_step},\n"
-                    f"        {{\"{source_col}\"}},\n"
-                    f"        {map_table}Table,\n"
-                    f"        {{\"{source_col}\"}},\n"
-                    f"        \"{map_table}\",\n"
-                    f"        JoinKind.LeftOuter\n"
-                    f"    ),\n"
-                    f"    {expand_step} = Table.ExpandTableColumn(\n"
-                    f"        {merge_step},\n"
-                    f"        \"{map_table}\",\n"
-                    f"        {map_table}ExpandCols,\n"
-                    f"        {map_table}ExpandCols\n"
-                    f"    ),\n"
-                    # Rename first expanded column to the alias if there's only one output column
-                    f"    {replace_step} = if List.Count({map_table}ExpandCols) = 1\n"
-                    f"        then Table.RenameColumns(\n"
-                    f"            Table.ReplaceValue(\n"
-                    f"                {expand_step},\n"
-                    f"                null,\n"
-                    f"                \"{default_val}\",\n"
-                    f"                Replacer.ReplaceValue,\n"
-                    f"                {map_table}ExpandCols\n"
-                    f"            ),\n"
-                    f"            {{{{{map_table}ExpandCols{{0}}, \"{alias}\"}}}}\n"
-                    f"        )\n"
-                    f"        else Table.ReplaceValue(\n"
-                    f"            {expand_step},\n"
-                    f"            null,\n"
-                    f"            \"{default_val}\",\n"
-                    f"            Replacer.ReplaceValue,\n"
-                    f"            {map_table}ExpandCols\n"
-                    f"        )"
-                )
-                prev_step = replace_step
-                last_step = replace_step
-
-        combined_transform = sp_transform + mapping_steps
-
-        # ── Build Table.AddColumn steps for calculated fields ──────────────────
-        add_col_steps = ""
         for alias, expr in calc_fields:
             step_name = f"Add_{re.sub(r'[^A-Za-z0-9_]', '_', alias)}"
             add_col_steps += (
@@ -2123,7 +2175,7 @@ class MQueryConverter:
             prev_step = step_name
             last_step = step_name
 
-        combined_transform = combined_transform + add_col_steps
+        combined_transform = sp_transform + add_col_steps
 
         # ── Build the M query based on the data source ────────────────────────
         if _is_sharepoint_url(base_path):

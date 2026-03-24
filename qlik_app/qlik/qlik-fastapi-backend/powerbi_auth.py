@@ -17,8 +17,8 @@ ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=ENV_PATH)
 
 TENANT_ID = os.getenv("POWERBI_TENANT_ID", "e912ee28-32ed-4aed-9332-e5d3c6cea258")
-CLIENT_ID = os.getenv("POWERBI_CLIENT_ID", "6413a69e-b951-4d7f-9c8e-af5f040ca3ea")
-WORKSPACE_ID = os.getenv("POWERBI_WORKSPACE_ID", "7219790d-ee43-4137-b293-e3c477a754f0")
+CLIENT_ID = os.getenv("POWERBI_CLIENT_ID", "24a540bc-c770-4e07-a92d-503a1dd7ac80")
+WORKSPACE_ID = os.getenv("POWERBI_WORKSPACE_ID", "01b07483-f683-47bb-9c7c-8e3e5e3b7e11")
 
 AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
 CLIENT_SECRET = os.getenv("POWERBI_CLIENT_SECRET", "")

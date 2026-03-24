@@ -203,7 +203,7 @@ export default function PublishPage() {
         try {
           const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
             ? 'http://127.0.0.1:8000'
-            : 'https://qliksense-stuv.onrender.com';
+            : 'https://qlikaiv2.onrender.com';
 
           const mqueryData = state.mqueryData || {};
           const publishStartTime = new Date();
@@ -372,8 +372,8 @@ export default function PublishPage() {
     form.append("has_csv", hasCSV ? "true" : "false");
     form.append("has_dax", hasDAX ? "true" : "false");
 
-    const res = await fetch("http://localhost:8000/powerbi/process", {
-    // const res = await fetch("https://qliksense-stuv.onrender.com/powerbi/process", {
+    // const res = await fetch("http://localhost:8000/powerbi/process", {
+    const res = await fetch("https://qlikaiv2.onrender.com/powerbi/process", {
     
       method: "POST",
       body: form,
@@ -412,8 +412,8 @@ export default function PublishPage() {
       setStatusBoxes({ columns: true, powerbi: false, finished: false });
       console.log("🔐 Step 2: Initiating Power BI authentication...");
       
-      const authRes = await fetch("http://localhost:8000/powerbi/login/acquire-token", {
-      // const authRes = await fetch("https://qliksense-stuv.onrender.com/powerbi/login/acquire-token", {
+      // const authRes = await fetch("http://localhost:8000/powerbi/login/acquire-token", {
+      const authRes = await fetch("https://qlikaiv2.onrender.com/powerbi/login/acquire-token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -437,8 +437,8 @@ export default function PublishPage() {
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         try {
-          const statusRes = await fetch("http://localhost:8000/powerbi/login/status", {
-          // const statusRes = await fetch("https://qliksense-stuv.onrender.com/powerbi/login/status", {
+          // const statusRes = await fetch("http://localhost:8000/powerbi/login/status", {
+          const statusRes = await fetch("https://qlikaiv2.onrender.com/powerbi/login/status", {
             method: "POST",
           });
           const statusData = await statusRes.json();
@@ -552,7 +552,7 @@ export default function PublishPage() {
 
         const batchApiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
           ? 'http://localhost:8000'
-          : 'https://qliksense-stuv.onrender.com';
+          : 'https://qlikaiv2.onrender.com';
 
         const batchRes = await fetch(`${batchApiBase}/api/migration/publish-tables`, {
           method: "POST",
@@ -789,8 +789,8 @@ export default function PublishPage() {
       console.log("📤 Sending to backend:", JSON.stringify(payload, null, 2));
 
       // Download PDF
-      const response = await fetch('http://localhost:8000/report/download-pdf', {
-      // const response = await fetch('https://qliksense-stuv.onrender.com/report/download-pdf', {
+      // const response = await fetch('http://localhost:8000/report/download-pdf', {
+      const response = await fetch('https://qlikaiv2.onrender.com/report/download-pdf', {
         method: 'POST',
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -942,8 +942,8 @@ export default function PublishPage() {
         }
       }
 
-      const res = await fetch("http://localhost:8000/api/migration/publish-semantic-model", {
-      // const res = await fetch("https://qliksense-stuv.onrender.com/api/migration/publish-semantic-model", {
+      // const res = await fetch("http://localhost:8000/api/migration/publish-semantic-model", {
+      const res = await fetch("https://qlikaiv2.onrender.com/api/migration/publish-semantic-model", {
         method: "POST",
         body: form,
       });
@@ -992,8 +992,8 @@ export default function PublishPage() {
         publish_mode: "desktop_cloud",
       });
 
-      const res = await fetch(`http://localhost:8000/api/migration/publish-table?${params.toString()}`, {
-      // const res = await fetch(`https://qliksense-stuv.onrender.com/api/migration/publish-table?${params.toString()}`, {
+      // const res = await fetch(`http://localhost:8000/api/migration/publish-table?${params.toString()}`, {
+      const res = await fetch(`https://qlikaiv2.onrender.com/api/migration/publish-table?${params.toString()}`, {
         method: "POST",
       });
 

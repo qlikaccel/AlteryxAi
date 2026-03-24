@@ -475,6 +475,13 @@ PAGE WRAP
   border: 1px solid #fca5a5;
 }
 
+.source-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1) !important;
+  border-color: #667eea !important;
+  background: #fff !important;
+}
+
 .summary-table-container {
   width: 100%;
   overflow-x: auto;
@@ -568,7 +575,7 @@ PAGE WRAP
 } */
  
 .summary-report{
-  height: 60vh;
+  height: 80vh;
 }
  
  
@@ -1717,7 +1724,7 @@ PAGE WRAP
 .tab-content {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .summary-tab {

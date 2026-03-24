@@ -1192,7 +1192,6 @@ def _infer_field_type(expression: str) -> str:
         return 'mixed'
     if re.search(r'\bTRUE\b|\bFALSE\b', e):
         return 'boolean'
-    # if re.search(r'[\+\-\*\/]', e) and not re.search(r'[A-Z].*[A-Z]', e):
     if re.search(r'[\+\-\*\/]', e):
         return 'number'
 
@@ -1205,8 +1204,7 @@ def _infer_field_type(expression: str) -> str:
     # Date/time suffixes
     if re.search(r'(DATE|TIME|TIMESTAMP|CREATED|UPDATED|MODIFIED|DOB|BIRTH)$', name):
         return 'date'
-    # BUT: exclude fields ending with _id (they are keys, not actual dates)
-    if re.search(r'^(DATE|TIME|TIMESTAMP)', name) and not name.endswith('_ID'):
+    if re.search(r'^(DATE|TIME|TIMESTAMP)', name):
         return 'date'
 
     # Integer — year, count, age, rank, sequence
@@ -1718,7 +1716,7 @@ class LoadScriptParser:
         # ── Pass 2: collect source paths of tables that will be dropped ───────
         # We need to know WHERE Sales_Raw was loaded from (e.g. fact_sales_1M.csv)
         # so that the resident table (Sales) can inline the same CSV source.
-        dropped_table_paths: Dict[str, str] = {}   # table_name → source_path
+        dropped_table_paths: Dict[str, dict] = {}   # table_name → {source_path, delimiter, encoding, sheet}
         for stmt in stmts:
             if re.search(r'\bMAPPING\s+LOAD\b', stmt, re.IGNORECASE):
                 continue
@@ -1726,7 +1724,12 @@ class LoadScriptParser:
                 continue
             td_temp = _parse_single_statement(stmt)
             if td_temp and td_temp.get('name') in dropped_tables:
-                dropped_table_paths[td_temp['name']] = td_temp.get('source_path', '')
+                dropped_table_paths[td_temp['name']] = {
+                    'source_path': td_temp.get('source_path', ''),
+                    'delimiter':   td_temp.get('options', {}).get('delimiter', ','),
+                    'encoding':    td_temp.get('options', {}).get('encoding', ''),
+                    'sheet':       td_temp.get('options', {}).get('sheet', ''),
+                }
 
         logger.debug(f"Dropped tables: {dropped_tables}")
         logger.debug(f"Dropped table paths: {dropped_table_paths}")
@@ -1757,8 +1760,16 @@ class LoadScriptParser:
             if td['source_type'] == 'resident':
                 resident_src = td['options'].get('resident_source', td['source_path'])
                 if resident_src in dropped_tables:
+                    src_info = dropped_table_paths.get(resident_src, {})
                     td['options']['is_dropped_resident'] = True
-                    td['options']['raw_source_path'] = dropped_table_paths.get(resident_src, '')
+                    td['options']['raw_source_path'] = src_info.get('source_path', '') if isinstance(src_info, dict) else src_info
+                    if isinstance(src_info, dict):
+                        if src_info.get('delimiter'):
+                            td['options']['delimiter'] = src_info['delimiter']
+                        if src_info.get('encoding'):
+                            td['options']['encoding'] = src_info['encoding']
+                        if src_info.get('sheet'):
+                            td['options']['sheet'] = src_info['sheet']
                     logger.info(
                         f"   ℹ️  Table '{name}' is RESIDENT of dropped table '{resident_src}'. "
                         f"raw_source_path='{td['options']['raw_source_path']}'"

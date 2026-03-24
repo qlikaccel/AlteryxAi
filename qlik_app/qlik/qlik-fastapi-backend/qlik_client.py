@@ -12,10 +12,10 @@ class QlikClient:
         # ONLY use API Key authentication - NO OAuth fallback
         self.api_key = (api_key or os.getenv("QLIK_API_KEY") or "").strip()
         self.tenant_url = (tenant_url or os.getenv("QLIK_TENANT_URL") or "").strip().rstrip("/")
-        self.api_base_url = (os.getenv("QLIK_API_BASE_URL") or "").strip().rstrip("/")
-
-        if not self.api_base_url and self.tenant_url:
+        if self.tenant_url:
             self.api_base_url = f"{self.tenant_url}/api/v1"
+        else:
+            self.api_base_url = (os.getenv("QLIK_API_BASE_URL") or "").strip().rstrip("/")
 
         if not self.api_base_url:
             raise ValueError("QLIK_API_BASE_URL or QLIK_TENANT_URL is not set in environment variables")
@@ -40,7 +40,7 @@ class QlikClient:
             print(f"🔐 Authentication failed: 401 Unauthorized")
             print(f"✅ Ensure QLIK_API_KEY in .env is valid and not expired")
             print(f"✅ Generate a NEW API key from Qlik Cloud console:")
-            print(f"   https://c8vlzp3sx6akvnh.in.qlikcloud.com/console")
+            print(f"   https://vtcej92i1jgxph5.in.qlikcloud.com/console")
             print(f"   → Admin → API Keys → Create New")
             print(f"   → Add scopes: apps:read, data:read, spaces:read")
 

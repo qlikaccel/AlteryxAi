@@ -23,7 +23,7 @@ def show_fix_explanation():
     operation_id = "15dc4808-1cc5-4c03-b48f-a5461d421c06"  # From Location header
     semantic_model_id = "50ae6096-4f72-46fb-a666-f101a42c761f"  # Real model
     dataset_name = "Model_Master_Dataset"
-    workspace_id = "7219790d-ee43-4137-b293-e3c477a754f0"
+    workspace_id = "01b07483-f683-47bb-9c7c-8e3e5e3b7e11"
     
     logger.info("\n📊 SCENARIO: Creating and refreshing semantic model")
     logger.info("-" * 70)

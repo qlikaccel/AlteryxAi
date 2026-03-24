@@ -9,9 +9,9 @@ import pandas as pd
 load_dotenv()
 
 class QlikDataAccess:
-    def __init__(self):
-        self.api_key = os.getenv('QLIK_API_KEY')
-        self.tenant_url = os.getenv('QLIK_TENANT_URL')
+    def __init__(self, api_key: Optional[str] = None, tenant_url: Optional[str] = None):
+        self.api_key = api_key or os.getenv('QLIK_API_KEY')
+        self.tenant_url = (tenant_url or os.getenv('QLIK_TENANT_URL') or "").rstrip("/")
         self.api_base_url = f"{self.tenant_url}/api/v1"
         
         self.headers = {

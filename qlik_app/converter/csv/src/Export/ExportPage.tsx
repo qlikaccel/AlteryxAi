@@ -753,7 +753,7 @@ export default function ExportPage() {
           <div className="checkbox-row">
             <label>
               <input type="checkbox" disabled />
-              📄 Export as CSV
+              📄  Go to Export
             </label>
           </div>
 

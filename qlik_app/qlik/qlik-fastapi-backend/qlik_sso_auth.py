@@ -23,7 +23,7 @@ router = APIRouter()
 # OAuth Configuration
 QLIK_CLIENT_ID = os.getenv('QLIK_CLIENT_ID', '')
 QLIK_CLIENT_SECRET = os.getenv('QLIK_CLIENT_SECRET', '')
-QLIK_TENANT_URL = os.getenv('QLIK_TENANT_URL', 'https://c8vlzp3sx6akvnh.in.qlikcloud.com')
+QLIK_TENANT_URL = os.getenv('QLIK_TENANT_URL', 'https://vtcej92i1jgxph5.in.qlikcloud.com')
 QLIK_API_BASE_URL = os.getenv('QLIK_API_BASE_URL', f'{QLIK_TENANT_URL}/api/v1')
 
 # Generate a random string for state parameter
