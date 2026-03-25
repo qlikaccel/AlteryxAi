@@ -440,7 +440,7 @@ export default function PublishPage() {
         try {
           // const statusRes = await fetch("http://localhost:8000/powerbi/login/status", {
           const apiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-          const statusRes = await fetch(`${apiBase}/api/powerbi/login/status`, {
+          const statusRes = await fetch(`${apiBase}/powerbi/login/status`, {
             method: "POST",
           });
           const statusData = await statusRes.json();
