@@ -201,10 +201,10 @@ export default function PublishPage() {
       // Start the actual publishing API call AFTER step 4 begins
       const publishTimer = setTimeout(async () => {
         try {
-          const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
-            ? 'http://127.0.0.1:8000'
-            : 'https://qlikai-app-ltmrv.ondigitalocean.app';
-
+          //const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
+          //  ? 'http://127.0.0.1:8000'
+          //  : 'https://qlikai-app-ltmrv.ondigitalocean.app';
+          const apiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
           const mqueryData = state.mqueryData || {};
           const publishStartTime = new Date();
           
