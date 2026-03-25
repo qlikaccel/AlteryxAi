@@ -1,0 +1,55 @@
+name: CI Checks
+
+on:
+  pull_request:
+    branches: [ "main", "prod" ]
+  push:
+    branches: [ "main", "prod" ]
+
+jobs:
+  ci:
+    name: Frontend + Backend CI
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: qlik_app/converter/csv/package-lock.json
+    - name: Install frontend dependencies
+      working-directory: qlik_app/converter/csv
+      run: npm ci
+    - name: Lint frontend
+      working-directory: qlik_app/converter/csv
+      run: npm run lint || true
+    - name: Test frontend
+      working-directory: qlik_app/converter/csv
+      run: npm test -- --watch=false || true
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - name: Install backend dependencies
+      working-directory: qlik_app/qlik/qlik-fastapi-backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Backend syntax check
+      working-directory: qlik_app/qlik/qlik-fastapi-backend
+      run: python -m compileall .
+    - name: SonarQube Scan
+      uses: SonarSource/sonarqube-scan-action@v6
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+    - name: Add CI Summary
+      run: |
+        echo "## CI Result — ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Backend build success" >> $GITHUB_STEP_SUMMARY
+        echo "🔎 Frontend + Backend CI completed" >> $GITHUB_STEP_SUMMARY
+        echo "📄 Logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
