@@ -515,8 +515,9 @@ export default function SummaryPage() {
         if (parseResult.status === "success") { scriptToConvert = parseResult; setParsedScript(parseResult); }
         else throw new Error("Failed to parse LoadScript");
       }
-      const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
-        ? 'http://127.0.0.1:8000' : 'https://qlikai-app-ltmrv.ondigitalocean.app';
+      //const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
+      //  ? 'http://127.0.0.1:8000' : 'https://qlikai-app-ltmrv.ondigitalocean.app';
+      const apiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
       const convertResponse = await fetch(`${apiBase}/api/migration/convert-to-mquery`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
