@@ -790,7 +790,8 @@ export default function PublishPage() {
 
       // Download PDF
       // const response = await fetch('http://localhost:8000/report/download-pdf', {
-      const response = await fetch('https://qlikai-app-ltmrv.ondigitalocean.app/report/download-pdf', {
+      const apiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const response = await fetch(`${apiBase}/api/report/download-pdf`, {  
         method: 'POST',
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
