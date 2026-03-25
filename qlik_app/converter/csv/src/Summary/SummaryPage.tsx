@@ -535,10 +535,10 @@ export default function SummaryPage() {
   const fetchAiSummary = async (tableRows: any[], tableName: string) => {
     if (!tableRows || tableRows.length === 0) return;
     setAiSummaryLoading(true); setAiSummaryError(""); setAiSummaryBullets([]);
+    
     try {
-      const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
-        ? 'http://127.0.0.1:8000' : 'https://qlikai-app-ltmrv.ondigitalocean.app';
-      const res = await fetch(`${apiBase}/chat/summary-hf`, {
+      const apiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const res = await fetch(`${apiBase}/api/chat/summary-hf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table_name: tableName, data: tableRows.slice(0, 500) }),
