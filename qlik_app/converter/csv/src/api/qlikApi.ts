@@ -454,33 +454,71 @@ export const parseLoadScript = async (loadscript: string) => {
 };
 
 // ✅ CONVERT TO MQUERY - Convert parsed Qlik LoadScript to M Query
+// export const convertToMQuery = async (
+//   parsedScriptJson: string,
+//   tableName?: string
+// ) => {
+//   try {
+//     const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+//     // const BASE_URL = import.meta.env.VITE_API_URL || "https://qlikai-app-ltmrv.ondigitalocean.app"
+
+//     console.log("📍 Converting to M Query for table:", tableName);
+
+//     let url = `${BASE_URL}/api/migration/convert-to-mquery?parsed_script_json=${encodeURIComponent(parsedScriptJson)}`;
+//     if (tableName) {
+//       url += `&table_name=${encodeURIComponent(tableName)}`;
+//     }
+
+//     const response = await fetch(url, {
+//       method: "POST",
+//       headers: {
+//         "Content-Type": "application/json",
+//       },
+//     });
+
+//     if (!response.ok) {
+//       const error = await response.json();
+//       throw new Error(error.detail || "Failed to convert to M Query");
+//     }
+
+//     const data = await response.json();
+//     console.log("✅ Converted to M Query successfully!", data);
+//     return data;
+//   } catch (error: any) {
+//     console.error("❌ Failed to convert to M Query:", error);
+//     throw error;
+//   }
+// };
+
+
+
+
+
 export const convertToMQuery = async (
   parsedScriptJson: string,
-  tableName?: string
+  tableName?: string,
+  basePath?: string
 ) => {
   try {
-    const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-    // const BASE_URL = import.meta.env.VITE_API_URL || "https://qlikai-app-ltmrv.ondigitalocean.app"
-
+    const BASE_URL = import.meta.env.VITE_API_URL || "https://qlikai-app-ltmrv.ondigitalocean.app";
+ 
     console.log("📍 Converting to M Query for table:", tableName);
-
-    let url = `${BASE_URL}/api/migration/convert-to-mquery?parsed_script_json=${encodeURIComponent(parsedScriptJson)}`;
-    if (tableName) {
-      url += `&table_name=${encodeURIComponent(tableName)}`;
-    }
-
-    const response = await fetch(url, {
+ 
+    const response = await fetch(`${BASE_URL}/api/migration/convert-to-mquery`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        parsed_script_json: parsedScriptJson,
+        table_name: tableName || "",
+        base_path: basePath || "",
+      }),
     });
-
+ 
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.detail || "Failed to convert to M Query");
     }
-
+ 
     const data = await response.json();
     console.log("✅ Converted to M Query successfully!", data);
     return data;
@@ -489,6 +527,3 @@ export const convertToMQuery = async (
     throw error;
   }
 };
-
-
-
