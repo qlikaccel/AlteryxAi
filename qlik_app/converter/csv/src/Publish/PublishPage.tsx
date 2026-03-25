@@ -373,7 +373,8 @@ export default function PublishPage() {
     form.append("has_dax", hasDAX ? "true" : "false");
 
     // const res = await fetch("http://localhost:8000/powerbi/process", {
-    const res = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/process", {
+    const apiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+    const res = await fetch(`${apiBase}/api/powerbi/process`, {
     
       method: "POST",
       body: form,
