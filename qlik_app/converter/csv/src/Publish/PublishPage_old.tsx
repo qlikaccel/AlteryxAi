@@ -199,7 +199,7 @@
 // //         try {
 // //           const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
 // //             ? 'http://127.0.0.1:8000'
-// //             : 'https://qlikaiv2.onrender.com';
+// //             : 'https://qlikai-app-ltmrv.ondigitalocean.app';
 
 // //           const mqueryData = state.mqueryData || {};
 // //           const publishStartTime = new Date();
@@ -369,7 +369,7 @@
 // //     form.append("has_dax", hasDAX ? "true" : "false");
 
 // //     const res = await fetch("http://localhost:8000/powerbi/process", {
-// //     // const res = await fetch("https://qlikaiv2.onrender.com/powerbi/process", {
+// //     // const res = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/process", {
     
 // //       method: "POST",
 // //       body: form,
@@ -409,7 +409,7 @@
 // //       console.log("🔐 Step 2: Initiating Power BI authentication...");
       
 // //       const authRes = await fetch("http://localhost:8000/powerbi/login/acquire-token", {
-// //       // const authRes = await fetch("https://qlikaiv2.onrender.com/powerbi/login/acquire-token", {
+// //       // const authRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/login/acquire-token", {
 // //         method: "POST",
 // //         headers: { "Content-Type": "application/json" },
 // //         body: JSON.stringify({}),
@@ -434,7 +434,7 @@
 
 // //         try {
 // //           const statusRes = await fetch("http://localhost:8000/powerbi/login/status", {
-// //           // const statusRes = await fetch("https://qlikaiv2.onrender.com/powerbi/login/status", {
+// //           // const statusRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/login/status", {
 // //             method: "POST",
 // //           });
 // //           const statusData = await statusRes.json();
@@ -517,7 +517,7 @@
 
 // //         console.log(`📤 Publishing ${batchTables.length} tables as single dataset with relationships...`);
 // //         const batchRes = await fetch("http://localhost:8000/powerbi/process-batch", {
-// //         // const batchRes = await fetch("https://qlikaiv2.onrender.com/powerbi/process-batch", {
+// //         // const batchRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/process-batch", {
 // //           method: "POST",
 // //           headers: { "Content-Type": "application/json" },
 // //           body: JSON.stringify({
@@ -754,7 +754,7 @@
 
 // //       // Download PDF
 // //       const response = await fetch('http://localhost:8000/report/download-pdf', {
-// //       // const response = await fetch('https://qlikaiv2.onrender.com/report/download-pdf', {
+// //       // const response = await fetch('https://qlikai-app-ltmrv.ondigitalocean.app/report/download-pdf', {
 // //         method: 'POST',
 // //         headers: { "Content-Type": "application/json" },
 // //         body: JSON.stringify(payload)
@@ -907,7 +907,7 @@
 // //       }
 
 // //       const res = await fetch("http://localhost:8000/api/migration/publish-semantic-model", {
-// //       // const res = await fetch("https://qlikaiv2.onrender.com/api/migration/publish-semantic-model", {
+// //       // const res = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/publish-semantic-model", {
 // //         method: "POST",
 // //         body: form,
 // //       });
@@ -954,7 +954,7 @@
 // //       });
 
 // //       const res = await fetch(`http://localhost:8000/api/migration/publish-table?${params.toString()}`, {
-// //       // const res = await fetch(`https://qlikaiv2.onrender.com/api/migration/publish-table?${params.toString()}`, {
+// //       // const res = await fetch(`https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/publish-table?${params.toString()}`, {
 // //         method: "POST",
 // //       });
 
@@ -1884,7 +1884,7 @@
 //         try {
 //           const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
 //             ? 'http://127.0.0.1:8000'
-//             : 'https://qlikaiv2.onrender.com';
+//             : 'https://qlikai-app-ltmrv.ondigitalocean.app';
 
 //           const mqueryData = state.mqueryData || {};
 //           const publishStartTime = new Date();
@@ -2054,7 +2054,7 @@
 //     form.append("has_dax", hasDAX ? "true" : "false");
 
 //     const res = await fetch("http://localhost:8000/powerbi/process", {
-//     // const res = await fetch("https://qlikaiv2.onrender.com/powerbi/process", {
+//     // const res = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/process", {
     
 //       method: "POST",
 //       body: form,
@@ -2094,7 +2094,7 @@
 //       console.log("🔐 Step 2: Initiating Power BI authentication...");
       
 //       const authRes = await fetch("http://localhost:8000/powerbi/login/acquire-token", {
-//       // const authRes = await fetch("https://qlikaiv2.onrender.com/powerbi/login/acquire-token", {
+//       // const authRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/login/acquire-token", {
 //         method: "POST",
 //         headers: { "Content-Type": "application/json" },
 //         body: JSON.stringify({}),
@@ -2119,7 +2119,7 @@
 
 //         try {
 //           const statusRes = await fetch("http://localhost:8000/powerbi/login/status", {
-//           // const statusRes = await fetch("https://qlikaiv2.onrender.com/powerbi/login/status", {
+//           // const statusRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/login/status", {
 //             method: "POST",
 //           });
 //           const statusData = await statusRes.json();
@@ -2216,7 +2216,7 @@
 
 //         console.log(`📤 Publishing ${batchTables.length} tables as single dataset...`);
 //         const batchRes = await fetch("http://localhost:8000/powerbi/process-batch", {
-//         // const batchRes = await fetch("https://qlikaiv2.onrender.com/powerbi/process-batch", {
+//         // const batchRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/process-batch", {
 //           method: "POST",
 //           headers: { "Content-Type": "application/json" },
 //           body: JSON.stringify({
@@ -2468,7 +2468,7 @@
 
 //       // Download PDF
 //       const response = await fetch('http://localhost:8000/report/download-pdf', {
-//       // const response = await fetch('https://qlikaiv2.onrender.com/report/download-pdf', {
+//       // const response = await fetch('https://qlikai-app-ltmrv.ondigitalocean.app/report/download-pdf', {
 //         method: 'POST',
 //         headers: { "Content-Type": "application/json" },
 //         body: JSON.stringify(payload)
@@ -2621,7 +2621,7 @@
 //       }
 
 //       const res = await fetch("http://localhost:8000/api/migration/publish-semantic-model", {
-//       // const res = await fetch("https://qlikaiv2.onrender.com/api/migration/publish-semantic-model", {
+//       // const res = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/publish-semantic-model", {
 //         method: "POST",
 //         body: form,
 //       });
@@ -2668,7 +2668,7 @@
 //       });
 
 //       const res = await fetch(`http://localhost:8000/api/migration/publish-table?${params.toString()}`, {
-//       // const res = await fetch(`https://qlikaiv2.onrender.com/api/migration/publish-table?${params.toString()}`, {
+//       // const res = await fetch(`https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/publish-table?${params.toString()}`, {
 //         method: "POST",
 //       });
 
@@ -3633,7 +3633,7 @@
 //         try {
 //           const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
 //             ? 'http://127.0.0.1:8000'
-//             : 'https://qlikaiv2.onrender.com';
+//             : 'https://qlikai-app-ltmrv.ondigitalocean.app';
 
 //           const mqueryData = state.mqueryData || {};
 //           const publishStartTime = new Date();
@@ -3803,7 +3803,7 @@
 //     form.append("has_dax", hasDAX ? "true" : "false");
 
 //     const res = await fetch("http://localhost:8000/powerbi/process", {
-//     // const res = await fetch("https://qlikaiv2.onrender.com/powerbi/process", {
+//     // const res = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/process", {
     
 //       method: "POST",
 //       body: form,
@@ -3843,7 +3843,7 @@
 //       console.log("🔐 Step 2: Initiating Power BI authentication...");
       
 //       const authRes = await fetch("http://localhost:8000/powerbi/login/acquire-token", {
-//       // const authRes = await fetch("https://qlikaiv2.onrender.com/powerbi/login/acquire-token", {
+//       // const authRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/login/acquire-token", {
 //         method: "POST",
 //         headers: { "Content-Type": "application/json" },
 //         body: JSON.stringify({}),
@@ -3868,7 +3868,7 @@
 
 //         try {
 //           const statusRes = await fetch("http://localhost:8000/powerbi/login/status", {
-//           // const statusRes = await fetch("https://qlikaiv2.onrender.com/powerbi/login/status", {
+//           // const statusRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/login/status", {
 //             method: "POST",
 //           });
 //           const statusData = await statusRes.json();
@@ -3951,7 +3951,7 @@
 
 //         console.log(`📤 Publishing ${batchTables.length} tables as single dataset with relationships...`);
 //         const batchRes = await fetch("http://localhost:8000/powerbi/process-batch", {
-//         // const batchRes = await fetch("https://qlikaiv2.onrender.com/powerbi/process-batch", {
+//         // const batchRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/process-batch", {
 //           method: "POST",
 //           headers: { "Content-Type": "application/json" },
 //           body: JSON.stringify({
@@ -4188,7 +4188,7 @@
 
 //       // Download PDF
 //       const response = await fetch('http://localhost:8000/report/download-pdf', {
-//       // const response = await fetch('https://qlikaiv2.onrender.com/report/download-pdf', {
+//       // const response = await fetch('https://qlikai-app-ltmrv.ondigitalocean.app/report/download-pdf', {
 //         method: 'POST',
 //         headers: { "Content-Type": "application/json" },
 //         body: JSON.stringify(payload)
@@ -4341,7 +4341,7 @@
 //       }
 
 //       const res = await fetch("http://localhost:8000/api/migration/publish-semantic-model", {
-//       // const res = await fetch("https://qlikaiv2.onrender.com/api/migration/publish-semantic-model", {
+//       // const res = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/publish-semantic-model", {
 //         method: "POST",
 //         body: form,
 //       });
@@ -4388,7 +4388,7 @@
 //       });
 
 //       const res = await fetch(`http://localhost:8000/api/migration/publish-table?${params.toString()}`, {
-//       // const res = await fetch(`https://qlikaiv2.onrender.com/api/migration/publish-table?${params.toString()}`, {
+//       // const res = await fetch(`https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/publish-table?${params.toString()}`, {
 //         method: "POST",
 //       });
 
@@ -5320,7 +5320,7 @@ export default function PublishPage() {
         try {
           const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
             ? 'http://127.0.0.1:8000'
-            : 'https://qlikaiv2.onrender.com';
+            : 'https://qlikai-app-ltmrv.ondigitalocean.app';
 
           const mqueryData = state.mqueryData || {};
           const publishStartTime = new Date();
@@ -5490,7 +5490,7 @@ export default function PublishPage() {
     form.append("has_dax", hasDAX ? "true" : "false");
 
     const res = await fetch("http://localhost:8000/powerbi/process", {
-    // const res = await fetch("https://qlikaiv2.onrender.com/powerbi/process", {
+    // const res = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/process", {
     
       method: "POST",
       body: form,
@@ -5530,7 +5530,7 @@ export default function PublishPage() {
       console.log("🔐 Step 2: Initiating Power BI authentication...");
       
       const authRes = await fetch("http://localhost:8000/powerbi/login/acquire-token", {
-      // const authRes = await fetch("https://qlikaiv2.onrender.com/powerbi/login/acquire-token", {
+      // const authRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/login/acquire-token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -5555,7 +5555,7 @@ export default function PublishPage() {
 
         try {
           const statusRes = await fetch("http://localhost:8000/powerbi/login/status", {
-          // const statusRes = await fetch("https://qlikaiv2.onrender.com/powerbi/login/status", {
+          // const statusRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/login/status", {
             method: "POST",
           });
           const statusData = await statusRes.json();
@@ -5670,7 +5670,7 @@ export default function PublishPage() {
 
         console.log(`📤 Publishing ${batchTables.length} tables as single dataset...`);
         const batchRes = await fetch("http://localhost:8000/powerbi/process-batch", {
-        // const batchRes = await fetch("https://qlikaiv2.onrender.com/powerbi/process-batch", {
+        // const batchRes = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/powerbi/process-batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -5922,7 +5922,7 @@ export default function PublishPage() {
 
       // Download PDF
       const response = await fetch('http://localhost:8000/report/download-pdf', {
-      // const response = await fetch('https://qlikaiv2.onrender.com/report/download-pdf', {
+      // const response = await fetch('https://qlikai-app-ltmrv.ondigitalocean.app/report/download-pdf', {
         method: 'POST',
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -6075,7 +6075,7 @@ export default function PublishPage() {
       }
 
       const res = await fetch("http://localhost:8000/api/migration/publish-semantic-model", {
-      // const res = await fetch("https://qlikaiv2.onrender.com/api/migration/publish-semantic-model", {
+      // const res = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/publish-semantic-model", {
         method: "POST",
         body: form,
       });
@@ -6122,7 +6122,7 @@ export default function PublishPage() {
       });
 
       const res = await fetch(`http://localhost:8000/api/migration/publish-table?${params.toString()}`, {
-      // const res = await fetch(`https://qlikaiv2.onrender.com/api/migration/publish-table?${params.toString()}`, {
+      // const res = await fetch(`https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/publish-table?${params.toString()}`, {
         method: "POST",
       });
 

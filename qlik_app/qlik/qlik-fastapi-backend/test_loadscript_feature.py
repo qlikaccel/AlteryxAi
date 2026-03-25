@@ -182,7 +182,7 @@ def test_api_endpoints():
         import requests
         
         # base_url = "http://localhost:8000"  
-        base_url = "https://qlikaiv2.onrender.com"
+        base_url = "https://qlikai-app-ltmrv.ondigitalocean.app"
         
         # Test health
         logger.info("Testing API availability...")
@@ -315,7 +315,7 @@ def main():
         logger.info("\nNext steps:")
         logger.info("1. Start backend: python main.py")
         # logger.info("2. Test endpoint: curl -X POST http://localhost:8000/api/migration/full-pipeline?app_id=YOUR_APP_ID")
-        logger.info("2. Test endpoint: curl -X POST https://qlikaiv2.onrender.com/api/migration/full-pipeline?app_id=YOUR_APP_ID")
+        logger.info("2. Test endpoint: curl -X POST https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/full-pipeline?app_id=YOUR_APP_ID")
         logger.info("3. Check console for detailed logging output")
         logger.info("4. See README_LOADSCRIPT_CONVERSION.md for full documentation")
         return 0

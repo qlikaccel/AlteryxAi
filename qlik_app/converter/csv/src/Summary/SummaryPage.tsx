@@ -516,7 +516,7 @@ export default function SummaryPage() {
         else throw new Error("Failed to parse LoadScript");
       }
       const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
-        ? 'http://127.0.0.1:8000' : 'https://qlikaiv2.onrender.com';
+        ? 'http://127.0.0.1:8000' : 'https://qlikai-app-ltmrv.ondigitalocean.app';
       const convertResponse = await fetch(`${apiBase}/api/migration/convert-to-mquery`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -536,7 +536,7 @@ export default function SummaryPage() {
     setAiSummaryLoading(true); setAiSummaryError(""); setAiSummaryBullets([]);
     try {
       const apiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
-        ? 'http://127.0.0.1:8000' : 'https://qlikaiv2.onrender.com';
+        ? 'http://127.0.0.1:8000' : 'https://qlikai-app-ltmrv.ondigitalocean.app';
       const res = await fetch(`${apiBase}/chat/summary-hf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

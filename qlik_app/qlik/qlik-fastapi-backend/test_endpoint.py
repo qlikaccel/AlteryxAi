@@ -31,7 +31,7 @@ if apps:
     
     # Test the backend endpoint
     # backend_url = f"http://127.0.0.1:8000/applications/{app_id}/table/Ford_Dealer_Master/data"
-    backend_url = f"https://qlikaiv2.onrender.com/applications/{app_id}/table/Ford_Dealer_Master/data"
+    backend_url = f"https://qlikai-app-ltmrv.ondigitalocean.app/applications/{app_id}/table/Ford_Dealer_Master/data"
     print(f"✓ Endpoint: {backend_url}\n")
     
     try:

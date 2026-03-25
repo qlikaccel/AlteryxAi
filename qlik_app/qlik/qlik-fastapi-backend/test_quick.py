@@ -28,7 +28,7 @@ def test_api(app_id):
     
     try:
         # url = f"http://127.0.0.1:8000/api/migration/fetch-loadscript?app_id={app_id}"
-        url = f"https://qlikaiv2.onrender.com/api/migration/fetch-loadscript?app_id={app_id}"
+        url = f"https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/fetch-loadscript?app_id={app_id}"
         
         print("Making request...")
         response = requests.post(url, timeout=60)
