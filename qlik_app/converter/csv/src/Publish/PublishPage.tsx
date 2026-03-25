@@ -553,10 +553,7 @@ export default function PublishPage() {
         if (batchTables.length === 0) throw new Error("No table data available to publish");
         console.log(`📤 Publishing ${batchTables.length} tables as single dataset with relationships...`);
 
-        const batchApiBase = window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1'
-          ? 'http://localhost:8000'
-          : 'https://qlikai-app-ltmrv.ondigitalocean.app';
-
+        const batchApiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
         const batchRes = await fetch(`${batchApiBase}/api/migration/publish-tables`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
