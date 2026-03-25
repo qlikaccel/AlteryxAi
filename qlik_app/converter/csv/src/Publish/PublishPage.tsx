@@ -415,7 +415,7 @@ export default function PublishPage() {
       
       // const authRes = await fetch("http://localhost:8000/powerbi/login/acquire-token", {
       const apiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-      const authRes = await fetch(`${apiBase}/api/powerbi/login/acquire-token`, {
+      const authRes = await fetch(`${apiBase}/powerbi/login/acquire-token`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
