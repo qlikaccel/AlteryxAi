@@ -538,7 +538,7 @@ export default function SummaryPage() {
     
     try {
       const apiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-      const res = await fetch(`${apiBase}/api/chat/summary-hf`, {
+      const res = await fetch(`${apiBase}/chat/summary-hf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table_name: tableName, data: tableRows.slice(0, 500) }),
