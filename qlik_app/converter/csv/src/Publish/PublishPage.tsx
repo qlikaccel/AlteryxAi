@@ -993,8 +993,8 @@ export default function PublishPage() {
         publish_mode: "desktop_cloud",
       });
 
-      // const res = await fetch(`http://localhost:8000/api/migration/publish-table?${params.toString()}`, {
-      const res = await fetch(`https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/publish-table?${params.toString()}`, {
+      const res = await fetch(`http://localhost:8000/api/migration/publish-table?${params.toString()}`, {
+      // const res = await fetch(`https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/publish-table?${params.toString()}`, {
         method: "POST",
       });
 
