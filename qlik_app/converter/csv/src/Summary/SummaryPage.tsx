@@ -905,43 +905,83 @@ export default function SummaryPage() {
                 <div className="tab-content source-types-tab">
                   <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 16 }}>
 
-                    {/* Database card */}
-                    <div
-                      className="source-card"
-                      onClick={() => setSourceTypesTab('database')}
-                      style={{
-                        flex: '1 1 260px', minWidth: 260,
-                        border: sourceTypesTab === 'database' ? '2px solid #0ea5e9' : '1px solid #e5e7eb',
-                        borderRadius: 12, padding: 16, cursor: 'pointer',
-                        background: sourceTypesTab === 'database' ? 'rgba(14,165,233,0.08)' : '#fff',
-                        boxShadow: sourceTypesTab === 'database' ? '0 8px 20px rgba(14,165,233,0.12)' : '0 4px 12px rgba(0,0,0,0.04)',
-                        transition: 'all 0.2s ease', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <span style={{ width: 18, height: 18, borderRadius: '50%', border: sourceTypesTab === 'database' ? '2px solid #0ea5e9' : '2px solid #cbd5e1', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: sourceTypesTab === 'database' ? '#0ea5e9' : 'transparent' }}>
-                            {sourceTypesTab === 'database' && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
-                          </span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🗄️</div>
-                            <div>
-                              <div style={{ fontSize: 16, fontWeight: 700, color: '#1f2937' }}>Database</div>
-                              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Direct ODBC/JDBC connection</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <p style={{ marginTop: 12, fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-                        Connect directly to the source database via ODBC/JDBC. Schema is inferred automatically. Best for live systems where data lives in SQL Server, Oracle, or Snowflake.
-                      </p>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#f3f4f6', fontSize: 11, fontWeight: 600, color: '#1f2937' }}>ODBC / JDBC</span>
-                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#f3f4f6', fontSize: 11, fontWeight: 600, color: '#1f2937' }}>Live schema</span>
-                        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#f3f4f6', fontSize: 11, fontWeight: 600, color: '#1f2937' }}>SQL Server • Oracle</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }} />
-                    </div>
+                    {/* Database card - DISABLED (Coming Soon) */}
+{/* To re-enable: remove the `isDatabaseEnabled` flag or set it to true */}
+{(() => {
+  const isDatabaseEnabled = false; // 🔧 Set to true to enable the Database card
+
+  return (
+    <div
+      className="source-card"
+      onClick={() => isDatabaseEnabled && setSourceTypesTab('database')}
+      style={{
+        flex: '1 1 260px', minWidth: 260,
+        border: !isDatabaseEnabled
+          ? '1px solid #e5e7eb'
+          : sourceTypesTab === 'database' ? '2px solid #0ea5e9' : '1px solid #e5e7eb',
+        borderRadius: 12, padding: 16,
+        cursor: isDatabaseEnabled ? 'pointer' : 'not-allowed',
+        background: !isDatabaseEnabled
+          ? '#f9fafb'
+          : sourceTypesTab === 'database' ? 'rgba(14,165,233,0.08)' : '#fff',
+        boxShadow: !isDatabaseEnabled
+          ? 'none'
+          : sourceTypesTab === 'database' ? '0 8px 20px rgba(14,165,233,0.12)' : '0 4px 12px rgba(0,0,0,0.04)',
+        transition: 'all 0.2s ease', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+        opacity: isDatabaseEnabled ? 1 : 0.55,
+        pointerEvents: isDatabaseEnabled ? 'auto' : 'none',
+      }}
+    >
+      {/* Coming Soon badge */}
+      {!isDatabaseEnabled && (
+        <div style={{
+          position: 'absolute', top: 12, right: 12,
+          background: '#f3f4f6', color: '#9ca3af',
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
+          padding: '3px 8px', borderRadius: 999,
+          border: '1px solid #e5e7eb',
+          textTransform: 'uppercase',
+        }}>
+          Coming Soon
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{
+            width: 18, height: 18, borderRadius: '50%',
+            border: isDatabaseEnabled && sourceTypesTab === 'database' ? '2px solid #0ea5e9' : '2px solid #cbd5e1',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            background: isDatabaseEnabled && sourceTypesTab === 'database' ? '#0ea5e9' : 'transparent',
+          }}>
+            {isDatabaseEnabled && sourceTypesTab === 'database' && (
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />
+            )}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🗄️</div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: isDatabaseEnabled ? '#1f2937' : '#9ca3af' }}>Database</div>
+              <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>Direct ODBC/JDBC connection</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p style={{ marginTop: 12, fontSize: 13, color: '#9ca3af', lineHeight: 1.5 }}>
+        Connect directly to the source database via ODBC/JDBC. Schema is inferred automatically. Best for live systems where data lives in SQL Server, Oracle, or Snowflake.
+      </p>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#f3f4f6', fontSize: 11, fontWeight: 600, color: '#d1d5db' }}>ODBC / JDBC</span>
+        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#f3f4f6', fontSize: 11, fontWeight: 600, color: '#d1d5db' }}>Live schema</span>
+        <span style={{ padding: '4px 10px', borderRadius: 999, background: '#f3f4f6', fontSize: 11, fontWeight: 600, color: '#d1d5db' }}>SQL Server • Oracle</span>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }} />
+    </div>
+  );
+})()}
 
                     {/* Scripts card */}
                     <div

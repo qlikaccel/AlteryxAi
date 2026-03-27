@@ -1,140 +1,103 @@
+/* Stepper.css */
 
-
- 
-/* ===== Container ===== */
 .stepper {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   background: #ffffff;
-  border: 2px solid #e5e7eb;
+  border: 1px solid #e9eaf0;
+  border-radius: 12px;
   margin: 0 20px;
-  padding: 15px 30px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 10px 0px;
+  height: 52px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
 }
- 
-/* ===== Each step ===== */
+
 .step {
   display: flex;
   align-items: center;
-  gap: 14px;
-  min-width: 180px;
+  gap: 9px;
+  padding: 10px 14px;
+  height: 100%;
+  cursor: pointer;
+  flex: 1;
+  justify-content: center;
+  border-radius: 8px;
+  transition: background 0.2s ease;
 }
- 
-/* ===== Icon circle ===== */
+
+.step:not(.disabled):hover { background: #f5f3ff; }
+.step.disabled { opacity: 0.38; cursor: not-allowed; }
+.step.active-step {
+  background: #ddd6fe;
+}
+
+.step-sep {
+  width: 1px;
+  height: 22px;
+  background: #ebebf0;
+  flex-shrink: 0;
+}
+
 .circle {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
   background: #f3f4f6;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: all 0.2s ease;
 }
- 
-/* icon size */
+
 .circle img {
-  width: 32px;
-  height: 32px;
+  width: 16px;
+  height: 16px;
   object-fit: contain;
 }
- 
-/* ===== Active step ===== */
-.circle.active {
-  background: #ffffff;
-  border: 2px solid #3b82f6;
-  box-shadow: 0 6px 14px rgba(59, 130, 246, 0.25);
+
+.step.active-step .circle {
+  background: #7c3aed;
+  box-shadow: 0 2px 6px rgba(124, 58, 237, 0.35);
+  border: none;
 }
- 
-.circle.active img {
+
+
+.step.active-step .circle img {
   filter: none;
-  border-radius: 5px;
 }
- 
-/* ===== Text block ===== */
-.step-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.2;
-}
- 
+
+.step-text { display: flex; flex-direction: column; }
+
 .step-text .title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #111827;
+  font-size: 14px;
+  font-weight: 700;
+  color: #374151;
+  white-space: nowrap;
+  transition: color 0.2s ease;
 }
- 
+
 .step-text .sub {
-  font-size: 12.5px;
+  font-size: 10px;
   color: #6b7280;
-  margin-top: 2px;
-}
- 
-/* ===== Disabled state ===== */
-/* .step.disabled {
-  opacity: 0.6;
-  pointer-events: none;
-} */
- 
- 
-.step:not(.disabled):hover .title {
-  color: #2563eb;
-}
- 
-/* ===== Active step styling ===== */
-.step.active-step {
-  background: rgba(59, 130, 246, 0.12);
-  border-radius: 14px;
-  padding: 12px 14px;
-  border-bottom: 3px solid rgba(59, 130, 246, 0.35);
+  margin-top: 1px;
+  white-space: nowrap;
 }
 
-.step.active-step .title {
-  color: #1d4ed8;
+.step.active-step .step-text .title {
+  color: #3730a3;
+}
+.step.active-step .step-text .sub {
+  color: #5b21b6;
+}
+.step.done-step .step-text .title { color: #4f46e5; }
+.step.done-step .step-text .sub   { color: #818cf8; }
+.step:not(.disabled):not(.active-step):hover .step-text .title {
+  color: #4f46e5;
 }
 
-/* ===== Publish Step (6th step - Same styling as other steps) ===== */
-.step:nth-child(6) .circle.active {
-  background: #ffffff;
-  border: 2px solid #3b82f6;
-  box-shadow: 0 6px 14px rgba(59, 130, 246, 0.25);
-}
 
-.step:nth-child(6) .circle.active img {
-  border-radius: 5px;
-}
-
-.step:nth-child(6).active-step {
-  background: rgba(59, 130, 246, 0.12);
-  border-radius: 14px;
-  border-bottom: 3px solid rgba(59, 130, 246, 0.35);
-  padding: 10px 10px 8px;
-}
-
-.step:nth-child(6):not(.disabled):hover .title {
-  color: #1d4ed8;
-}
-
-.step:nth-child(6):not(.disabled):hover .circle {
-  background: #f0f9fa;
-  transform: scale(1.05);
-  transition: all 0.3s ease;
-}
-
-.step:nth-child(6) {
-  opacity: 1;
-  cursor: pointer;
-}
- 
-/* ===== Responsive (optional safety) ===== */
 @media (max-width: 1200px) {
-  .stepper {
-    overflow-x: auto;
-    gap: 24px;
-  }
- 
-  .step {
-    min-width: 160px;
-  }
+  .stepper { overflow-x: auto; margin: 6px 10px; }
+  .step { min-width: 120px; flex: none; }
 }
