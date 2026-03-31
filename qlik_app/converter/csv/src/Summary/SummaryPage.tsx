@@ -165,6 +165,7 @@ export default function SummaryPage() {
     return out;
   };
 
+
   // Helper: check whether two tables share at least one field
   const shareFields = (aName: string, bName: string) => {
     if (!aName || !bName) return false;
@@ -181,6 +182,25 @@ export default function SummaryPage() {
     const setA = new Set(fieldsA);
     for (const f of fieldsB) { if (setA.has(f)) return true; }
     return false;
+  };
+
+  // Helper: collect all related tables (transitive closure)
+  const collectAllRelated = (startName: string): string[] => {
+    const visited = new Set<string>([startName]);
+    const queue: string[] = [startName];
+    const result: string[] = [];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const neighbours: string[] = relations[current] || [];
+      for (const neighbour of neighbours) {
+        if (!visited.has(neighbour)) {
+          visited.add(neighbour);
+          result.push(neighbour);
+          queue.push(neighbour);
+        }
+      }
+    }
+    return result;
   };
 
   // Track page load start time
@@ -669,7 +689,7 @@ export default function SummaryPage() {
   }, [filteredTables, masterMap, mainTable, relations]);
 
   const isSelectionMaster = !!(selectedTable && isMasterTable(selectedTable));
-  const isExportAllowed = Boolean(selectedTable && (isSelectionMaster || !isRelatedTable(selectedTable)));
+  const isExportAllowed = Boolean(selectedTable);
 
   const prepareAndNavigateToExport = async (tableToExport?: string) => {
     setExporting(true);
@@ -708,11 +728,18 @@ export default function SummaryPage() {
         } catch (e) { masterRowCount = (masterRows || []).length; }
       }
 
-      const prefix = sel && sel.includes("_") ? sel.split("_")[0] : null;
-      const candidateNames = (tables || []).map((t) => (typeof t === "string" ? t : t?.name)).filter(Boolean) as string[];
-      let related: string[] = [];
-      if (mainTable && sel === mainTable && relations && relations[mainTable]) related = relations[mainTable].slice();
-      else if (prefix) related = candidateNames.filter(n => n.startsWith(prefix + "_") && n !== sel).filter(n => shareFields(sel, n));
+      let related: string[] = collectAllRelated(sel);
+      if (related.length === 0) {
+        const prefix = sel && sel.includes("_") ? sel.split("_")[0] : null;
+        const candidateNames = (tables || [])
+          .map((t) => (typeof t === "string" ? t : t?.name))
+          .filter(Boolean) as string[];
+        if (prefix) {
+          related = candidateNames
+            .filter(n => n.startsWith(prefix + "_") && n !== sel)
+            .filter(n => shareFields(sel, n));
+        }
+      }
 
       const headers = masterRows.length > 0 ? Object.keys(masterRows[0]) : [];
       const csv = [headers.join(","), ...masterRows.map((r: any) => headers.map((h) => `"${r[h] ?? ""}"`).join(","))].join("\n");
@@ -831,13 +858,11 @@ export default function SummaryPage() {
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{tableName}</span>
               </span>
-              {!related && (
-                <button
-                  className="inline-export"
-                  title={master ? "Export master + related tables" : "Export this standalone table"}
-                  onClick={(e) => { e.stopPropagation(); prepareAndNavigateToExport(tableName); }}
-                />
-              )}
+              <button
+                className="inline-export"
+                title="Export this table with all related tables"
+                onClick={(e) => { e.stopPropagation(); prepareAndNavigateToExport(tableName); }}
+              />
               {isNew && <span className="new-badge">NEW</span>}
             </div>
           );
