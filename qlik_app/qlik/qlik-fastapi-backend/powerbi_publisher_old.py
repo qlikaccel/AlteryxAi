@@ -1107,12 +1107,6 @@ class _Publisher:
                 if resp.status_code == 202:
                     op_url    = resp.headers.get("Location")
                     polled_id = self._poll(op_url, headers) if op_url else ""
-                    # "FAILED" means the Fabric operation itself failed — bail out immediately.
-                    # Do NOT fall through to _find_dataset_id: that would find a stale dataset
-                    # from a previous successful run and try to refresh it, producing a 404
-                    # because the operation ID in the Location header is not a dataset ID.
-                    if polled_id == "FAILED":
-                        return {"success": False, "error": "Fabric async operation failed or was cancelled"}
                     if polled_id == "SUCCEEDED_NO_ID":
                         dataset_id = ""
                     else:
@@ -1124,17 +1118,7 @@ class _Publisher:
                     dataset_id = self._find_dataset_id(dataset_name, headers)
 
                 if dataset_id:
-                    # Try to get a PBI-scoped SP token for the refresh call.
-                    # Fall back to the token already being used (user access token or
-                    # Fabric token) if SP re-acquisition fails — avoids 404/401 caused
-                    # by an empty bearer being sent when SP credentials are not set.
                     pbi_token = _acquire_sp_token("https://analysis.windows.net/powerbi/api/.default")
-                    if not pbi_token:
-                        logger.warning(
-                            "[Fabric API] SP token re-acquisition failed — "
-                            "using existing token for refresh"
-                        )
-                        pbi_token = self.token  # user access token passed to _Publisher
                     pbi_headers = {
                         "Authorization": f"Bearer {pbi_token}",
                         "Content-Type":  "application/json",
@@ -1207,10 +1191,7 @@ class _Publisher:
                         return "SUCCEEDED_NO_ID"
                     if status in ("Failed", "Cancelled"):
                         logger.warning("[Fabric API] Op %s: %s", status, body)
-                        # Return a sentinel that is distinct from "" (timeout/unknown)
-                        # so the caller can immediately return an error instead of
-                        # trying to find and refresh a stale dataset from a previous run.
-                        return "FAILED"
+                        return ""
             except Exception as ex:
                 logger.warning("[Fabric API] Poll error: %s", ex)
         logger.warning("[Fabric API] Polling timed out after %ds", max_wait)

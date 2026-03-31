@@ -582,7 +582,7 @@ export default function SummaryPage() {
           appId, selectedTable, publishMethod: "M_QUERY", showWorkflow: true,
           tableCount: relatedTablesCount, totalRows: totalRowsAllTables, rowCount: totalRowsAllTables,
           columns: rows && rows.length > 0 ? Object.keys(rows[0]) : [],
-          mqueryData: { dataset_name: selectedTable || "Qlik_Dataset", combined_mquery: mquery || "", raw_script: mquery ? "" : loadscript, data_source_path: dataSourcePath?.trim() || "" },
+          mqueryData: { dataset_name: selectedTable || "Qlik_Dataset", combined_mquery: mquery || "", raw_script: mquery ? "" : loadscript, data_source_path: dataSourcePath?.trim() || "", app_id: appId },
         },
       });
     } catch (error: any) {

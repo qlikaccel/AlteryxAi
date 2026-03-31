@@ -1,24 +1,25 @@
 """
-Qlik LoadScript Fetcher Module  (PATCHED v2)
+Qlik LoadScript Fetcher  (PATCHED v3 - AUTO SCHEMA)
 
-Fetches loadscript from Qlik Cloud with detailed logging at each phase.
+v3 changes over v2:
+  ✅ Fix A: fetch_and_parse() now calls GetTablesAndKeys via WebSocket
+            to collect the real field-per-table map BEFORE parsing.
+            The map is passed to LoadScriptParser.parse(qlik_fields_map=...)
+            so LOAD * tables automatically get explicit column lists.
 
-Patches applied over v1:
-  ✅ Fix 1: REST API response parsing handles all Qlik Cloud script endpoint formats
-             (v1 only read 'script' key; Qlik also returns 'qScript', section arrays, raw str)
-  ✅ Fix 2: Timeout and retry on WebSocket step — won't hang if WS client unavailable
-  ✅ Fix 3: metadata_reconstruction fallback now clearly marked partial and never
-             silently pretends to be real script content
-  ✅ Fix 4: app_name extraction handles nested attributes dict (Qlik Cloud v1 format)
-  ✅ Fix 5: accepts optional parser_cls injection so callers can pass patched parser
-  ✅ Fix 6: fetch_and_parse() convenience method — fetches + parses in one call,
-             always returns raw_script in result (required by simple_mquery_generator)
+  ✅ Fix B: get_data_model_fields() is a new public helper that any caller
+            can use to retrieve {table_name: [field_names]} from a Qlik app
+            via WebSocket Engine API.
+
+  ✅ Fix C: fetch_loadscript() is unchanged — backward compatible.
+            Only fetch_and_parse() is extended.
 """
 
 import os
+import json
 import requests
 import logging
-from typing import Dict, Any, Optional, Type
+from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 class LoadScriptFetcher:
-    """Fetch loadscript from Qlik Cloud applications (patched v2)."""
+    """Fetch loadscript from Qlik Cloud applications (v3 - auto schema)."""
 
     def __init__(
         self,
@@ -45,11 +46,10 @@ class LoadScriptFetcher:
         logger.info("PHASE 0: Initializing LoadScript Fetcher")
         logger.info("=" * 80)
 
-        self.api_key     = api_key     or os.getenv('QLIK_API_KEY', '')
-        self.tenant_url  = tenant_url  or os.getenv('QLIK_TENANT_URL', '')
-        api_base_env     = os.getenv('QLIK_API_BASE_URL', '')
+        self.api_key    = api_key    or os.getenv('QLIK_API_KEY', '')
+        self.tenant_url = tenant_url or os.getenv('QLIK_TENANT_URL', '')
+        api_base_env    = os.getenv('QLIK_API_BASE_URL', '')
 
-        # Derive base URL
         if api_base_env:
             self.api_base_url = api_base_env
         elif self.tenant_url:
@@ -64,28 +64,23 @@ class LoadScriptFetcher:
         }
 
         if not self.api_key:
-            logger.error("❌ QLIK_API_KEY is not set in environment variables")
             raise ValueError('QLIK_API_KEY is not set in environment variables')
         if not self.api_base_url:
-            logger.error("❌ QLIK_API_BASE_URL or QLIK_TENANT_URL is not set")
-            raise ValueError('QLIK_API_BASE_URL or QLIK_TENANT_URL is not set in environment variables')
+            raise ValueError('QLIK_API_BASE_URL or QLIK_TENANT_URL is not set')
 
         logger.info(f"✅ Initialized with Tenant URL: {self.tenant_url}")
         logger.info(f"✅ API Base URL: {self.api_base_url}")
 
     # ------------------------------------------------------------------
-    # Phase 1 — Connection test
+    # Phase 1
     # ------------------------------------------------------------------
 
     def test_connection(self) -> Dict[str, Any]:
-        """Test connection to Qlik Cloud."""
         logger.info("=" * 80)
         logger.info("PHASE 1: Testing Connection to Qlik Cloud")
         logger.info("=" * 80)
-
         url = f'{self.api_base_url}/users/me'
         logger.info(f"🔌 Testing connection to: {url}")
-
         try:
             resp = requests.get(url, headers=self.headers, timeout=10)
             logger.info(f"📊 Response Status Code: {resp.status_code}")
@@ -100,23 +95,17 @@ class LoadScriptFetcher:
             return {"status": "error", "message": str(e)}
 
     # ------------------------------------------------------------------
-    # Phase 2 — Applications list
+    # Phase 2
     # ------------------------------------------------------------------
 
     def get_applications(self) -> Dict[str, Any]:
-        """Fetch list of all applications from Qlik Cloud."""
         logger.info("=" * 80)
         logger.info("PHASE 2: Fetching Applications List from Qlik Cloud")
         logger.info("=" * 80)
-
         url = f'{self.api_base_url}/apps'
-        logger.info(f"🔍 Fetching apps from: {url}")
-
         try:
             resp = requests.get(url, headers=self.headers, timeout=15)
-            logger.info(f"📊 Response Status Code: {resp.status_code}")
             resp.raise_for_status()
-
             data = resp.json()
             if isinstance(data, list):
                 apps = data
@@ -124,87 +113,123 @@ class LoadScriptFetcher:
                 apps = data.get('data') or data.get('items') or data.get('value') or []
             else:
                 apps = []
-
             logger.info(f"✅ Successfully fetched {len(apps)} application(s)")
-            for i, app in enumerate(apps[:10], 1):
-                app_name = app.get('name', 'N/A')
-                app_id   = app.get('id', 'N/A')
-                logger.info(f"   ✓ App {i}: {app_name} (ID: {str(app_id)[:8]}...)")
-
             return {"status": "success", "count": len(apps), "data": apps}
-
         except requests.exceptions.RequestException as e:
             logger.error(f"❌ Error fetching applications: {str(e)}")
             return {"status": "error", "message": str(e), "data": []}
 
     # ------------------------------------------------------------------
-    # Phase 3 — Application details
+    # Phase 3
     # ------------------------------------------------------------------
 
     def get_application_details(self, app_id: str) -> Dict[str, Any]:
-        """Get details of a specific application."""
-        logger.info("=" * 80)
-        logger.info("PHASE 3: Fetching Application Details")
-        logger.info("=" * 80)
-
         url = f'{self.api_base_url}/apps/{app_id}'
-        logger.info(f"🔍 Fetching app details from: {url}")
-        logger.info(f"📋 App ID: {app_id}")
-
         try:
             resp = requests.get(url, headers=self.headers, timeout=15)
-            logger.info(f"📊 Response Status Code: {resp.status_code}")
             resp.raise_for_status()
-
             app_data = resp.json()
-            # ✅ FIX 4: Qlik Cloud v1 wraps metadata in 'attributes'
             attrs = app_data.get('attributes', app_data)
-            logger.info(f"✅ App Name:       {attrs.get('name', 'N/A')}")
-            logger.info(f"✅ App Owner:      {attrs.get('owner', {}).get('name', 'N/A') if isinstance(attrs.get('owner'), dict) else attrs.get('owner', 'N/A')}")
-            logger.info(f"✅ Last Reload:    {attrs.get('lastReloadTime', 'N/A')}")
-
+            logger.info(f"✅ App Name: {attrs.get('name', 'N/A')}")
             return {"status": "success", "data": app_data}
-
         except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Error fetching application details: {str(e)}")
             return {"status": "error", "message": str(e)}
 
     # ------------------------------------------------------------------
-    # Phase 4 — Fetch loadscript (3 methods with fallback)
+    # ✅ Fix B: NEW — get real column names from Qlik data model
+    # ------------------------------------------------------------------
+
+    def get_data_model_fields(self, app_id: str) -> Dict[str, List[str]]:
+        """
+        ✅ Fix B — Fetch the complete {table_name: [field_names]} map from
+        a Qlik app's data model via WebSocket GetTablesAndKeys.
+
+        This is the key data that makes LOAD * tables publish with real
+        column names instead of 0 columns.
+
+        Returns:
+            Dict mapping table_name → sorted list of field names.
+            Empty dict on failure (caller must handle gracefully).
+        """
+        logger.info("=" * 80)
+        logger.info("FETCHING DATA MODEL FIELDS via GetTablesAndKeys")
+        logger.info("=" * 80)
+
+        try:
+            from qlik_websocket_client import QlikWebSocketClient
+            ws = QlikWebSocketClient()
+            result = ws.get_data_model(app_id)
+
+            if not result.get('success'):
+                logger.warning(
+                    "[get_data_model_fields] WebSocket get_data_model failed: %s",
+                    result.get('error', 'unknown')
+                )
+                return {}
+
+            # Build table → field list from the response
+            # Expected format from QlikWebSocketClient.get_data_model():
+            #   result['tables'] = list of {name, fields: [{name, ...}]}
+            fields_map: Dict[str, List[str]] = {}
+            tables = result.get('tables', [])
+
+            for table in tables:
+                tname  = table.get('name') or table.get('qName', '')
+                if not tname:
+                    continue
+                flist  = table.get('fields') or table.get('qFields', [])
+                cols: List[str] = []
+                for f in flist:
+                    fname = f.get('name') or f.get('qName', '')
+                    # Skip Qlik system fields ($rowno, $key, etc.)
+                    if fname and not fname.startswith('$'):
+                        cols.append(fname)
+                if cols:
+                    fields_map[tname] = cols
+                    logger.info(
+                        "   ✅ %s → %d fields: %s",
+                        tname, len(cols), cols[:6]
+                    )
+
+            logger.info(
+                "✅ get_data_model_fields: %d tables, %d total fields",
+                len(fields_map),
+                sum(len(v) for v in fields_map.values())
+            )
+            return fields_map
+
+        except ImportError:
+            logger.warning("[get_data_model_fields] qlik_websocket_client not available")
+        except Exception as exc:
+            logger.warning("[get_data_model_fields] Failed: %s", exc)
+
+        return {}
+
+    # ------------------------------------------------------------------
+    # Phase 4
     # ------------------------------------------------------------------
 
     def fetch_loadscript(self, app_id: str) -> Dict[str, Any]:
-        """
-        Fetch the loadscript from a Qlik application.
-
-        Method 1: WebSocket Engine API (most reliable for real script)
-        Method 2: REST API /apps/{id}/script  (Qlik Cloud direct)
-        Method 3: Metadata reconstruction (last resort — clearly marked partial)
-        """
         logger.info("=" * 80)
         logger.info("PHASE 4: FETCHING LOADSCRIPT FROM QLIK CLOUD")
         logger.info("=" * 80)
         logger.info(f"📋 Target App ID: {app_id}")
         logger.info(f"⏰ Fetch Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        # ── Method 1: WebSocket Engine API ──────────────────────────────────
+        # Method 1: WebSocket
         logger.info("📍 Step 4.1: Attempting to fetch via WebSocket (Engine API)...")
         try:
             from qlik_websocket_client import QlikWebSocketClient
             ws_client = QlikWebSocketClient()
             script_result = ws_client._get_app_script_websocket(app_id)
-
             logger.info(
                 f"   WebSocket result: success={script_result.get('success')},"
                 f" has_script={bool(script_result.get('script'))}"
             )
-
             if script_result and script_result.get('success') and script_result.get('script'):
                 loadscript = script_result['script']
                 logger.info(f"✅ Successfully fetched real loadscript via WebSocket!")
                 logger.info(f"📏 Script length: {len(loadscript)} characters")
-                logger.info(f"📊 Found {len(script_result.get('tables', []))} table(s) in script")
-
                 return {
                     "status":        "success",
                     "app_id":        app_id,
@@ -218,32 +243,26 @@ class LoadScriptFetcher:
                 }
             else:
                 logger.warning(f"⚠️  WebSocket non-success: {script_result.get('error', 'No error message')}")
-
         except ImportError:
             logger.warning("⚠️  qlik_websocket_client not available — skipping WebSocket method")
         except Exception as ws_error:
             logger.warning(f"⚠️  WebSocket method failed: {str(ws_error)}")
 
-        # ── Method 2: REST API ───────────────────────────────────────────────
+        # Method 2: REST API
         logger.info("📍 Step 4.2: Attempting REST API direct script endpoint...")
-
-        # ✅ FIX 1: Try multiple known Qlik endpoint variants
         script_endpoints = [
             f'{self.api_base_url}/apps/{app_id}/script',
             f'{self.api_base_url}/apps/{app_id}/scripts/main',
         ]
-
         for script_url in script_endpoints:
             try:
                 logger.info(f"🔍 Trying: {script_url}")
                 resp = requests.get(script_url, headers=self.headers, timeout=15)
                 logger.info(f"📊 Response status: {resp.status_code}")
-
                 if resp.status_code == 200:
                     loadscript = self._parse_script_response(resp)
                     if loadscript:
                         logger.info(f"✅ Successfully fetched loadscript from REST API!")
-                        logger.info(f"📏 Script length: {len(loadscript)} characters")
                         return {
                             "status":        "success",
                             "app_id":        app_id,
@@ -257,50 +276,79 @@ class LoadScriptFetcher:
             except Exception as e:
                 logger.warning(f"⚠️  REST endpoint {script_url} failed: {str(e)}")
 
-        # ── Method 3: Metadata reconstruction (fallback) ─────────────────────
+        # Method 3: Metadata reconstruction
         logger.info("📍 Step 4.3: Falling back to metadata reconstruction...")
         return self._metadata_reconstruction(app_id)
 
     # ------------------------------------------------------------------
-    # Convenience: fetch + parse in one call
+    # ✅ Fix A: fetch_and_parse() — auto-wires qlik_fields_map
     # ------------------------------------------------------------------
 
-    def fetch_and_parse(self, app_id: str) -> Dict[str, Any]:
+    def fetch_and_parse(
+        self,
+        app_id: str,
+        qlik_fields_map: Optional[Dict[str, List[str]]] = None,
+    ) -> Dict[str, Any]:
         """
-        Fetch the loadscript AND parse it in one call.
-        Always returns raw_script in the result dict.
+        ✅ Fix A — Fetch the loadscript AND parse it in one call.
 
-        ✅ FIX 6: convenience wrapper that satisfies simple_mquery_generator requirement
+        NEW in v3:
+          1. If qlik_fields_map is not supplied by the caller, it is fetched
+             automatically from the Qlik data model via GetTablesAndKeys.
+          2. The map is passed to LoadScriptParser.parse() so LOAD * tables
+             get explicit column lists baked into their table dicts.
+          3. The map is also returned in the result dict so the caller can
+             pass it to publish_semantic_model() without a separate call.
+
+        This means the entire pipeline (fetch → parse → convert → publish)
+        is automatic — no manual column lists, no hardcoding.
         """
+        # Step 1: fetch loadscript
         fetch_result = self.fetch_loadscript(app_id)
-
         if fetch_result['status'] not in ('success', 'partial_success'):
             return {
                 **fetch_result,
-                "raw_script": "",
-                "parse_result": None,
+                "raw_script":      "",
+                "parse_result":    None,
+                "qlik_fields_map": {},
             }
-
         loadscript = fetch_result.get('loadscript', '')
 
-        # Lazy import so patched parser is used if available
+        # Step 2: get real column names if not provided
+        if not qlik_fields_map:
+            logger.info("📍 Fetching data model fields (GetTablesAndKeys)...")
+            qlik_fields_map = self.get_data_model_fields(app_id)
+            if qlik_fields_map:
+                logger.info(
+                    "✅ Auto-fetched qlik_fields_map: %d tables",
+                    len(qlik_fields_map)
+                )
+            else:
+                logger.warning(
+                    "⚠️  Could not fetch qlik_fields_map — LOAD * tables will use "
+                    "dynamic schema (columns appear after first Power BI refresh)."
+                )
+
+        # Step 3: parse with injected map
         try:
             from loadscript_parser import LoadScriptParser
         except ImportError:
-            logger.error("❌ loadscript_parser not found — cannot parse")
+            logger.error("❌ loadscript_parser not found")
             return {
                 **fetch_result,
-                "raw_script": loadscript,
-                "parse_result": None,
+                "raw_script":      loadscript,
+                "parse_result":    None,
+                "qlik_fields_map": qlik_fields_map,
             }
 
         parser       = LoadScriptParser(loadscript)
-        parse_result = parser.parse()
+        parse_result = parser.parse(qlik_fields_map=qlik_fields_map)
 
         return {
             **fetch_result,
-            "raw_script":    loadscript,      # always present
-            "parse_result":  parse_result,
+            "raw_script":      loadscript,
+            "parse_result":    parse_result,
+            "qlik_fields_map": qlik_fields_map,   # always present for downstream
         }
 
     # ------------------------------------------------------------------
@@ -309,7 +357,7 @@ class LoadScriptFetcher:
 
     def _parse_script_response(self, resp: requests.Response) -> str:
         """
-        ✅ FIX 1: Extract script text from any Qlik Cloud script response format.
+        Extract script text from any Qlik Cloud script response format.
 
         Known formats:
           • {"script": "..."}                  — most common
@@ -318,43 +366,26 @@ class LoadScriptFetcher:
           • "raw string"                        — direct text body
         """
         content_type = resp.headers.get('Content-Type', '')
-
         if 'json' in content_type:
             try:
                 data = resp.json()
             except Exception:
                 return resp.text.strip()
-
             if isinstance(data, str):
                 return data.strip()
-
             if isinstance(data, list):
-                # Section array — join all script sections
                 sections = [
                     s.get('script', '') or s.get('qScript', '')
                     for s in data if isinstance(s, dict)
                 ]
                 return '\n\n'.join(s for s in sections if s).strip()
-
             if isinstance(data, dict):
-                return (
-                    data.get('script') or
-                    data.get('qScript') or
-                    data.get('content') or
-                    ''
-                ).strip()
-
-        # Fallback: raw text body
+                return (data.get('script') or data.get('qScript') or data.get('content') or '').strip()
         return resp.text.strip()
 
     def _get_app_name(self, app_id: str) -> str:
-        """Quick app name lookup. Returns app_id on failure."""
         try:
-            resp = requests.get(
-                f'{self.api_base_url}/apps/{app_id}',
-                headers=self.headers,
-                timeout=10,
-            )
+            resp = requests.get(f'{self.api_base_url}/apps/{app_id}', headers=self.headers, timeout=10)
             if resp.ok:
                 data  = resp.json()
                 attrs = data.get('attributes', data)
@@ -364,15 +395,8 @@ class LoadScriptFetcher:
         return app_id
 
     def _metadata_reconstruction(self, app_id: str) -> Dict[str, Any]:
-        """
-        ✅ FIX 3: Last-resort fallback — assembles placeholder script from
-        available metadata.  Clearly marked as reconstructed, NOT real script.
-        """
-        logger.info("📍 Step 4.4: Gathering app metadata for reconstruction...")
-
         app_name    = self._get_app_name(app_id)
         connections = self._fetch_connections()
-
         lines = [
             f"// ==================================================",
             f"// Qlik Cloud Application — Reconstructed LoadScript",
@@ -380,34 +404,14 @@ class LoadScriptFetcher:
             f"// App ID      : {app_id}",
             f"// Generated   : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"// WARNING     : Real loadscript was NOT accessible.",
-            f"//               This is metadata-only reconstruction.",
-            f"// ==================================================",
-            "",
+            f"// ==================================================", "",
         ]
-
         if connections:
             lines.append(f"// Data Connections ({len(connections)})")
-            lines.append("// --------------------------------------------------")
             for conn in connections:
-                conn_name = conn.get('name', 'Unknown')
-                conn_type = conn.get('connectionType', 'Unknown')
-                lines.append(f"// {conn_name}  ({conn_type})")
+                lines.append(f"// {conn.get('name','Unknown')}  ({conn.get('connectionType','Unknown')})")
             lines.append("")
-
-        lines += [
-            "// --------------------------------------------------",
-            "// Placeholder LOAD statement (replace with real script)",
-            "// --------------------------------------------------",
-            "// [TableName]:",
-            "// LOAD",
-            "//     Field1,",
-            "//     Field2",
-            "// FROM [lib://ConnectionName/file.qvd] (qvd);",
-        ]
-
         script_snippet = '\n'.join(lines)
-        logger.info(f"✅ Metadata reconstruction complete ({len(script_snippet)} chars)")
-
         return {
             "status":             "partial_success",
             "app_id":             app_id,
@@ -420,19 +424,13 @@ class LoadScriptFetcher:
             "connections":        connections[:5],
             "message": (
                 "⚠️ Loadscript partially available — "
-                "WebSocket Engine API and REST /script endpoint both unavailable. "
-                "Script is commented-out placeholder only."
+                "WebSocket Engine API and REST /script endpoint both unavailable."
             ),
         }
 
     def _fetch_connections(self) -> list:
-        """Fetch data connections from Qlik Cloud."""
         try:
-            resp = requests.get(
-                f'{self.api_base_url}/data-connections',
-                headers=self.headers,
-                timeout=15,
-            )
+            resp = requests.get(f'{self.api_base_url}/data-connections', headers=self.headers, timeout=15)
             if resp.ok:
                 data = resp.json()
                 if isinstance(data, list):
@@ -441,36 +439,3 @@ class LoadScriptFetcher:
         except Exception as e:
             logger.warning(f"⚠️  Could not fetch connections: {str(e)}")
         return []
-
-
-# ---------------------------------------------------------------------------
-# Standalone testing
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    try:
-        fetcher = LoadScriptFetcher()
-
-        conn_result = fetcher.test_connection()
-        if conn_result['status'] != 'success':
-            logger.error("Cannot proceed — connection failed")
-            exit(1)
-
-        apps_result = fetcher.get_applications()
-        if apps_result['status'] == 'success' and apps_result['data']:
-            first_app_id = apps_result['data'][0]['id']
-
-            details_result = fetcher.get_application_details(first_app_id)
-
-            # Use the convenience method to fetch + parse in one call
-            result = fetcher.fetch_and_parse(first_app_id)
-            logger.info(f"fetch_and_parse status: {result['status']}")
-            logger.info(f"raw_script present:     {'raw_script' in result}")
-            if result.get('parse_result'):
-                s = result['parse_result'].get('summary', {})
-                logger.info(f"Tables parsed:          {s.get('tables_count', 0)}")
-        else:
-            logger.error("No applications found")
-
-    except Exception as e:
-        logger.error(f"Fatal error: {str(e)}")

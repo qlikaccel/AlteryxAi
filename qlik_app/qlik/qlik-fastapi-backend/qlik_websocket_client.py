@@ -1137,6 +1137,49 @@ class QlikWebSocketClient:
             except:
                 pass
     
+    def get_data_model(self, app_id: str) -> Dict[str, Any]:
+        """
+        Public method called by LoadScriptFetcher.get_data_model_fields().
+
+        The fetcher expects:
+            { 'success': True, 'tables': [{'name': str, 'fields': [{'name': str}, ...]}, ...] }
+
+        Previously this method did not exist — fetcher caught AttributeError silently,
+        returned empty qlik_fields_map {}, and every LOAD * table published with zero columns.
+
+        This connects to the app, calls _get_tables_from_data_model() (GetTablesAndKeys),
+        normalises the result into the expected shape, then closes the connection.
+        """
+        try:
+            print(f"[get_data_model] Connecting to app {app_id[:8]}... for GetTablesAndKeys")
+
+            if not self.connect_to_app(app_id):
+                return {"success": False, "error": "Could not connect to app", "tables": []}
+
+            raw = self._get_tables_from_data_model()
+
+            if not raw.get("success"):
+                return {"success": False, "error": raw.get("error", "GetTablesAndKeys failed"), "tables": []}
+
+            # _get_tables_from_data_model() already builds:
+            #   { 'name': str, 'fields': [{'name': str, 'is_key': bool, ...}] }
+            # which is exactly what the fetcher reads — pass through unchanged.
+            tables = raw.get("tables", [])
+            print(f"[get_data_model] SUCCESS: {len(tables)} tables from GetTablesAndKeys")
+            for t in tables:
+                print(f"   {t['name']} -> {len(t.get('fields', []))} fields")
+
+            return {"success": True, "tables": tables}
+
+        except Exception as exc:
+            print(f"[get_data_model] ERROR: {exc}")
+            return {"success": False, "error": str(exc), "tables": []}
+        finally:
+            try:
+                self.close()
+            except Exception:
+                pass
+
     def close(self):
         """Close WebSocket connection"""
         if self.ws:

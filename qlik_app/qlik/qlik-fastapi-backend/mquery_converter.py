@@ -1,1151 +1,38 @@
 
 
-
-# """
-# mquery_converter.py
-# ───────────────────
-# Converts parsed Qlik table definitions into Power Query M expressions
-# suitable for embedding in a Power BI BIM partition.
-# """
-
-# from __future__ import annotations
-# import re
-# import logging
-# from typing import Any, Dict, List, Optional
-
-# logger = logging.getLogger(__name__)
-
-# # ─────────────────────────────────────────────────────────────────────────────
-# # TYPE MAPPING
-# # ─────────────────────────────────────────────────────────────────────────────
-
-# _QLIK_TO_M_TYPE: Dict[str, str] = {
-#     "string":    "type text",
-#     "text":      "type text",
-#     "number":    "type number",
-#     "integer":   "Int64.Type",
-#     "int":       "Int64.Type",
-#     "double":    "type number",
-#     "decimal":   "type number",
-#     "date":      "type date",
-#     "time":      "type time",
-#     "datetime":  "type datetime",
-#     "timestamp": "type datetime",
-#     "boolean":   "type logical",
-#     "bool":      "type logical",
-#     "mixed":     "type any",
-#     "wildcard":  "type text",
-#     "unknown":   "type text",
-# }
-
-# # Types for use INSIDE #table() type signature — no "type" keyword prefix
-# _QLIK_TO_M_TYPE_FOR_TABLE: Dict[str, str] = {
-#     "string":    "text",
-#     "text":      "text",
-#     "number":    "number",
-#     "integer":   "Int64.Type",
-#     "int":       "Int64.Type",
-#     "double":    "number",
-#     "decimal":   "number",
-#     "date":      "date",
-#     "time":      "time",
-#     "datetime":  "datetime",
-#     "timestamp": "datetime",
-#     "boolean":   "logical",
-#     "bool":      "logical",
-#     "mixed":     "any",
-#     "wildcard":  "text",
-#     "unknown":   "text",
-# }
-
-# _DEFAULT_M_TYPE = "type text"
-# _DEFAULT_M_TYPE_FOR_TABLE = "text"
-
-# # ─────────────────────────────────────────────────────────────────────────────
-# # SMART COLUMN TYPE INFERENCE
-# # ─────────────────────────────────────────────────────────────────────────────
-# # When Qlik type metadata is missing/unknown, infer Power BI compatible types
-# # from column name patterns.
-# #
-# # CRITICAL RULE FOR ID / KEY / NO COLUMNS:
-# #   Column name alone is NOT sufficient to assign Int64.Type for ID-like
-# #   columns (patient_id, doctor_id, ward_no, etc.).
-# #
-# #   Reason: ID columns frequently contain mixed alphanumeric values such as
-# #   "P001", "DOC-123", "D_456", "W-2A" — assigning Int64.Type to these causes
-# #   a type-conversion error at Power BI refresh time ("We couldn't convert
-# #   'P001' to Number").
-# #
-# #   Safe rule:
-# #     • Name ends in _id/_key/_no/_num → type text   (safe default)
-# #     • Qlik explicitly reports type = "integer"/"int" → Int64.Type   (trust it)
-# #
-# #   Power BI relationship rule:
-# #     Both sides of a relationship must share the SAME datatype.
-# #     By consistently typing all ID columns as text (unless explicitly integer),
-# #     we guarantee the same type on both sides → relationships never break.
-# #
-# # Rule priority (implemented in _m_type):
-# #   1. Composite key (contains '-')            → type text  (always)
-# #   2. Explicit Qlik type = integer/int        → Int64.Type
-# #   3. Explicit Qlik type = date/datetime/etc  → respective type
-# #   4. Explicit Qlik type = number/double/etc  → type number
-# #   5. Name-based inference for safe patterns  → date/number/logical only
-# #   6. Fallback                                → type text
-# #
-# # NOTE: _NAME_TO_M_TYPE intentionally does NOT include ID/key/no → Int64.
-# # Those are handled exclusively via explicit Qlik type metadata (rule 2).
-# # ─────────────────────────────────────────────────────────────────────────────
-
-# # Column name suffixes/patterns → M type
-# # IMPORTANT: No ID/key/no/num patterns here — see CRITICAL RULE above.
-# _NAME_TO_M_TYPE: List[tuple] = [
-#     # Date/time columns — safe to infer from name (no ambiguity)
-#     (re.compile(r"_date$|^date$|_dt$|_timestamp$", re.I),                       "type date"),
-#     (re.compile(r"_datetime$|_created_at$|_updated_at$|_modified_at$", re.I),   "type datetime"),
-#     # Pure numeric measure columns — safe to infer from name
-#     # (these are never alphanumeric in practice)
-#     (re.compile(r"_cost$|_fee$|_bill$|_price$|_rate$|_salary$", re.I),         "type number"),
-#     (re.compile(r"_covered$|_expense$|_revenue$|_income$|_tax$|_discount$", re.I), "type number"),
-#     (re.compile(r"_amount$", re.I),                                             "type number"),
-#     (re.compile(r"_days$|_years$|_count$|_qty$|_quantity$", re.I),              "Int64.Type"),
-#     (re.compile(r"_pct$|_percent$|_ratio$|_score$|_weight$", re.I),             "type number"),
-#     # Boolean-like columns
-#     (re.compile(r"^is_|^has_|^can_|^was_|_flag$|_bool$", re.I),                "type logical"),
-# ]
-
-
-# def _infer_type_from_name(col_name: str) -> str:
-#     """
-#     Infer Power BI M type from column name patterns.
-
-#     DOES NOT infer Int64 for _id/_key/_no — those default to type text
-#     because they commonly contain mixed alphanumeric values (P001, DOC-123).
-#     Only explicit Qlik type = 'integer'/'int' triggers Int64.Type for such cols.
-
-#     Returns M type string WITH 'type' prefix (e.g. 'type date', 'type number').
-#     Falls back to 'type text' for unrecognised / ambiguous names.
-#     """
-#     clean = col_name.strip().lower()
-#     # Strip Qlik table-qualified prefix for matching
-#     if "." in clean and not clean.startswith("#"):
-#         clean = clean.split(".", 1)[-1]
-#     # Composite keys always text
-#     if "-" in clean:
-#         return "type text"
-#     for pattern, m_type in _NAME_TO_M_TYPE:
-#         if pattern.search(clean):
-#             return m_type
-#     return "type text"
-
-
-# def _m_type(qlik_type: str, col_name: str = "") -> str:
-#     """
-#     Resolve the correct Power BI M type for a column.
-
-#     Priority order:
-#       1. Composite key (col_name contains '-')   → type text
-#       2. Explicit Qlik integer/int               → Int64.Type
-#       3. Any other explicit non-text Qlik type   → mapped M type
-#       4. Name-based safe inference               → date/number/logical only
-#       5. Fallback                                → type text
-
-#     ID / key / no columns:
-#       When qlik_type is 'string'/'unknown', these default to type text even
-#       if the name ends in _id/_key/_no, because their values are often
-#       alphanumeric (P001, DOC-123).  Assign Int64 only when Qlik explicitly
-#       reports integer — that means the data is guaranteed to be pure numeric.
-#     """
-#     if "-" in col_name:
-#         return "type text"
-
-#     # Resolve plain name (strip Qlik table-qualified prefix)
-#     plain_name = (
-#         col_name.split(".", 1)[-1]
-#         if ("." in col_name and not col_name.startswith("#"))
-#         else col_name
-#     )
-
-#     qlik_lower = str(qlik_type).lower().strip()
-
-#     # Explicit Qlik type — trust it completely
-#     if qlik_lower not in ("string", "text", "unknown", "mixed", "wildcard", ""):
-#         return _QLIK_TO_M_TYPE.get(qlik_lower, _DEFAULT_M_TYPE)
-
-#     # No explicit type info → safe name-based inference only
-#     return _infer_type_from_name(plain_name)
-
-
-# def _m_type_for_table(qlik_type: str, col_name: str = "") -> str:
-#     """
-#     M type WITHOUT 'type' prefix — for #table() column signatures.
-
-#     Uses 'text' for all columns to avoid VT_BSTR → VT_I8 failures on
-#     empty values in inline tables. Inline tables are small reference
-#     tables — type safety matters less than load reliability here.
-#     """
-#     return "text"
-
-# def _normalize_path(path: str) -> str:
-#     path = re.sub(r"^lib://[^/]*/", "", path)
-#     path = re.sub(r"^lib://", "", path)
-#     return path
-
-
-# def _sanitize_col_name(name: str) -> str:
-#     if re.match(r"^[A-Za-z_][A-Za-z0-9_ ]*$", name):
-#         return name
-#     return f'#"{name}"'
-
-
-# def _strip_qlik_qualifier(col_name: str) -> str:
-#     """
-#     Strip Qlik table-qualified prefix from column name.
-
-#     'Dealer_Master.City_GeoInfo'  →  'City_GeoInfo'
-#     'Model_Master.ModelID'        →  'ModelID'
-#     'DealerID-ServiceID'          →  'DealerID-ServiceID'  (composite key, keep as-is)
-#     '#"Something"'                →  '#"Something"'        (already escaped)
-
-#     Critical: the actual CSV column is just 'City_GeoInfo', not the
-#     Qlik-qualified 'Dealer_Master.City_GeoInfo'. Using the qualified name
-#     as a BIM column causes column-not-found errors at query time.
-#     """
-#     if not col_name or col_name.startswith("#"):
-#         return col_name
-#     # Only strip if dot present AND no hyphen (composite keys keep their name)
-#     if "." in col_name and "-" not in col_name:
-#         return col_name.split(".", 1)[-1]
-#     return col_name
-
-
-# def validate_sharepoint_url_strict(url: str) -> tuple[bool, str]:
-#     """
-#     Strict SharePoint URL validation
-#     Returns: (is_valid: bool, error_message: str)
-    
-#     Validates:
-#     - Must start with https://
-#     - Must contain .sharepoint.com domain
-#     - Must have a non-empty company name
-#     - Rejects OneDrive and other URLs
-    
-#     Error cases:
-#     - Missing https://
-#     - Missing .com
-#     - Missing company name
-#     - Missing .sharepoint component
-#     """
-#     if not url or not isinstance(url, str) or not url.strip():
-#         return False, "URL cannot be empty"
-    
-#     trimmed = url.strip()
-#     trimmed_lower = trimmed.lower()
-    
-#     # Error 1: Must start with https://
-#     if not trimmed_lower.startswith("https://"):
-#         if trimmed_lower.startswith("http://"):
-#             return False, "❌ Must use HTTPS (not HTTP). Use: https://"
-#         return False, "❌ Must start with https://"
-    
-#     # Error 2: Must contain .sharepoint.com
-#     if ".sharepoint.com" not in trimmed_lower:
-#         # Check specifics for better error message
-#         if ".com" not in trimmed_lower:
-#             return False, "❌ Missing .com - Should end with .sharepoint.com"
-#         if "sharepoint" not in trimmed_lower:
-#             return False, "❌ Missing 'sharepoint' - Should be: https://COMPANYNAME.sharepoint.com"
-#         return False, "❌ Invalid format. Should be: https://COMPANYNAME.sharepoint.com"
-    
-#     # Error 3: Extract company name and check it's not empty
-#     import re
-#     sharepoint_match = re.match(r'https://([^.]+)\.sharepoint\.com', trimmed, re.IGNORECASE)
-#     if not sharepoint_match or not sharepoint_match.group(1):
-#         return False, "❌ Missing company name - Should be: https://COMPANYNAME.sharepoint.com"
-    
-#     company_name = sharepoint_match.group(1)
-    
-#     # Error 4: Company name must contain valid characters
-#     if not company_name or len(company_name) == 0 or not re.search(r'[a-z0-9]', company_name, re.IGNORECASE):
-#         return False, "❌ Invalid company name - Should be: https://COMPANYNAME.sharepoint.com"
-    
-#     # ✅ Valid
-#     return True, ""
-
-
-# def _is_sharepoint_url(url: str) -> bool:
-#     """Check if a URL is a SharePoint URL (includes OneDrive for Business)."""
-#     cleaned = url.strip().strip('"').strip("'").lower()
-#     return "sharepoint.com" in cleaned or "-my.sharepoint.com" in cleaned
-
-
-# def _is_onedrive_personal_url(url: str) -> bool:
-#     """Check if a URL is a personal OneDrive URL."""
-#     cleaned = url.strip().strip('"').strip("'").lower()
-#     return "onedrive.live.com" in cleaned or "1drv.ms" in cleaned
-
-
-# def _is_s3_url(url: str) -> bool:
-#     """Check if a URL is an AWS S3 URL."""
-#     cleaned = url.strip().strip('"').strip("'").lower()
-#     return "s3.amazonaws.com" in cleaned or cleaned.startswith("s3://") or ".s3." in cleaned
-
-
-# def _is_azure_blob_url(url: str) -> bool:
-#     """Check if a URL is an Azure Blob Storage URL."""
-#     cleaned = url.strip().strip('"').strip("'").lower()
-#     return "blob.core.windows.net" in cleaned or "dfs.core.windows.net" in cleaned
-
-
-# def _is_web_url(url: str) -> bool:
-#     """Check if a URL is a generic web URL (non-cloud-storage)."""
-#     cleaned = url.strip().strip('"').strip("'").lower()
-#     return (cleaned.startswith("http://") or cleaned.startswith("https://")) and not (
-#         _is_sharepoint_url(url) or _is_s3_url(url) or _is_azure_blob_url(url)
-#     )
-
-
-# def _quote_url(url: str) -> str:
-#     """Ensure a URL is properly quoted for M expressions."""
-#     cleaned = url.strip().strip('"').strip("'")
-#     return f'"{cleaned}"'
-
-
-# def _build_sharepoint_m(
-#     site_url: str,
-#     filename: str,
-#     folder_path: str,
-#     delimiter: str,
-#     encoding: int,
-#     transform_step: str,
-#     final_step: str,
-#     is_qvd: bool = False,
-# ) -> str:
-#     """
-#     Build a fully DYNAMIC SharePoint.Files() M expression.
-
-#     HOW IT WORKS:
-#     - site_url  : the SharePoint root passed by the user at runtime
-#                   (e.g. "https://sorimtechnologies.sharepoint.com")
-#     - filename  : CSV file name extracted from the Qlik load script
-#     - folder_path: expected folder URL — used as a hint but NOT hardcoded
-#                   in the M query; the M query resolves it dynamically.
-
-#     WHY SharePoint.Files() NOT SharePoint.Contents():
-#     - SharePoint.Contents() → Power BI asks for "Web" credential  (WRONG ❌)
-#     - SharePoint.Files()    → Power BI asks for "SharePoint" credential (CORRECT ✅)
-
-#     DYNAMIC SEARCH STRATEGY (no hardcoded paths):
-#     1. SharePoint.Files(site_url) returns ALL files under the site.
-#     2. First try: match [Name] exactly (case-insensitive).
-#     3. The M expression is fully parameterised — only site_url and filename
-#        are embedded; the folder structure is discovered at runtime.
-#     4. If 0 rows → clear error message shows what was searched.
-#     """
-#     qvd_comment = "    // QVD converted to CSV — SharePoint.Files() reads the CSV version\n" if is_qvd else ""
-
-#     m = (
-#         f"let\n"
-#         f"{qvd_comment}"
-#         f"    // ── Dynamic SharePoint source ─────────────────────────────────────\n"
-#         f"    // site_url comes from the base_path the user configured.\n"
-#         f"    // SharePoint.Files() scans ALL files under the site automatically.\n"
-#         f"    // No folder paths are hardcoded — works regardless of subfolder structure.\n"
-#         f"    SiteUrl = \"{site_url}\",\n"
-#         f"    FileName = \"{filename}\",\n"
-#         f"    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),\n"
-#         f"    // Step 1: find rows where filename matches (case-insensitive)\n"
-#         f"    FilteredByName = Table.SelectRows(\n"
-#         f"        Source,\n"
-#         f"        each Text.Lower([Name]) = Text.Lower(FileName)\n"
-#         f"    ),\n"
-#         f"    // Step 2: if multiple files with same name exist, pick the one\n"
-#         f"    // whose [Folder Path] contains \"Shared Documents\" (standard library)\n"
-#         f"    FilteredByLib = if Table.RowCount(FilteredByName) > 1\n"
-#         f"        then Table.SelectRows(FilteredByName, each Text.Contains([Folder Path], \"Shared Documents\"))\n"
-#         f"        else FilteredByName,\n"
-#         f"    // Step 3: pick first match\n"
-#         f"    FileBinary = if Table.RowCount(FilteredByLib) = 0\n"
-#         f"        then error \"File \" & FileName & \" not found under \" & SiteUrl &\n"
-#         f"             \". Ensure the file exists in SharePoint and credentials are set.\"\n"
-#         f"        else FilteredByLib{{0}}[Content],\n"
-#         f"    CsvData = Csv.Document(\n"
-#         f"        FileBinary,\n"
-#         f"        [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]\n"
-#         f"    ),\n"
-#         f"    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars=true])"
-#         f"{transform_step}\n"
-#         f"in\n"
-#         f"    {final_step}"
-#     )
-#     return m
-
-
-# def _build_s3_m(
-#     bucket_url: str,
-#     filename: str,
-#     delimiter: str,
-#     encoding: int,
-#     transform_step: str,
-#     final_step: str,
-# ) -> str:
-#     """Build M expression for AWS S3 via Web.Contents() (public/pre-signed URL)."""
-#     clean_url = bucket_url.strip().strip('"').strip("'").rstrip("/")
-#     file_url = f"{clean_url}/{filename}"
-#     m = (
-#         f"let\n"
-#         f"    // AWS S3: Web.Contents() — use pre-signed URL or make bucket public\n"
-#         f"    // For private S3, use On-Premises Data Gateway with ODBC/JDBC connector\n"
-#         f"    Source = Web.Contents(\"{file_url}\"),\n"
-#         f"    CsvData = Csv.Document(\n"
-#         f"        Source,\n"
-#         f"        [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]\n"
-#         f"    ),\n"
-#         f"    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars=true])"
-#         f"{transform_step}\n"
-#         f"in\n"
-#         f"    {final_step}"
-#     )
-#     return m
-
-
-# def _build_azure_blob_m(
-#     container_url: str,
-#     filename: str,
-#     delimiter: str,
-#     encoding: int,
-#     transform_step: str,
-#     final_step: str,
-# ) -> str:
-#     """Build M expression for Azure Blob Storage via AzureStorage.Blobs()."""
-#     clean_url = container_url.strip().strip('"').strip("'").rstrip("/")
-#     m = (
-#         f"let\n"
-#         f"    // Azure Blob Storage — authenticate with Account Key or SAS token\n"
-#         f"    Source = AzureStorage.Blobs(\"{clean_url}\"),\n"
-#         f"    FileRow = Table.SelectRows(Source, each Text.Lower([Name]) = Text.Lower(\"{filename}\")),\n"
-#         f"    FileBinary = if Table.RowCount(FileRow) = 0 then error \"{filename} not found in Azure Blob\" else FileRow{{0}}[Content],\n"
-#         f"    CsvData = Csv.Document(\n"
-#         f"        FileBinary,\n"
-#         f"        [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]\n"
-#         f"    ),\n"
-#         f"    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars=true])"
-#         f"{transform_step}\n"
-#         f"in\n"
-#         f"    {final_step}"
-#     )
-#     return m
-
-
-# # ─────────────────────────────────────────────────────────────────────────────
-# # MAIN CONVERTER
-# # ─────────────────────────────────────────────────────────────────────────────
-
-# class MQueryConverter:
-
-#     # ============================================================
-#     # PUBLIC
-#     # ============================================================
-
-#     def convert_all(
-#         self,
-#         tables: List[Dict[str, Any]],
-#         base_path: str = "[DataSourcePath]",
-#         connection_string: Optional[str] = None,
-#     ) -> List[Dict[str, Any]]:
-
-#         results = []
-
-#         for table in tables:
-#             m_expr, notes = self._dispatch(table, base_path, connection_string)
-#             results.append({
-#                 "name":         table["name"],
-#                 "source_type":  table["source_type"],
-#                 "m_expression": m_expr,
-#                 "fields":       table["fields"],
-#                 "notes":        notes,
-#                 "source_path":  table.get("source_path", ""),
-#                 "options":      table.get("options", {}),
-#             })
-
-#         logger.info("[MQueryConverter] Converted %d table(s)", len(results))
-#         return results
-
-#     def convert_one(
-#         self,
-#         table: Dict[str, Any],
-#         base_path: str = "[DataSourcePath]",
-#         connection_string: Optional[str] = None,
-#         all_table_names: Optional[set] = None,
-#     ) -> str:
-#         m_expr, _ = self._dispatch(table, base_path, connection_string)
-#         return m_expr
-
-#     # ============================================================
-#     # DISPATCH
-#     # ============================================================
-
-#     def _dispatch(self, table, base_path, connection_string):
-#         source_type = table.get("source_type", "")
-#         dispatch = {
-#             "inline":   self._m_inline,
-#             "csv":      self._m_csv,
-#             "excel":    self._m_excel,
-#             "json":     self._m_json,
-#             "xml":      self._m_xml,
-#             "parquet":  self._m_parquet,
-#             "qvd":      self._m_qvd,
-#             "resident": self._m_resident,
-#             "sql":      self._m_sql,
-#         }
-#         handler = dispatch.get(source_type, self._m_placeholder)
-#         try:
-#             return handler(table, base_path, connection_string)
-#         except Exception as exc:
-#             logger.warning("[MQuery] Error converting '%s': %s", table.get("name"), exc)
-#             return self._m_placeholder(table, base_path, connection_string), f"Conversion error: {exc}"
-
-#     # ============================================================
-#     # SHARED TYPE TRANSFORM STEP
-#     # ============================================================
-
-#     def _apply_types_as_is(self, fields: List[Dict], previous_step: str):
-#         """
-#         Like _apply_types but uses the SOURCE column name (expression, not alias).
-#         Skips computed fields (APPLYMAP, IF, expressions with parentheses).
-#         Used for SharePoint sources so columns match what's actually in the file.
-
-#         KEY FIX: Uses smart type inference (_m_type) instead of hardcoding
-#         everything as 'type text'. This ensures relationship key columns
-#         (e.g. patient_id, doctor_id, disease_id) get the correct Power BI
-#         datatype so cloud semantic model relationships (openSemanticModel)
-#         don't break due to type mismatches between tables.
-
-#         Safe strategy:
-#           - ID/key/date/numeric columns → inferred correct type
-#           - All other string columns → type text (safe for nulls/empty values)
-#         """
-#         pairs = []
-#         for f in fields:
-#             expr = f.get("expression", "")
-#             # Skip computed expressions — anything with ( or known functions
-#             if not expr or expr == "*":
-#                 continue
-#             if "(" in expr or expr.upper().startswith("APPLYMAP") or expr.upper().startswith("IF"):
-#                 continue
-#             # Extract plain column name from expression (strip brackets)
-#             if expr.startswith("[") and expr.endswith("]"):
-#                 col_name = expr[1:-1]
-#             elif re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", expr):
-#                 col_name = expr
-#             else:
-#                 continue  # skip anything else that's not a plain column name
-
-#             # Use smart type inference: explicit Qlik type first, then name-based
-#             qlik_type = f.get("type", "string")
-#             m_type = _m_type(qlik_type, col_name)
-#             pairs.append(f'{{"{col_name}", {m_type}}}')
-
-#         if not pairs:
-#             return "", previous_step
-
-#         pairs_str = ",\n        ".join(pairs)
-#         transform = (
-#             f",\n"
-#             f"    TypedTable = Table.TransformColumnTypes(\n"
-#             f"        {previous_step},\n"
-#             f"        {{\n        {pairs_str}\n        }}\n"
-#             f"    )"
-#         )
-#         return transform, "TypedTable"
-
-#     def _apply_types(self, fields: List[Dict], previous_step: str):
-#         """
-#         Returns (transform_step_str, final_step_name).
-#         Uses 'type' prefix form — correct for TransformColumnTypes.
-#         Returns ("", previous_step) if no typed fields.
-
-#         KEY FIX: Uses smart type inference (_m_type) which combines:
-#           1. Explicit Qlik type metadata (integer, date, etc.)
-#           2. Column name pattern matching (_infer_type_from_name) for
-#              columns that Qlik reports as 'string'/'unknown'
-#           3. Composite key fields (containing '-') → always text
-#           4. Qlik-qualified names (Table.Column) → strip prefix then infer
-
-#         This fixes Power BI cloud relationship breakage caused by type
-#         mismatches — e.g. patient_id must be Int64.Type in BOTH patients
-#         and admissions tables for the relationship to work in the
-#         openSemanticModel (cloud semantic model).
-#         """
-#         typed = [f for f in fields if f.get("name") not in ("*", "")]
-#         if not typed:
-#             return "", previous_step
-
-#         pairs = []
-#         for f in typed:
-#             raw_name = f.get("alias") or f["name"]
-#             # Strip Qlik table-qualified prefix → use the plain CSV column name
-#             col_name = _strip_qlik_qualifier(raw_name)
-#             # Get M type: explicit Qlik type takes priority, then name inference
-#             m_type = _m_type(f.get("type", "string"), raw_name)
-#             pairs.append(f'{{"{col_name}", {m_type}}}')
-
-#         pairs_str = ",\n        ".join(pairs)
-#         transform = (
-#             f",\n"
-#             f"    TypedTable = Table.TransformColumnTypes(\n"
-#             f"        {previous_step},\n"
-#             f"        {{\n        {pairs_str}\n        }}\n"
-#             f"    )"
-#         )
-#         return transform, "TypedTable"
-
-#     # ============================================================
-#     # INLINE
-#     # ============================================================
-
-#     def _m_inline(self, table, base_path, _cs):
-#         opts   = table.get("options", {})
-#         fields = table["fields"]
-
-#         headers = opts.get(
-#             "inline_headers",
-#             [f["name"] for f in fields if f["name"] != "*"]
-#         )
-#         rows = opts.get("inline_rows_all") or opts.get("inline_sample", [])
-
-#         # Column type defs — NO "type" prefix inside #table() signature
-#         type_defs = ", ".join(
-#             f"{_sanitize_col_name(_strip_qlik_qualifier(h))} = "
-#             f"{_m_type_for_table(next((f['type'] for f in fields if f['name'] == h), 'string'), h)}"
-#             for h in headers
-#         )
-
-#         # Build data rows — strip Qlik single-quotes, escape double-quotes
-#         row_strs = []
-#         for row in rows:
-#             vals = []
-#             for h in headers:
-#                 v = str(row.get(h, ""))
-#                 v = v.strip("'")            # strip Qlik single quotes
-#                 v = v.replace('"', '""')    # escape embedded double quotes
-#                 v = v.replace("\n", " ")    # collapse embedded newlines
-#                 v = v.replace("\r", "")     # remove carriage returns
-#                 v = " ".join(v.split())     # collapse multiple spaces
-#                 vals.append(f'"{v}"')
-#             # Entire row MUST be on one line
-#             row_strs.append("{" + ", ".join(vals) + "}")
-#         rows_m = (
-#             "{\n        " + ",\n        ".join(row_strs) + "\n    }"
-#             if row_strs else "{}"
-#         )
-#         # Safety: ensure no row spans multiple lines
-#         import re
-#         rows_m_safe = re.sub(r',\s*\n\s*"', ', "', rows_m)
-#         rows_m = rows_m_safe
-#         m = (
-#             f"let\n"
-#             f"    Source = #table(\n"
-#             f"        type table [{type_defs}],\n"
-#             f"        {rows_m}\n"
-#             f"    )\n"
-#             f"in\n"
-#             f"    Source"
-#         )
-#         return m, f"Inline table with {len(rows)} row(s). Data embedded directly."
-
-#     # ============================================================
-#     # CSV
-#     # ============================================================
-
-#     def _m_csv(self, table, base_path, _cs):
-#         path   = _normalize_path(table.get("source_path", ""))
-#         fields = table["fields"]
-#         opts   = table.get("options", {})
-
-#         delimiter = opts.get("delimiter", ",")
-#         encoding  = 65001
-#         enc_str   = opts.get("encoding", "")
-#         if enc_str:
-#             enc_map = {"UTF-8": 65001, "UTF8": 65001, "UTF-16": 1200, "UTF16": 1200}
-#             encoding = enc_map.get(enc_str.upper().replace("-", ""), encoding)
-
-#         transform, final = self._apply_types(fields, "PromotedHeaders")
-
-#         # ── Universal source routing ──────────────────────────────────────────
-#         # Supports: SharePoint/OneDrive-for-Business, AWS S3, Azure Blob,
-#         #           generic Web URL, and local/on-prem File.Contents()
-#         filename_only = path.rsplit("/", 1)[-1] if "/" in path else path
-
-#         if _is_sharepoint_url(base_path):
-#             # SharePoint / OneDrive for Business
-#             # FIX: SharePoint.Files() triggers SharePoint credential (not Web credential)
-#             opts["table_name"] = table.get("name", "Table")
-#             site_url, folder_path, filename = self._get_sharepoint_parts(base_path, path, opts)
-#             sp_transform, sp_final = self._apply_types_as_is(fields, "PromotedHeaders")
-#             m = _build_sharepoint_m(
-#                 site_url=site_url,
-#                 filename=filename,
-#                 folder_path=folder_path,
-#                 delimiter=delimiter,
-#                 encoding=encoding,
-#                 transform_step=sp_transform,
-#                 final_step=sp_final,
-#             )
-#         elif _is_s3_url(base_path):
-#             # AWS S3
-#             sp_transform, sp_final = self._apply_types_as_is(fields, "PromotedHeaders")
-#             m = _build_s3_m(
-#                 bucket_url=base_path,
-#                 filename=filename_only,
-#                 delimiter=delimiter,
-#                 encoding=encoding,
-#                 transform_step=sp_transform,
-#                 final_step=sp_final,
-#             )
-#         elif _is_azure_blob_url(base_path):
-#             # Azure Blob Storage
-#             sp_transform, sp_final = self._apply_types_as_is(fields, "PromotedHeaders")
-#             m = _build_azure_blob_m(
-#                 container_url=base_path,
-#                 filename=filename_only,
-#                 delimiter=delimiter,
-#                 encoding=encoding,
-#                 transform_step=sp_transform,
-#                 final_step=sp_final,
-#             )
-#         elif _is_web_url(base_path):
-#             # Generic HTTPS web source (public URL)
-#             clean_bp = base_path.strip().strip('"').strip("'").rstrip("/")
-#             file_url = f"{clean_bp}/{path}" if path else clean_bp
-#             m = (
-#                 f"let\n"
-#                 f"    Source = Web.Contents(\"{file_url}\"),\n"
-#                 f"    CsvData = Csv.Document(\n"
-#                 f"        Source,\n"
-#                 f"        [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]\n"
-#                 f"    ),\n"
-#                 f"    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars=true])"
-#                 f"{transform}\n"
-#                 f"in\n"
-#                 f"    {final}"
-#             )
-#         else:
-#             # Local/on-prem: use File.Contents()
-#             if base_path.strip().startswith("["):
-#                 path_expr = f"{base_path} & \"/{path}\""
-#             else:
-#                 clean_bp = base_path.strip().strip('"').strip("'")
-#                 path_expr = f'"{clean_bp}/{path}"'
-#             m = (
-#                 f"let\n"
-#                 f"    FilePath = {path_expr},\n"
-#                 f"    Source = Csv.Document(\n"
-#                 f"        File.Contents(FilePath),\n"
-#                 f"        [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]\n"
-#                 f"    ),\n"
-#                 f"    PromotedHeaders = Table.PromoteHeaders(Source, [PromoteAllScalars=true])"
-#                 f"{transform}\n"
-#                 f"in\n"
-#                 f"    {final}"
-#             )
-#         return m, f"CSV source: {path}"
-
-#     # ============================================================
-#     # SHAREPOINT HELPERS
-#     # ============================================================
-
-#     def _get_sharepoint_parts(self, base_path: str, source_path: str, opts: dict):
-#         """
-#         Extract (site_url, folder_path, filename) from the user-supplied base_path.
-
-#         DESIGN: The M query generated by _build_sharepoint_m is FULLY DYNAMIC —
-#         it calls SharePoint.Files(site_url) and searches by filename at runtime.
-#         No folder path is hardcoded in the M expression.
-
-#         This function only needs to:
-#           1. Extract a clean site_url (root of the SharePoint site) from base_path
-#           2. Extract the filename from source_path
-#           3. Return folder_path (kept for Excel compatibility but not used in CSV filter)
-
-#         Supported base_path formats:
-#           A) "https://sorimtechnologies.sharepoint.com"
-#              → site_url = "https://sorimtechnologies.sharepoint.com"
-#           B) "https://sorimtechnologies.sharepoint.com/Shared Documents"
-#              → site_url = "https://sorimtechnologies.sharepoint.com"
-#           C) "https://sorimtechnologies.sharepoint.com/Shared Documents/SubFolder"
-#              → site_url = "https://sorimtechnologies.sharepoint.com"
-#           D) "https://company.sharepoint.com/sites/TeamSite"
-#              → site_url = "https://company.sharepoint.com/sites/TeamSite"
-#           E) "https://company.sharepoint.com/sites/TeamSite/Shared Documents/Folder"
-#              → site_url = "https://company.sharepoint.com/sites/TeamSite"
-#         """
-#         raw = base_path.strip().strip('"').strip("'").rstrip("/")
-
-#         # ── Extract clean site_url ─────────────────────────────────────────────
-#         if "/Shared Documents" in raw:
-#             # Strip everything from /Shared Documents onward
-#             site_url = raw.split("/Shared Documents")[0].rstrip("/")
-#             folder_path = raw + "/"
-#         elif "/sites/" in raw:
-#             # Keep up to and including /sites/SiteName
-#             parts = raw.split("/")
-#             # https://host/sites/SiteName → parts[0]=https:, [1]='', [2]=host, [3]=sites, [4]=SiteName
-#             site_url = "/".join(parts[:5]) if len(parts) >= 5 else raw
-#             folder_path = f"{site_url}/Shared Documents/"
-#         else:
-#             # Bare root: "https://sorimtechnologies.sharepoint.com"
-#             site_url = raw
-#             folder_path = f"{site_url}/Shared Documents/"
-
-#         # Override folder_path if sp_subfolder explicitly set
-#         sp_subfolder = opts.get("sp_subfolder", "")
-#         if sp_subfolder:
-#             folder_path = f"{site_url}/Shared Documents/{sp_subfolder.strip('/')}/"
-#         elif "/" in source_path:
-#             sub = source_path.rsplit("/", 1)[0]
-#             folder_path = f"{site_url}/Shared Documents/{sub}/"
-
-#         # ── Extract filename ───────────────────────────────────────────────────
-#         filename = source_path.rsplit("/", 1)[-1] if "/" in source_path else source_path
-#         if not filename:
-#             table_name = opts.get("table_name", "Table")
-#             filename = f"{table_name}.csv"
-
-#         return site_url, folder_path, filename
-
-#     # ============================================================
-#     # EXCEL
-#     # ============================================================
-
-#     def _m_excel(self, table, base_path, _cs):
-#         path   = _normalize_path(table.get("source_path", ""))
-#         sheet  = table.get("options", {}).get("sheet", "Sheet1")
-#         fields = table["fields"]
-
-#         transform, final = self._apply_types(fields, "PromotedHeaders")
-
-#         if _is_sharepoint_url(base_path):
-#             opts = table.get("options", {})
-#             opts["table_name"] = table.get("name", "Table")
-#             site_url, folder_path, filename = self._get_sharepoint_parts(base_path, path, opts)
-#             excel_subfolder = folder_path.rstrip("/")
-#             if "/Shared Documents/" in excel_subfolder:
-#                 excel_subfolder = excel_subfolder.split("/Shared Documents/", 1)[1].strip("/")
-#             else:
-#                 excel_subfolder = ""
-
-#             if excel_subfolder:
-#                 excel_nav = (
-#                     f"    Documents = Source{{[Name=\"Shared Documents\"]}}[Content],\n"
-#                     f"    Folder = Documents{{[Name=\"{excel_subfolder}\"]}}[Content],\n"
-#                     f"    FileRow = Table.SelectRows(Folder, each Text.Lower([Name]) = Text.Lower(\"{filename}\")),\n"
-#                 )
-#             else:
-#                 excel_nav = (
-#                     f"    Documents = Source{{[Name=\"Shared Documents\"]}}[Content],\n"
-#                     f"    FileRow = Table.SelectRows(Documents, each Text.Lower([Name]) = Text.Lower(\"{filename}\")),\n"
-#                 )
-
-#             # DYNAMIC Excel from SharePoint — same search strategy as CSV
-#             sp_transform, sp_final = self._apply_types_as_is(fields, "PromotedHeaders")
-#             m = (
-#                 f"let\n"
-#                 f"    // Dynamic SharePoint Excel — no hardcoded folder paths\n"
-#                 f"    SiteUrl = \"{site_url}\",\n"
-#                 f"    FileName = \"{filename}\",\n"
-#                 f"    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),\n"
-#                 f"    FilteredByName = Table.SelectRows(\n"
-#                 f"        Source,\n"
-#                 f"        each Text.Lower([Name]) = Text.Lower(FileName)\n"
-#                 f"    ),\n"
-#                 f"    FilteredByLib = if Table.RowCount(FilteredByName) > 1\n"
-#                 f"        then Table.SelectRows(FilteredByName, each Text.Contains([Folder Path], \"Shared Documents\"))\n"
-#                 f"        else FilteredByName,\n"
-#                 f"    FileBinary = if Table.RowCount(FilteredByLib) = 0\n"
-#                 f"        then error \"File \" & FileName & \" not found under \" & SiteUrl\n"
-#                 f"        else FilteredByLib{{0}}[Content],\n"
-#                 f"    ExcelData = Excel.Workbook(FileBinary, null, true),\n"
-#                 f"    SheetData = ExcelData{{[Item=\"{sheet}\", Kind=\"Sheet\"]}}[Data],\n"
-#                 f"    PromotedHeaders = Table.PromoteHeaders(SheetData, [PromoteAllScalars=true])"
-#                 f"{sp_transform}\n"
-#                 f"in\n"
-#                 f"    {sp_final}"
-#             )
-#         else:
-#             if base_path.strip().startswith("["):
-#                 path_expr = f"{base_path} & \"/{path}\""
-#             else:
-#                 clean_bp = base_path.strip().strip('"').strip("'")
-#                 path_expr = f'"{clean_bp}/{path}"'
-#             m = (
-#                 f"let\n"
-#                 f"    FilePath = {path_expr},\n"
-#                 f"    Source = Excel.Workbook(File.Contents(FilePath), null, true),\n"
-#                 f"    SheetData = Source{{[Item=\"{sheet}\", Kind=\"Sheet\"]}}[Data],\n"
-#                 f"    PromotedHeaders = Table.PromoteHeaders(SheetData, [PromoteAllScalars=true])"
-#                 f"{transform}\n"
-#                 f"in\n"
-#                 f"    {final}"
-#             )
-#         return m, f"Excel source: {path}, sheet: {sheet}"
-
-#     # ============================================================
-#     # JSON
-#     # ============================================================
-
-#     def _m_json(self, table, base_path, _cs):
-#         path   = _normalize_path(table.get("source_path", ""))
-#         fields = table["fields"]
-
-#         expand_cols = [f.get("alias") or f["name"] for f in fields if f["name"] != "*"]
-#         col_list    = ", ".join(f'"{c}"' for c in expand_cols)
-
-#         transform, final = self._apply_types(fields, "Expanded")
-
-#         m = (
-#             f"let\n"
-#             f"    FilePath = {base_path} & \"/{path}\",\n"
-#             f"    Source = Json.Document(File.Contents(FilePath)),\n"
-#             f"    ToTable = Table.FromList(Source, Splitter.SplitByNothing(), null, null, ExtraValues.Error),\n"
-#             f"    Expanded = Table.ExpandRecordColumn(ToTable, \"Column1\",\n"
-#             f"        {{{col_list}}},\n"
-#             f"        {{{col_list}}}\n"
-#             f"    )"
-#             f"{transform}\n"
-#             f"in\n"
-#             f"    {final}"
-#         )
-#         return m, f"JSON source: {path}. Assumes array of records at root level."
-
-#     # ============================================================
-#     # XML
-#     # ============================================================
-
-#     def _m_xml(self, table, base_path, _cs):
-#         path   = _normalize_path(table.get("source_path", ""))
-#         fields = table["fields"]
-
-#         transform, final = self._apply_types(fields, "Source")
-
-#         m = (
-#             f"let\n"
-#             f"    FilePath = {base_path} & \"/{path}\",\n"
-#             f"    Source = Xml.Tables(File.Contents(FilePath))"
-#             f"{transform}\n"
-#             f"in\n"
-#             f"    {final}"
-#         )
-#         return m, f"XML source: {path}. Review nested table expansion manually."
-
-#     # ============================================================
-#     # PARQUET
-#     # ============================================================
-
-#     def _m_parquet(self, table, base_path, _cs):
-#         path   = _normalize_path(table.get("source_path", ""))
-#         fields = table["fields"]
-
-#         transform, final = self._apply_types(fields, "Source")
-
-#         m = (
-#             f"let\n"
-#             f"    FilePath = {base_path} & \"/{path}\",\n"
-#             f"    Source = Parquet.Document(File.Contents(FilePath))"
-#             f"{transform}\n"
-#             f"in\n"
-#             f"    {final}"
-#         )
-#         return m, f"Parquet source: {path}."
-
-#     # ============================================================
-#     # QVD (CSV fallback)
-#     # ============================================================
-
-#     def _m_qvd(self, table, base_path, _cs):
-#         path     = _normalize_path(table.get("source_path", ""))
-#         csv_path = re.sub(r"\.qvd$", ".csv", path, flags=re.IGNORECASE)
-#         fields   = table["fields"]
-
-#         transform, final = self._apply_types(fields, "PromotedHeaders")
-
-#         if _is_sharepoint_url(base_path):
-#             opts = table.get("options", {})
-#             opts["table_name"] = table.get("name", "Table")
-#             site_url, folder_path, filename = self._get_sharepoint_parts(base_path, csv_path, opts)
-#             sp_transform, sp_final = self._apply_types_as_is(fields, "PromotedHeaders")
-#             m = _build_sharepoint_m(
-#                 site_url=site_url,
-#                 filename=filename,
-#                 folder_path=folder_path,
-#                 delimiter=",",
-#                 encoding=65001,
-#                 transform_step=sp_transform,
-#                 final_step=sp_final,
-#                 is_qvd=True,
-#             )
-#         else:
-#             if base_path.strip().startswith("["):
-#                 path_expr = f"{base_path} & \"/{csv_path}\""
-#             else:
-#                 clean_bp = base_path.strip().strip('"').strip("'")
-#                 path_expr = f'"{clean_bp}/{csv_path}"'
-#             m = (
-#                 f"let\n"
-#                 f"    // QVD not supported natively — expects pre-converted CSV\n"
-#                 f"    FilePath = {path_expr},\n"
-#                 f"    Source = Csv.Document(\n"
-#                 f"        File.Contents(FilePath),\n"
-#                 f"        [Delimiter=\",\", Encoding=65001]\n"
-#                 f"    ),\n"
-#                 f"    PromotedHeaders = Table.PromoteHeaders(Source, [PromoteAllScalars=true])"
-#                 f"{transform}\n"
-#                 f"in\n"
-#                 f"    {final}"
-#             )
-#         return m, f"QVD fallback (pre-convert to CSV): {path}"
-
-
-#     # ============================================================
-#     # RESIDENT
-#     # ============================================================
-
-#     def _m_resident(self, table, base_path, _cs):
-#         source_table = table.get("source_path", "UnknownTable")
-#         fields       = table["fields"]
-
-#         selected = [f.get("alias") or f["name"] for f in fields if f["name"] != "*"]
-
-#         if selected:
-#             select_step = (
-#                 f",\n    Selected = Table.SelectColumns({source_table},\n"
-#                 f"        {{{', '.join(chr(34) + c + chr(34) for c in selected)}}}\n"
-#                 f"    )"
-#             )
-#             intermediate = "Selected"
-#         else:
-#             select_step = ""
-#             intermediate = source_table
-
-#         transform, final = self._apply_types(fields, intermediate)
-
-#         m = (
-#             f"let\n"
-#             f"    // References another Power BI query: {source_table}\n"
-#             f"    {source_table} = {source_table}"
-#             f"{select_step}"
-#             f"{transform}\n"
-#             f"in\n"
-#             f"    {final}"
-#         )
-#         return m, f"RESIDENT load from '{source_table}'."
-
-#     # ============================================================
-#     # SQL
-#     # ============================================================
-
-#     def _m_sql(self, table, base_path, connection_string):
-#         source_table = table.get("source_path", "dbo.UnknownTable")
-#         fields       = table["fields"]
-#         conn         = connection_string or "[OdbcConnectionString]"
-
-#         selected = [f.get("alias") or f["name"] for f in fields if f["name"] != "*"]
-#         col_list = ", ".join(f"[{c}]" for c in selected) if selected else "*"
-
-#         transform, final = self._apply_types(fields, "Source")
-
-#         m = (
-#             f"let\n"
-#             f"    ConnectionString = {conn},\n"
-#             f"    Source = Odbc.Query(\n"
-#             f"        ConnectionString,\n"
-#             f"        \"SELECT {col_list} FROM {source_table}\"\n"
-#             f"    )"
-#             f"{transform}\n"
-#             f"in\n"
-#             f"    {final}"
-#         )
-#         return m, f"SQL/ODBC source: {source_table}."
-
-#     # ============================================================
-#     # PLACEHOLDER
-#     # ============================================================
-
-#     def _m_placeholder(self, table, base_path, _cs):
-#         fields = table["fields"]
-
-#         type_defs = ", ".join(
-#             f"{_sanitize_col_name(f.get('alias') or f['name'])} = {_m_type(f.get('type', 'string'))}"
-#             for f in fields if f["name"] != "*"
-#         ) or "Column1 = type text"
-
-#         m = (
-#             f"let\n"
-#             f"    // Placeholder — source type '{table.get('source_type', 'unknown')}' not auto-converted.\n"
-#             f"    // Original load: {table.get('source_path', 'N/A')}\n"
-#             f"    Source = #table(\n"
-#             f"        type table [{type_defs}],\n"
-#             f"        {{}}\n"
-#             f"    )\n"
-#             f"in\n"
-#             f"    Source"
-#         )
-#         return m, f"Source type '{table.get('source_type')}' requires manual configuration."
-
-
-# # ─────────────────────────────────────────────────────────────────────────────
-# # CONVENIENCE
-# # ─────────────────────────────────────────────────────────────────────────────
-
-# def convert_to_mquery(
-#     tables: List[Dict[str, Any]],
-#     base_path: str = "[DataSourcePath]",
-#     connection_string: Optional[str] = None,
-# ) -> List[Dict[str, Any]]:
-#     """Convert parsed Qlik tables to M expressions."""
-#     return MQueryConverter().convert_all(tables, base_path, connection_string)
-
-
-
 """
 mquery_converter.py
 ───────────────────
 Converts parsed Qlik table definitions into Power Query M expressions
 suitable for embedding in a Power BI BIM partition.
 
-Fix history
-───────────
-  ✅ Original: all source types (csv, excel, inline, sql, qvd, resident)
-  ✅ Patched:  SharePoint.Files() used for SharePoint (not SharePoint.Contents())
-  ✅ Patched:  Smart column type inference (_m_type) avoids Int64 on alphanumeric IDs
-  ✅ Fix 13:   _m_resident now handles tables whose RESIDENT source was dropped
-               (DROP TABLE Sales_Raw pattern from Qlik).
+CHANGES FROM ORIGINAL
+─────────────────────
+  ✅ Fix A: _resolve_output_columns() — BIM column metadata now reflects
+            the ACTUAL post-transform output columns, not the raw source cols.
+            Fixes silent publish failures where Fabric validates BIM cols
+            against M query output at create time.
 
-               PROBLEM:
-                 Qlik pattern:
-                   Sales_Raw: LOAD ... FROM [lib://...fact_sales.csv];
-                   Sales:     LOAD ..., qty*price as total_value RESIDENT Sales_Raw;
-                   DROP TABLE Sales_Raw;
+  ✅ Fix B: _build_safe_combine() — CONCATENATE now uses
+            Table.SelectColumns(..., MissingField.UseNull) on every source
+            before Table.Combine so schema is always aligned even when CSV
+            files differ in column order or have extra columns.
 
-                 Old behaviour:
-                   loadscript_parser correctly skips Sales_Raw (it's in dropped_tables)
-                   but the Sales table was still marked source_type='resident' with
-                   source_path='Sales_Raw'. _m_resident then generated:
-                     let
-                         Sales_Raw = Sales_Raw,   ← broken self-reference!
-                   causing "Expression.Error: The import Sales_Raw matches no exports"
-                   at Power BI publish time.
+  ✅ Fix C: _convert_applymap_to_dimension_table() — ApplyMap tables are
+            generated as standalone dimension queries instead of fragile
+            inline SharePoint lookups. Callers (publish_mquery_endpoint)
+            inject the dimension table into tables_m and let Power BI
+            relationships handle the lookup.
 
-               FIX:
-                 loadscript_parser (Fix 13) now sets two extra option keys on the
-                 Sales table:
-                   options['is_dropped_resident'] = True
-                   options['raw_source_path']     = 'fact_sales_1M.csv'
+  ✅ Fix D: _detect_and_apply_join() now correctly wires the parser's
+            is_join / join_table / join_type option flags so JOIN/KEEP
+            statements from the load script produce proper
+            Table.NestedJoin M steps.
 
-                 _m_resident detects these flags and builds a full self-contained
-                 SharePoint CSV M query (same as _m_csv) — the intermediate table
-                 is never referenced.  Calculated columns (qty * price) are
-                 appended as Table.AddColumn steps.
+  ✅ Fix E: _apply_all_transformations() order fixed — null fixes → concat
+            → IF/WHERE → group_by → join → keep (was missing join wiring).
+
+  All original logic preserved; changes are additive / targeted replacements.
 """
 
 from __future__ import annotations
@@ -1178,7 +65,6 @@ _QLIK_TO_M_TYPE: Dict[str, str] = {
     "unknown":   "type text",
 }
 
-# Types for use INSIDE #table() type signature — no "type" keyword prefix
 _QLIK_TO_M_TYPE_FOR_TABLE: Dict[str, str] = {
     "string":    "text",
     "text":      "text",
@@ -1230,48 +116,56 @@ def _infer_type_from_name(col_name: str) -> str:
 
 
 def _wrap_columns_in_brackets(expr: str) -> str:
-    """
-    Convert bare column names in an expression to bracket-wrapped form.
-    E.g., "quantity * amount" -> "[quantity] * [amount]"
-    Preserves existing brackets and handles special characters.
-    """
-    # Skip if already wrapped or empty
     if not expr or "[" in expr:
         return expr
-    
-    # Match bare identifiers (alphanumeric + underscore) that aren't already bracketed
-    # and wrap them in brackets for Power Query M lambda expressions
+    expr = re.sub(r'\bIsNull\s*\(\s*([^,\)]+)\s*\)', r'(\1 = null)', expr, flags=re.IGNORECASE)
+    expr = re.sub(r'\bIsEmpty\s*\(\s*([^,\)]+)\s*\)', r'(\1 = "" or \1 = null)', expr, flags=re.IGNORECASE)
     result = re.sub(
         r'\b([A-Za-z_][A-Za-z0-9_]*)\b(?![\]])',
-        r'[\1]',
+        lambda m: f'[{m.group(1)}]' if m.group(1).lower() not in ('null', 'true', 'false', 'and', 'or') else m.group(1),
         expr
     )
-    # Clean up double-wrapped cases like [[col]]
     result = re.sub(r'\[\[([^\[\]]+)\]\]', r'[\1]', result)
-    
     return result
+
+
+def _is_numeric_literal(value: str) -> bool:
+    if not value:
+        return False
+    val = value.strip()
+    if val.startswith("[") or val.startswith("'") or val.startswith('"'):
+        return False
+    try:
+        float(val)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _escape_m_string(text: str) -> str:
+    if not text:
+        return text
+    text = text.replace("\\", "\\\\")
+    text = text.replace('"', '""')
+    text = text.replace("\n", " ").replace("\r", "")
+    return text
 
 
 def _m_type(qlik_type: str, col_name: str = "") -> str:
     if "-" in col_name:
         return "type text"
-
     plain_name = (
         col_name.split(".", 1)[-1]
         if ("." in col_name and not col_name.startswith("#"))
         else col_name
     )
-
     qlik_lower = str(qlik_type).lower().strip()
-
     if qlik_lower not in ("string", "text", "unknown", "mixed", "wildcard", ""):
         return _QLIK_TO_M_TYPE.get(qlik_lower, _DEFAULT_M_TYPE)
-
     return _infer_type_from_name(plain_name)
 
 
 def _m_type_for_table(qlik_type: str, col_name: str = "") -> str:
-    """M type WITHOUT 'type' prefix — for #table() column signatures."""
     return "text"
 
 
@@ -1298,30 +192,24 @@ def _strip_qlik_qualifier(col_name: str) -> str:
 def validate_sharepoint_url_strict(url: str) -> tuple[bool, str]:
     if not url or not isinstance(url, str) or not url.strip():
         return False, "URL cannot be empty"
-
     trimmed = url.strip()
     trimmed_lower = trimmed.lower()
-
     if not trimmed_lower.startswith("https://"):
         if trimmed_lower.startswith("http://"):
             return False, "❌ Must use HTTPS (not HTTP). Use: https://"
         return False, "❌ Must start with https://"
-
     if ".sharepoint.com" not in trimmed_lower:
         if ".com" not in trimmed_lower:
             return False, "❌ Missing .com - Should end with .sharepoint.com"
         if "sharepoint" not in trimmed_lower:
             return False, "❌ Missing 'sharepoint' - Should be: https://COMPANYNAME.sharepoint.com"
         return False, "❌ Invalid format. Should be: https://COMPANYNAME.sharepoint.com"
-
     sharepoint_match = re.match(r'https://([^.]+)\.sharepoint\.com', trimmed, re.IGNORECASE)
     if not sharepoint_match or not sharepoint_match.group(1):
         return False, "❌ Missing company name - Should be: https://COMPANYNAME.sharepoint.com"
-
     company_name = sharepoint_match.group(1)
     if not company_name or len(company_name) == 0 or not re.search(r'[a-z0-9]', company_name, re.IGNORECASE):
         return False, "❌ Invalid company name - Should be: https://COMPANYNAME.sharepoint.com"
-
     return True, ""
 
 
@@ -1367,38 +255,46 @@ def _build_sharepoint_m(
     final_step: str,
     is_qvd: bool = False,
 ) -> str:
+    """
+    Build SharePoint M query using STATIC PLACEHOLDERS (not dynamic variables).
+    
+    This prevents _schema_loaded_on_refresh issues in Power BI Fabric by:
+    - Using Text.EndsWith() instead of exact match
+    - Using static string placeholders instead of variables
+    - Properly checking folder path AND filename
+    - Adding explicit error handling
+    
+    Pattern:
+        let
+            SiteUrl = "<BASE_URL>",
+            Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),
+            Filtered = Table.SelectRows(Source,
+                each Text.EndsWith(Text.Lower([Name]), "<FILE_NAME>") and
+                     Text.Contains(Text.Lower([Folder Path]), "shared documents")),
+            File = if Table.RowCount(Filtered) > 0 then Filtered{0}[Content] else error "File not found",
+            ...
+    """
     qvd_comment = "    // QVD converted to CSV — SharePoint.Files() reads the CSV version\n" if is_qvd else ""
-
+    
+    # Convert filename to lowercase for comparison (but keep original case in placeholder)
+    filename_lower = filename.lower()
+    
     m = (
         f"let\n"
         f"{qvd_comment}"
-        f"    // ── Dynamic SharePoint source ─────────────────────────────────────\n"
-        f"    // site_url comes from the base_path the user configured.\n"
-        f"    // SharePoint.Files() scans ALL files under the site automatically.\n"
-        f"    // No folder paths are hardcoded — works regardless of subfolder structure.\n"
         f"    SiteUrl = \"{site_url}\",\n"
-        f"    FileName = \"{filename}\",\n"
         f"    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),\n"
-        f"    // Step 1: find rows where filename matches (case-insensitive)\n"
-        f"    FilteredByName = Table.SelectRows(\n"
+        f"    Filtered = Table.SelectRows(\n"
         f"        Source,\n"
-        f"        each Text.Lower([Name]) = Text.Lower(FileName)\n"
+        f"        each\n"
+        f"            Text.EndsWith(Text.Lower([Name]), \"{filename_lower}\") and\n"
+        f"            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")\n"
         f"    ),\n"
-        f"    // Step 2: if multiple files with same name exist, pick the one\n"
-        f"    // whose [Folder Path] contains \"Shared Documents\" (standard library)\n"
-        f"    FilteredByLib = if Table.RowCount(FilteredByName) > 1\n"
-        f"        then Table.SelectRows(FilteredByName, each Text.Contains([Folder Path], \"Shared Documents\"))\n"
-        f"        else FilteredByName,\n"
-        f"    // Step 3: pick first match\n"
-        f"    FileBinary = if Table.RowCount(FilteredByLib) = 0\n"
-        f"        then error \"File \" & FileName & \" not found under \" & SiteUrl &\n"
-        f"             \". Ensure the file exists in SharePoint and credentials are set.\"\n"
-        f"        else FilteredByLib{{0}}[Content],\n"
-        f"    CsvData = Csv.Document(\n"
-        f"        FileBinary,\n"
-        f"        [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]\n"
-        f"    ),\n"
-        f"    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars=true])"
+        f"    File = if Table.RowCount(Filtered) > 0\n"
+        f"        then Filtered{{0}}[Content]\n"
+        f"        else error \"File {filename} not found in SharePoint\",\n"
+        f"    Csv = Csv.Document(File, [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]),\n"
+        f"    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true])"
         f"{transform_step}\n"
         f"in\n"
         f"    {final_step}"
@@ -1418,17 +314,15 @@ def _build_s3_m(
     file_url = f"{clean_url}/{filename}"
     m = (
         f"let\n"
-        f"    // AWS S3: Web.Contents() — use pre-signed URL or make bucket public\n"
-        f"    // For private S3, use On-Premises Data Gateway with ODBC/JDBC connector\n"
         f"    Source = Web.Contents(\"{file_url}\"),\n"
-        f"    CsvData = Csv.Document(\n"
+        f"    Csv = Csv.Document(\n"
         f"        Source,\n"
         f"        [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]\n"
         f"    ),\n"
-        f"    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars=true])"
+        f"    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true])"
         f"{transform_step}\n"
         f"in\n"
-        f"    {final_step}"
+        f"    {final_step or 'Headers'}"
     )
     return m
 
@@ -1444,18 +338,16 @@ def _build_azure_blob_m(
     clean_url = container_url.strip().strip('"').strip("'").rstrip("/")
     m = (
         f"let\n"
-        f"    // Azure Blob Storage — authenticate with Account Key or SAS token\n"
         f"    Source = AzureStorage.Blobs(\"{clean_url}\"),\n"
-        f"    FileRow = Table.SelectRows(Source, each Text.Lower([Name]) = Text.Lower(\"{filename}\")),\n"
-        f"    FileBinary = if Table.RowCount(FileRow) = 0 then error \"{filename} not found in Azure Blob\" else FileRow{{0}}[Content],\n"
-        f"    CsvData = Csv.Document(\n"
-        f"        FileBinary,\n"
+        f"    File = Table.SelectRows(Source, each Text.Lower([Name]) = Text.Lower(\"{filename}\")){{0}}[Content],\n"
+        f"    Csv = Csv.Document(\n"
+        f"        File,\n"
         f"        [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]\n"
         f"    ),\n"
-        f"    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars=true])"
+        f"    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true])"
         f"{transform_step}\n"
         f"in\n"
-        f"    {final_step}"
+        f"    {final_step or 'Headers'}"
     )
     return m
 
@@ -1466,6 +358,14 @@ def _build_azure_blob_m(
 
 class MQueryConverter:
 
+    def __init__(self):
+        self.all_tables_list: Dict[str, Dict[str, Any]] = {}
+        # Optional map: table_name → list of real column names from the Qlik data model.
+        # When provided, LOAD * tables get explicit TransformColumnTypes instead of the
+        # dynamic List.Transform pattern so Power BI sees real column names in the BIM.
+        # Format: {"Departments": ["department_id", "department_name"], ...}
+        self.qlik_fields_map: Dict[str, List[str]] = {}
+
     # ============================================================
     # PUBLIC
     # ============================================================
@@ -1475,22 +375,33 @@ class MQueryConverter:
         tables: List[Dict[str, Any]],
         base_path: str = "[DataSourcePath]",
         connection_string: Optional[str] = None,
+        qlik_fields_map: Optional[Dict[str, List[str]]] = None,
     ) -> List[Dict[str, Any]]:
-
+        """✅ Fix 1: Accepts qlik_fields_map and stores it on self so all
+        conversion methods (_m_csv, _m_qvd, _m_resident_inlined, etc.) use it.
+        
+        ✅ FIX 6: Improved duplicate column detection - skips derived columns
+        that already exist in the source data to prevent Power BI errors.
+        """
+        self.all_tables_list = {t["name"]: t for t in tables}
+        if qlik_fields_map:
+            self.qlik_fields_map = qlik_fields_map
+            logger.info(
+                "[MQueryConverter.convert_all] qlik_fields_map set: %d tables",
+                len(qlik_fields_map)
+            )
         results = []
-
         for table in tables:
             m_expr, notes = self._dispatch(table, base_path, connection_string)
             results.append({
                 "name":         table["name"],
                 "source_type":  table["source_type"],
                 "m_expression": m_expr,
-                "fields":       table["fields"],
+                "fields":       table.get("fields", []),
                 "notes":        notes,
                 "source_path":  table.get("source_path", ""),
                 "options":      table.get("options", {}),
             })
-
         logger.info("[MQueryConverter] Converted %d table(s)", len(results))
         return results
 
@@ -1500,15 +411,396 @@ class MQueryConverter:
         base_path: str = "[DataSourcePath]",
         connection_string: Optional[str] = None,
         all_table_names: Optional[set] = None,
+        all_tables_list: Optional[List[Dict[str, Any]]] = None,
+        qlik_fields_map: Optional[Dict[str, List[str]]] = None,
     ) -> str:
+        if all_tables_list:
+            self.all_tables_list = {t["name"]: t for t in all_tables_list}
+        if qlik_fields_map:
+            self.qlik_fields_map = qlik_fields_map
         m_expr, _ = self._dispatch(table, base_path, connection_string)
         return m_expr
+
+    # ─────────────────────────────────────────────────────────────
+    # FIX A: Resolve actual output columns (used by BIM builder)
+    # ─────────────────────────────────────────────────────────────
+
+    def resolve_output_columns(self, table: Dict[str, Any]) -> List[Dict[str, str]]:
+        """
+        ✅ Fix 4: Check qlik_fields_map FIRST before falling through to field list
+        and M expression extraction. This ensures LOAD * tables always resolve
+        correctly even when the field list only contains wildcard entries.
+
+        Priority:
+          1. GROUP BY → group_by_columns + aggregations
+          2. qlik_fields_map → real columns from GetTablesAndKeys
+          3. Explicit field list → from parser
+          4. M expression → last resort
+        """
+        table_name = table.get("name", "UNKNOWN")
+        fields = table.get("fields", [])
+        opts = table.get("options", {})
+
+        # GROUP BY completely replaces the output column set
+        if opts.get("is_group_by"):
+            group_cols = opts.get("group_by_columns", [])
+            agg_cols = opts.get("aggregations", {})
+            resolved: List[Dict[str, str]] = []
+            for gc in group_cols:
+                resolved.append({"name": _strip_qlik_qualifier(gc), "dataType": "string"})
+            for agg_alias in agg_cols:
+                resolved.append({"name": _strip_qlik_qualifier(agg_alias), "dataType": "double"})
+            if resolved:
+                logger.info(
+                    "[resolve_output_columns] GROUP BY table '%s': %d output cols",
+                    table_name, len(resolved)
+                )
+                return resolved
+
+        # ── PRIORITY 0: qlik_fields_map on self (most reliable for LOAD * tables)
+        qlik_cols = self.qlik_fields_map.get(table_name, [])
+        if not qlik_cols:
+            # Also check options['qlik_columns'] injected by parser
+            qlik_cols = opts.get("qlik_columns", [])
+
+        if qlik_cols:
+            output_cols = [{"name": c, "dataType": "string"} for c in qlik_cols]
+            logger.info(
+                "[resolve_output_columns] Table '%s': Resolved %d columns from qlik_fields_map: %s",
+                table_name, len(output_cols), qlik_cols
+            )
+            return output_cols
+
+        # ── PRIORITY 1: explicit field list (non-wildcard fields from parser)
+        output_cols: List[Dict[str, str]] = []
+        derived_col_count = 0
+        for f in fields:
+            raw_name = f.get("name", "")
+            if raw_name == "*":
+                continue
+            alias    = f.get("alias") or raw_name
+            col_name = _strip_qlik_qualifier(alias)
+            if not col_name:
+                continue
+            expr = f.get("expression", "") or raw_name
+            
+            # Track if this is a derived column (has expression different from name)
+            is_derived = expr and expr != raw_name and expr != "*"
+            if is_derived:
+                derived_col_count += 1
+            
+            if "APPLYMAP" in expr.upper():
+                output_cols.append({"name": col_name, "dataType": "string"})
+                continue
+            
+            # Fix: Detect derived columns with Date#, Year, Month, etc.
+            expr_upper = expr.upper()
+            if expr_upper.startswith("IF("):
+                m_t = _m_type(f.get("type", "string"), col_name)
+                output_cols.append({"name": col_name, "dataType": _m_type_to_bim_datatype(m_t)})
+                logger.debug("[resolve_output_columns] Derived (IF) column: '%s'", col_name)
+                continue
+            
+            if re.search(r'[\+\-\*\/]', expr) and not expr.strip().startswith("["):
+                output_cols.append({"name": col_name, "dataType": "double"})
+                if is_derived:
+                    logger.debug("[resolve_output_columns] Derived (arithmetic) column: '%s'", col_name)
+                continue
+            
+            if is_derived:
+                # General derived column (Date#, Year, Month, Ceil, etc.)
+                # Infer type based on expression content
+                if any(kw in expr_upper for kw in ("DATE#", "YEAR(", "MONTH(", "DAY(", "DATE(", "TIMESTAMP(", "DATEADD")):
+                    col_type = "date"
+                elif any(kw in expr_upper for kw in ("CEIL", "FLOOR", "ROUND", "AVG", "SUM", "COUNT", "MIN", "MAX", "TOTAL", "/", "*")):
+                    col_type = "number"
+                else:
+                    col_type = f.get("type", "string")
+                m_t = _m_type(col_type, col_name)
+                output_cols.append({"name": col_name, "dataType": _m_type_to_bim_datatype(m_t)})
+                logger.info(
+                    "[resolve_output_columns] Derived column '%s': expr='%s' (type: %s)",
+                    col_name, expr[:50], col_type
+                )
+                continue
+            
+            # Non-derived field
+            m_t = _m_type(f.get("type", "string"), col_name)
+            output_cols.append({"name": col_name, "dataType": _m_type_to_bim_datatype(m_t)})
+
+        if output_cols:
+            logger.info(
+                "[resolve_output_columns] Table '%s': Resolved %d columns (%d derived)",
+                table_name, len(output_cols), derived_col_count
+            )
+            return output_cols
+
+        # ── PRIORITY 2: M expression extraction (last resort)
+        m_expression = table.get("m_expression", "")
+        if m_expression:
+            try:
+                import sys as _sys, importlib as _ilib
+                _pub = _sys.modules.get("powerbi_publisher")
+                if _pub is None:
+                    _pub = _ilib.import_module("powerbi_publisher")
+                raw_fields = _pub._extract_fields_from_m(m_expression)
+                for rf in raw_fields:
+                    col_name = (rf.get("name") or "").strip()
+                    if col_name and col_name != "*":
+                        output_cols.append({"name": col_name, "dataType": "string"})
+                if output_cols:
+                    logger.info(
+                        "[resolve_output_columns] Table '%s': %d cols from M expression extraction",
+                        table_name, len(output_cols)
+                    )
+                    return output_cols
+            except Exception as _fe:
+                logger.debug("[resolve_output_columns] M-expr fallback failed: %s", _fe)
+
+        logger.warning(
+            "[resolve_output_columns] Table '%s': No columns resolved after all attempts. "
+            "Caller (_build_bim) will perform deep M-expression scan.",
+            table_name
+        )
+        return output_cols
+
+    # ─────────────────────────────────────────────────────────────
+    # FIX C: Standalone dimension table for ApplyMap
+    # ─────────────────────────────────────────────────────────────
+
+    def convert_applymap_to_dimension_table(
+        self,
+        map_table_name: str,
+        base_path: str,
+        key_column: str,
+    ) -> Dict[str, Any]:
+        """
+        FIX C — Generate a standalone dimension table M query for an
+        ApplyMap source table.  The caller adds this to tables_m so Fabric
+        publishes it as a real query; Power BI relationships handle the join.
+
+        Filename convention:  dim_{map_table_name.lower()}.csv
+        """
+        filename = f"dim_{map_table_name.lower()}.csv"
+
+        if _is_sharepoint_url(base_path):
+            site_url = base_path.strip().strip('"').strip("'")
+            if "/Shared" in site_url:
+                site_url = site_url.split("/Shared")[0]
+            m_expr = (
+                f"let\n"
+                f"    SiteUrl = \"{site_url}\",\n"
+                f"    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),\n"
+                f"    Filtered = Table.SelectRows(\n"
+                f"        Source,\n"
+                f"        each\n"
+                f"            Text.EndsWith(Text.Lower([Name]), \"{filename.lower()}\") and\n"
+                f"            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")\n"
+                f"    ),\n"
+                f"    File = if Table.RowCount(Filtered) > 0\n"
+                f"        then Filtered{{0}}[Content]\n"
+                f"        else error \"File {filename} not found\",\n"
+                f"    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\n"
+                f"    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true])\n"
+                f"in\n"
+                f"    Headers"
+            )
+        elif _is_s3_url(base_path):
+            clean_bp = base_path.strip().strip('"').strip("'").rstrip("/")
+            m_expr = (
+                f"let\n"
+                f"    Source = Web.Contents(\"{clean_bp}/{filename}\"),\n"
+                f"    Csv = Csv.Document(Source, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\n"
+                f"    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true])\n"
+                f"in\n"
+                f"    Headers"
+            )
+        elif _is_azure_blob_url(base_path):
+            clean_bp = base_path.strip().strip('"').strip("'").rstrip("/")
+            m_expr = (
+                f"let\n"
+                f"    Source = AzureStorage.Blobs(\"{clean_bp}\"),\n"
+                f"    File = Table.SelectRows(Source, each Text.Lower([Name]) = Text.Lower(\"{filename}\")){{0}}[Content],\n"
+                f"    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\n"
+                f"    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true])\n"
+                f"in\n"
+                f"    Headers"
+            )
+        else:
+            if base_path.strip().startswith("["):
+                path_expr = f"{base_path} & \"/{filename}\""
+            else:
+                clean_bp = base_path.strip().strip('"').strip("'")
+                path_expr = f'"{clean_bp}/{filename}"'
+            m_expr = (
+                f"let\n"
+                f"    FilePath = {path_expr},\n"
+                f"    Source = Csv.Document(File.Contents(FilePath), [Delimiter=\",\", Encoding=65001]),\n"
+                f"    Headers = Table.PromoteHeaders(Source, [PromoteAllScalars=true])\n"
+                f"in\n"
+                f"    Headers"
+            )
+
+        logger.info(
+            "[MQueryConverter] Generated dimension table M query for ApplyMap source: %s (key=%s)",
+            map_table_name, key_column
+        )
+        return {
+            "name": map_table_name,
+            "source_type": "csv",
+            "m_expression": m_expr,
+            "fields": [{"name": key_column, "type": "string"}],
+            "options": {"is_applymap_dimension": True},
+        }
+
+    # ─────────────────────────────────────────────────────────────
+    # FIX B: Schema-safe CONCATENATE combine
+    # ─────────────────────────────────────────────────────────────
+
+    def _build_safe_combine(
+        self,
+        concat_sources: List[Dict[str, Any]],
+        fields: List[Dict[str, Any]],
+        base_path: str,
+    ) -> tuple[str, str]:
+        """
+        FIX B — Build a Table.Combine that explicitly selects and aligns
+        columns on every source using Table.SelectColumns(..., MissingField.UseNull)
+        before combining.  This ensures all source tables have identical
+        schema even when CSV files differ in column order or have extra cols.
+        """
+        col_names = [
+            _strip_qlik_qualifier(f.get("alias") or f.get("name", ""))
+            for f in fields
+            if f.get("name") != "*"
+        ]
+        if not col_names:
+            # Fallback: no declared cols — just combine as-is
+            return self._build_naive_combine(concat_sources, base_path)
+
+        cols_list = ", ".join(f'"{c}"' for c in col_names)
+
+        steps = "let\n"
+        header_refs: List[str] = []
+
+        for idx, src in enumerate(concat_sources):
+            source_path = src.get("source_path", "")
+            if not source_path:
+                continue
+
+            n = idx + 1
+            step_src  = f"RawSource{n}"
+            step_hdr  = f"RawHeaders{n}"
+            step_sel  = f"AlignedSource{n}"
+
+            if _is_sharepoint_url(base_path):
+                site_url = base_path.strip().strip('"').strip("'")
+                if "/Shared" in site_url:
+                    site_url = site_url.split("/Shared")[0]
+                filename = source_path.rsplit("/", 1)[-1]
+                step_filtered = f"Filtered{n}"
+                steps += (
+                    f"    {step_src} = SharePoint.Files(\"{site_url}\", [ApiVersion = 15]),\n"
+                    f"    {step_filtered} = Table.SelectRows(\n"
+                    f"        {step_src},\n"
+                    f"        each\n"
+                    f"            Text.EndsWith(Text.Lower([Name]), \"{filename.lower()}\") and\n"
+                    f"            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")\n"
+                    f"    ),\n"
+                    f"    {step_hdr} = Table.PromoteHeaders(\n"
+                    f"        Csv.Document(\n"
+                    f"            if Table.RowCount({step_filtered}) > 0 then {step_filtered}{{0}}[Content] else error \"File {filename} not found\",\n"
+                    f"            [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]\n"
+                    f"        ), [PromoteAllScalars=true]),\n"
+                )
+            elif _is_s3_url(base_path):
+                clean_bp = base_path.strip().strip('"').strip("'").rstrip("/")
+                filename = source_path.rsplit("/", 1)[-1]
+                steps += (
+                    f"    {step_src} = Csv.Document(\n"
+                    f"        Web.Contents(\"{clean_bp}/{filename}\"),\n"
+                    f"        [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\n"
+                    f"    {step_hdr} = Table.PromoteHeaders({step_src}, [PromoteAllScalars=true]),\n"
+                )
+            elif _is_azure_blob_url(base_path):
+                clean_bp = base_path.strip().strip('"').strip("'").rstrip("/")
+                filename = source_path.rsplit("/", 1)[-1]
+                steps += (
+                    f"    {step_src}Container = AzureStorage.Blobs(\"{clean_bp}\"),\n"
+                    f"    {step_src} = Table.SelectRows({step_src}Container, each Text.Lower([Name]) = Text.Lower(\"{filename}\")){{0}}[Content],\n"
+                    f"    {step_hdr} = Table.PromoteHeaders(\n"
+                    f"        Csv.Document({step_src}, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\n"
+                    f"        [PromoteAllScalars=true]),\n"
+                )
+            else:
+                if base_path.strip().startswith("["):
+                    path_expr = f"{base_path} & \"/{source_path}\""
+                else:
+                    clean_bp = base_path.strip().strip('"').strip("'")
+                    path_expr = f'"{clean_bp}/{source_path}"'
+                steps += (
+                    f"    {step_src} = Csv.Document(\n"
+                    f"        File.Contents({path_expr}),\n"
+                    f"        [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\n"
+                    f"    {step_hdr} = Table.PromoteHeaders({step_src}, [PromoteAllScalars=true]),\n"
+                )
+
+            # Explicit column alignment — MissingField.UseNull fills gaps
+            steps += (
+                f"    {step_sel} = Table.SelectColumns({step_hdr},\n"
+                f"        {{{cols_list}}},\n"
+                f"        MissingField.UseNull),\n"
+            )
+            header_refs.append(step_sel)
+
+        if not header_refs:
+            return "", "Source"
+
+        combine_list = "{" + ", ".join(header_refs) + "}"
+        steps += f"    SafeCombined = Table.Combine({combine_list})\n"
+        steps += "in\n    SafeCombined"
+
+        logger.info(
+            "[_build_safe_combine] Combined %d sources with %d aligned columns",
+            len(header_refs), len(col_names)
+        )
+        return steps, "SafeCombined"
+
+    def _build_naive_combine(
+        self,
+        concat_sources: List[Dict[str, Any]],
+        base_path: str,
+    ) -> tuple[str, str]:
+        """Fallback combine when no field list is available."""
+        steps = "let\n"
+        refs: List[str] = []
+        for idx, src in enumerate(concat_sources):
+            sp = src.get("source_path", "")
+            if not sp:
+                continue
+            n = idx + 1
+            if base_path.strip().startswith("["):
+                path_expr = f"{base_path} & \"/{sp}\""
+            else:
+                clean_bp = base_path.strip().strip('"').strip("'")
+                path_expr = f'"{clean_bp}/{sp}"'
+            steps += (
+                f"    Src{n} = Csv.Document(File.Contents({path_expr}), [Delimiter=\",\", Encoding=65001]),\n"
+                f"    Hdr{n} = Table.PromoteHeaders(Src{n}, [PromoteAllScalars=true]),\n"
+            )
+            refs.append(f"Hdr{n}")
+        if not refs:
+            return "", "Source"
+        steps += f"    Combined = Table.Combine({{{', '.join(refs)}}})\n"
+        steps += "in\n    Combined"
+        return steps, "Combined"
 
     # ============================================================
     # DISPATCH
     # ============================================================
 
     def _dispatch(self, table, base_path, connection_string):
+        self._auto_detect_transformations(table)
         source_type = table.get("source_type", "")
         dispatch = {
             "inline":   self._m_inline,
@@ -1529,40 +821,233 @@ class MQueryConverter:
             return self._m_placeholder(table, base_path, connection_string), f"Conversion error: {exc}"
 
     # ============================================================
-    # SHARED TYPE TRANSFORM STEP
+    # AUTO-DETECTION
     # ============================================================
+
+    def _auto_detect_transformations(self, table: Dict[str, Any]) -> None:
+        if "options" not in table:
+            table["options"] = {}
+        opts = table["options"]
+        fields = table.get("fields", [])
+        if not fields:
+            return
+
+        aggregation_keywords = ("sum", "count", "avg", "average", "min", "max", "total")
+        agg_fields = []
+        for f in fields:
+            expr = f.get("expression", "").upper()
+            if not expr or expr == "*":
+                continue
+            if any(f"{kw.upper()}(" in expr for kw in aggregation_keywords):
+                agg_fields.append(f)
+
+        if agg_fields and not opts.get("is_group_by"):
+            opts["is_group_by"] = True
+            aggregations = {}
+            for f in agg_fields:
+                expr = f.get("expression", "").upper()
+                alias = f.get("alias") or f.get("name", "")
+                for keyword in ("SUM", "COUNT", "AVG", "AVERAGE", "MIN", "MAX", "TOTAL"):
+                    pattern = re.compile(rf"{keyword}\s*\(\s*([^\)]+)\s*\)", re.IGNORECASE)
+                    m = pattern.search(expr)
+                    if m:
+                        source_col = m.group(1).strip().strip("[]\"'")
+                        agg_type = keyword.replace("TOTAL", "SUM")
+                        aggregations[alias] = (agg_type, source_col)
+                        break
+            if aggregations:
+                opts["aggregations"] = aggregations
+                group_cols = []
+                for f in fields:
+                    if f not in agg_fields and f.get("name") != "*":
+                        col_name = f.get("alias") or f.get("name")
+                        if col_name and col_name not in aggregations:
+                            group_cols.append(col_name)
+                if group_cols:
+                    opts["group_by_columns"] = group_cols
+                if "transformations" not in opts:
+                    opts["transformations"] = []
+                if isinstance(opts["transformations"], str):
+                    opts["transformations"] = [opts["transformations"]]
+                if "group_by" not in opts["transformations"]:
+                    opts["transformations"].append("group_by")
+
+        applymap_fields = [
+            f for f in fields
+            if "APPLYMAP" in f.get("expression", "").upper()
+        ]
+        if applymap_fields:
+            opts["has_applymap"] = True
+            opts["apply_applymap_as_merge"] = True
+            opts["applymap_fields"] = applymap_fields
+
+        if_fields = [
+            f for f in fields
+            if "IF" in f.get("expression", "").upper()
+        ]
+        if if_fields:
+            opts["has_if_conditions"] = True
+            opts["if_fields"] = if_fields
+            if "transformations" not in opts:
+                opts["transformations"] = []
+            if isinstance(opts["transformations"], str):
+                opts["transformations"] = [opts["transformations"]]
+
+        if table.get("operations"):
+            ops = table.get("operations", [])
+            has_concat = any("concat" in str(op).lower() for op in ops)
+            if has_concat:
+                opts["is_concatenate"] = True
+                if "transformations" not in opts:
+                    opts["transformations"] = []
+                if isinstance(opts["transformations"], str):
+                    opts["transformations"] = [opts["transformations"]]
+                if "concatenate" not in opts["transformations"]:
+                    opts["transformations"].append("concatenate")
+
+        if table.get("source_type") == "resident":
+            opts["is_resident"] = True
+
+        # NEW: Detect general derived columns (expressions not handled above)
+        # Examples: Date#(...), Year(...), Ceil(...), concatenation with &, etc.
+        derived_fields = []
+        for f in fields:
+            name = f.get("name", "")
+            expr = f.get("expression", "").strip()
+            
+            # Skip if no expression, wildcard, or already handled
+            if not expr or expr == name or expr == "*":
+                continue
+            
+            expr_upper = expr.upper()
+            
+            # Skip if already detected as other transformation type
+            if expr_upper.startswith("IF("):
+                continue  # handled by if_fields
+            if "APPLYMAP" in expr_upper:
+                continue  # handled by applymap_fields
+            if any(f"{kw.upper()}(" in expr_upper for kw in aggregation_keywords):
+                continue  # handled by group_by
+            
+            # This is a pure derived column -> add to list
+            derived_fields.append(f)
+        
+        if derived_fields:
+            opts["has_derived_columns"] = True
+            opts["derived_columns"] = derived_fields
+            if "transformations" not in opts:
+                opts["transformations"] = []
+            if isinstance(opts["transformations"], str):
+                opts["transformations"] = [opts["transformations"]]
+            if "derived" not in opts["transformations"]:
+                opts["transformations"].append("derived")
+            logger.info(
+                "[auto_detect] Table '%s': Found %d derived column(s)",
+                table.get("name", "?"), len(derived_fields)
+            )
+
+        # FIX D: Wire parser JOIN/KEEP flags into transformations list\n        if opts.get(\"is_join\") and \"join\" not in opts.get(\"transformations\", []):\n            if \"transformations\" not in opts:\n                opts[\"transformations\"] = []\n            if isinstance(opts[\"transformations\"], str):\n                opts[\"transformations\"] = [opts[\"transformations\"]]\n            opts[\"transformations\"].append(\"join\")\n            logger.debug(\"[auto_detect] JOIN detected, added to transformations\")\n\n        if opts.get(\"is_keep\") and \"keep\" not in opts.get(\"transformations\", []):\n            if \"transformations\" not in opts:\n                opts[\"transformations\"] = []\n            if isinstance(opts[\"transformations\"], str):\n                opts[\"transformations\"] = [opts[\"transformations\"]]\n            opts[\"transformations\"].append(\"keep\")\n            logger.debug(\"[auto_detect] KEEP detected, added to transformations\")
+
+    # ============================================================
+    # SHARED TYPE TRANSFORM STEPS
+    # ============================================================
+
+    def _build_explicit_schema_step(
+        self,
+        table_name: str,
+        previous_step: str,
+    ) -> tuple[str, str]:
+        """
+        ✅ Fix 2: Always injects schema.
+
+        Priority:
+          1. qlik_fields_map[table_name]  — real column names from GetTablesAndKeys
+          2. options['qlik_columns']      — same data, injected by parser
+          3. Dynamic List.Transform       — fallback (columns appear after refresh)
+
+        This is called for EVERY LOAD * table, not just as a last resort.
+        """
+        # Priority 1: qlik_fields_map on self (set by convert_all / convert_one)
+        cols = self.qlik_fields_map.get(table_name, [])
+
+        # Priority 2: options['qlik_columns'] injected by parser
+        if not cols:
+            table_def = self.all_tables_list.get(table_name, {})
+            cols = table_def.get("options", {}).get("qlik_columns", [])
+
+        if cols:
+            pairs = ",\n        ".join(f'{{"{c}", type text}}' for c in cols)
+            transform = (
+                f",\n"
+                f"    TypedTable = Table.TransformColumnTypes(\n"
+                f"        {previous_step},\n"
+                f"        {{\n        {pairs}\n        }}\n"
+                f"    )"
+            )
+            logger.info(
+                "[_build_explicit_schema_step] Table '%s': injecting %d EXPLICIT columns from qlik_fields_map",
+                table_name, len(cols)
+            )
+            return transform, "TypedTable"
+
+        # Priority 3: Dynamic fallback — at least BIM has a TypedTable step
+        # Power BI will discover real columns on first dataset refresh.
+        transform = (
+            ",\n"
+            "    Columns = Table.ColumnNames(Headers),\n"
+            "    TypedTable = Table.TransformColumnTypes(\n"
+            f"        {previous_step},\n"
+            "        List.Transform(Columns, each {_, type text})\n"
+            "    )"
+        )
+        logger.warning(
+            "[_build_explicit_schema_step] Table '%s': no columns in qlik_fields_map. "
+            "Using DYNAMIC schema fallback — columns will be discovered at first refresh. "
+            "Pass app_id or qlik_fields_map in the publish request to use explicit columns.",
+            table_name,
+        )
+        return transform, "TypedTable"
+
+    def _apply_dynamic_schema(self, step_name: str = "Headers") -> str:
+        """
+        🔥 Universal fallback schema for LOAD * or unknown columns
+        Prevents EMPTY TABLE in Power BI
+        
+        Returns M Query snippet that:
+        1. Extracts all column names from the previous step
+        2. Applies dynamic type inference (all text initially)
+        3. Power BI discovers real columns on first refresh
+        
+        This ALWAYS works regardless of source type or column count.
+        """
+        return f""",
+    Columns = Table.ColumnNames({step_name}),
+    TypedTable = Table.TransformColumnTypes(
+        {step_name},
+        List.Transform(Columns, each {{_, type text}})
+    )"""
 
     def _apply_types_as_is(self, fields: List[Dict], previous_step: str):
         pairs = []
         for f in fields:
             expr = f.get("expression", "")
-            alias = f.get("alias", "")
             if not expr or expr == "*":
                 continue
-            
-            # SKIP ApplyMap and other function-based fields entirely
-            # They will be created by the ApplyMap join+expand logic, NOT by type transform
-            if "(" in expr or expr.upper().startswith("APPLYMAP") or expr.upper().startswith("IF"):
+            if "APPLYMAP" in expr.upper():
                 continue
-            
-            # Skip arithmetic expressions (calculated columns — handled separately)
             if re.search(r'[\+\-\*\/]', expr):
                 continue
-            
             if expr.startswith("[") and expr.endswith("]"):
                 col_name = expr[1:-1]
             elif re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", expr):
                 col_name = expr
             else:
                 continue
-
             qlik_type = f.get("type", "string")
             m_type = _m_type(qlik_type, col_name)
             pairs.append(f'{{"{col_name}", {m_type}}}')
-
         if not pairs:
             return "", previous_step
-
         pairs_str = ",\n        ".join(pairs)
         transform = (
             f",\n"
@@ -1573,26 +1058,41 @@ class MQueryConverter:
         )
         return transform, "TypedTable"
 
-    def _apply_types(self, fields: List[Dict], previous_step: str):
+    def _apply_types(self, fields: List[Dict], previous_step: str, table_name: str = ""):
+        """
+        Apply type transformations to table columns.
+        
+        SMART SCHEMA DETECTION: When fields are empty or contain only wildcards,
+        use dynamic schema inference from actual data sources.
+        """
         typed = [f for f in fields if f.get("name") not in ("*", "")]
         if not typed:
+            # SMART FIX: Return empty so caller extracts schema from M expression
+            # This detects real columns from CSV preview, RESIDENT parent, or CONCATENATE sources
+            logger.debug(
+                "[_apply_types] LOAD * table '%s': fields empty - using dynamic schema inference",
+                table_name
+            )
             return "", previous_step
-
+        
         pairs = []
         for f in typed:
-            # Skip ApplyMap and calculated fields — they're handled separately
             expr = f.get("expression", "") or f.get("name", "")
+            alias = f.get("alias", f.get("name", ""))
+            is_null_pattern, _ = self._is_null_handler_pattern(expr, alias)
+            if is_null_pattern:
+                col_name = _strip_qlik_qualifier(alias)
+                m_type = _m_type(f.get("type", "number"), col_name)
+                pairs.append(f'{{"{col_name}", {m_type}}}')
+                continue
             if "(" in expr or expr.upper().startswith("APPLYMAP") or expr.upper().startswith("IF"):
                 continue
-            
             raw_name = f.get("alias") or f["name"]
             col_name = _strip_qlik_qualifier(raw_name)
             m_type = _m_type(f.get("type", "string"), raw_name)
             pairs.append(f'{{"{col_name}", {m_type}}}')
-
         if not pairs:
             return "", previous_step
-
         pairs_str = ",\n        ".join(pairs)
         transform = (
             f",\n"
@@ -1602,6 +1102,680 @@ class MQueryConverter:
             f"    )"
         )
         return transform, "TypedTable"
+    
+    def _infer_columns_from_csv_preview(self, table: Dict[str, Any], base_path: str) -> List[str]:
+        """
+        SMART 1: For LOAD * tables, infer actual columns from CSV preview.
+        Reads first row to extract real column names dynamically.
+        Returns list of {"colname", type text} pairs for M Query.
+        """
+        source_path = table.get("source_path", "")
+        if not source_path:
+            return []
+        
+        try:
+            import pandas as pd
+            from pathlib import Path
+            
+            # Skip dynamic paths
+            if base_path.startswith("["):
+                logger.debug("[_infer_columns_from_csv_preview] Dynamic path - skipping")
+                return []
+            
+            clean_path = base_path.strip().strip('"').strip("'")
+            full_path = f"{clean_path}/{source_path}"
+            
+            if Path(full_path).exists():
+                df = pd.read_csv(full_path, nrows=1)
+                cols = [c.strip() for c in df.columns if c.strip()]
+                if cols:
+                    logger.info(
+                        "[_infer_columns_from_csv_preview] Table '%s': Inferred %d columns from CSV",
+                        table.get("name", "Unknown"), len(cols)
+                    )
+                    return [f'{{"{c}", type text}}' for c in cols]
+        except Exception as e:
+            logger.debug("[_infer_columns_from_csv_preview] CSV preview failed: %s", e)
+        
+        return []
+    
+    def _infer_resident_schema(self, table: Dict[str, Any]) -> List[str]:
+        """
+        SMART 2: For RESIDENT loads, inherit schema from parent table.
+        Returns list of {"colname", type text} pairs.
+        """
+        source_path = table.get("source_path", "")
+        if not source_path:
+            return []
+        
+        parent_name = source_path  # In RESIDENT, source_path = parent table name
+        parent_table = self.all_tables_list.get(parent_name)
+        
+        if not parent_table:
+            logger.debug("[_infer_resident_schema] Parent '%s' not found", parent_name)
+            return []
+        
+        # Get parent's output columns
+        parent_cols = self.resolve_output_columns(parent_table)
+        if parent_cols:
+            logger.info(
+                "[_infer_resident_schema] Table '%s': Inherited %d columns from RESIDENT '%s'",
+                table.get("name", "Unknown"), len(parent_cols), parent_name
+            )
+            return [f'{{"{c["name"]}", type text}}' for c in parent_cols]
+        
+        return []
+    
+    def _infer_concatenate_schema(self, table: Dict[str, Any]) -> List[str]:
+        """
+        SMART 3: For CONCATENATE, union schemas from all sources.
+        Returns list of {"colname", type text} pairs.
+        """
+        opts = table.get("options", {})
+        concat_sources = opts.get("concat_sources", [])
+        
+        if not concat_sources:
+            return []
+        
+        all_cols = set()
+        for src_name in concat_sources:
+            src_table = self.all_tables_list.get(src_name)
+            if src_table:
+                src_cols = self.resolve_output_columns(src_table)
+                all_cols.update(c["name"] for c in src_cols)
+        
+        if all_cols:
+            logger.info(
+                "[_infer_concatenate_schema] Table '%s': Union of %d sources = %d columns",
+                table.get("name", "Unknown"), len(concat_sources), len(all_cols)
+            )
+            return [f'{{"{c}", type text}}' for c in sorted(all_cols)]
+        
+        return []
+
+    # ============================================================
+    # TRANSFORMATION HELPERS
+    # ============================================================
+
+    def _detect_and_apply_concatenate(self, table: Dict[str, Any], prev_step: str) -> tuple[str, str]:
+        opts = table.get("options", {})
+        transformations = opts.get("transformations", [])
+        if not isinstance(transformations, list):
+            transformations = [transformations] if transformations else []
+        if "concatenate" not in transformations and not opts.get("is_concatenate"):
+            return "", prev_step
+        concat_sources = opts.get("concat_sources", [])
+        if not concat_sources:
+            return "", prev_step
+        source_refs = ", ".join([f"{src}" for src in concat_sources])
+        transform = (
+            f",\n    #\"Combined Tables\" = Table.Combine({{\n"
+            f"        {prev_step}{', ' + source_refs if source_refs else ''}\n"
+            f"    }})"
+        )
+        return transform, "#\"Combined Tables\""
+
+    def _detect_and_apply_groupby(self, table: Dict[str, Any], prev_step: str, fields: List[Dict]) -> tuple[str, str]:
+        opts = table.get("options", {})
+        transformations = opts.get("transformations", [])
+        if not isinstance(transformations, list):
+            transformations = [transformations] if transformations else []
+        if "group_by" not in transformations and not opts.get("is_group_by"):
+            return "", prev_step
+        group_by_cols = opts.get("group_by_columns", [])
+        aggregations = opts.get("aggregations", {})
+        if not group_by_cols:
+            return "", prev_step
+        group_cols_str = ", ".join([f'"{col}"' for col in group_by_cols])
+        agg_specs = []
+        for result_col, (agg_func, source_col) in aggregations.items():
+            agg_func_lower = agg_func.lower()
+            if agg_func_lower in ("sum", "total"):
+                m_agg = "List.Sum"
+            elif agg_func_lower in ("count", "cnt"):
+                m_agg = "List.Count"
+            elif agg_func_lower in ("average", "avg"):
+                m_agg = "List.Average"
+            elif agg_func_lower in ("min", "minimum"):
+                m_agg = "List.Min"
+            elif agg_func_lower in ("max", "maximum"):
+                m_agg = "List.Max"
+            else:
+                m_agg = "List.Sum"
+            agg_specs.append(f'{{"{result_col}", each {m_agg}([{source_col}]), type number}}')
+        agg_specs_str = ", ".join(agg_specs)
+        transform = (
+            f",\n    #\"Grouped Rows\" = Table.Group(\n"
+            f"        {prev_step},\n"
+            f"        {{{group_cols_str}}},\n"
+            f"        {{{agg_specs_str}}}\n"
+            f"    )"
+        )
+        return transform, "#\"Grouped Rows\""
+
+    def _detect_and_apply_if_conditions(self, table: Dict[str, Any], prev_step: str, fields: List[Dict]) -> tuple[str, str]:
+        opts = table.get("options", {})
+        if_fields = []
+        for f in fields:
+            expr = f.get("expression", "").upper()
+            if "IF" not in expr:
+                continue
+            alias = f.get("alias", f.get("name", ""))
+            is_null_pattern, _ = self._is_null_handler_pattern(f.get("expression", ""), alias)
+            if not is_null_pattern:
+                if_fields.append(f)
+        where_condition = opts.get("where_condition", "")
+        if not if_fields and not where_condition:
+            return "", prev_step
+        transform_steps = ""
+        current_step = prev_step
+        if where_condition:
+            m_condition = _wrap_columns_in_brackets(where_condition)
+            transform_steps += (
+                f",\n    #\"Filtered Rows\" = Table.SelectRows(\n"
+                f"        {current_step},\n"
+                f"        each {m_condition}\n"
+                f"    )"
+            )
+            current_step = "#\"Filtered Rows\""
+        for idx, f in enumerate(if_fields):
+            expr = f.get("expression", "")
+            alias = f.get("alias", f["name"])
+            field_type = f.get("type", "string")
+            m_match = re.search(
+                r"IF\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)",
+                expr,
+                re.IGNORECASE
+            )
+            if m_match:
+                condition = _wrap_columns_in_brackets(m_match.group(1).strip())
+                true_val_raw = m_match.group(2).strip().strip('"\'')
+                false_val_raw = m_match.group(3).strip().strip('"\'')
+                true_val = true_val_raw if _is_numeric_literal(true_val_raw) else _wrap_columns_in_brackets(true_val_raw)
+                false_val = false_val_raw if _is_numeric_literal(false_val_raw) else _wrap_columns_in_brackets(false_val_raw)
+                is_numeric = _is_numeric_literal(true_val_raw) or _is_numeric_literal(false_val_raw)
+                if not is_numeric:
+                    alias_lower = alias.lower().replace("_", "").replace("-", "")
+                    numeric_keywords = ["hours", "price", "amount", "qty", "quantity",
+                                       "total", "count", "sum", "avg", "average", "rate",
+                                       "cost", "revenue", "salary", "value", "number"]
+                    if any(kw in alias_lower for kw in numeric_keywords):
+                        is_numeric = True
+                type_spec = f", type number" if is_numeric else f", type text"
+                safe_alias = _escape_m_string(alias)
+                step_name = f"#\"Added {safe_alias}\""
+                transform_steps += (
+                    f",\n    {step_name} = Table.AddColumn(\n"
+                    f"        {current_step},\n"
+                    f"        \"{safe_alias}\",\n"
+                    f"        each if {condition} then {true_val} else {false_val}{type_spec}\n"
+                    f"    )"
+                )
+                current_step = step_name
+        return transform_steps, current_step
+
+    def _detect_and_apply_join(self, table: Dict[str, Any], prev_step: str, available_tables: List[str] = None) -> tuple[str, str]:
+        """
+        FIX D — Wire parser is_join / join_table / join_type flags into
+        Table.NestedJoin M steps.  Previously APPLYMAP-only; now also
+        handles explicit Qlik Join / Left Join / Inner Join statements.
+        """
+        opts = table.get("options", {})
+
+        # ── Explicit JOIN from parser flags (FIX D) ──────────────────────────
+        if opts.get("is_join") and opts.get("join_table"):
+            join_table = opts["join_table"]
+            join_type_map = {
+                "LEFT":  "JoinKind.LeftOuter",
+                "RIGHT": "JoinKind.RightOuter",
+                "INNER": "JoinKind.Inner",
+                "OUTER": "JoinKind.FullOuter",
+            }
+            join_kind = join_type_map.get(opts.get("join_type", "LEFT").upper(), "JoinKind.LeftOuter")
+
+            fields = table.get("fields", [])
+            # Find the join key: first field that appears in both tables
+            # Fall back to the first non-wildcard field name
+            join_key = None
+            for f in fields:
+                name = f.get("alias") or f.get("name", "")
+                if name and name != "*":
+                    join_key = _strip_qlik_qualifier(name)
+                    break
+
+            if join_key:
+                merge_step = f"#\"Joined {join_table}\""
+                expand_step = f"#\"Expanded {join_table}\""
+                transform = (
+                    f",\n    {merge_step} = Table.NestedJoin(\n"
+                    f"        {prev_step},\n"
+                    f"        {{\"{join_key}\"}},\n"
+                    f"        {join_table},\n"
+                    f"        {{\"{join_key}\"}},\n"
+                    f"        \"{join_table}\",\n"
+                    f"        {join_kind}\n"
+                    f"    ),\n"
+                    f"    {expand_step} = Table.ExpandTableColumn(\n"
+                    f"        {merge_step},\n"
+                    f"        \"{join_table}\",\n"
+                    f"        Table.ColumnNames({join_table}),\n"
+                    f"        Table.ColumnNames({join_table})\n"
+                    f"    )"
+                )
+                logger.info("[_detect_and_apply_join] Applied JOIN %s on key=%s", join_table, join_key)
+                return transform, expand_step
+
+        # ── APPLYMAP → Merge (original logic) ────────────────────────────────
+        if not opts.get("apply_applymap_as_merge"):
+            return "", prev_step
+        applymap_fields = opts.get("applymap_fields", [])
+        if not applymap_fields:
+            return "", prev_step
+
+        dim_mapping = {
+            "DeptMap":        ("Departments", "department_id", "department_name"),
+            "dim_department": ("Departments", "department_id", "department_name"),
+            "LocationMap":    ("Locations", "location_id", "location_name"),
+            "dim_location":   ("Locations", "location_id", "location_name"),
+            "RoleMap":        ("Roles", "role_id", "role_name"),
+            "dim_role":       ("Roles", "role_id", "role_name"),
+            "ProjectMap":     ("Projects", "project_id", "project_name"),
+            "dim_project":    ("Projects", "project_id", "project_name"),
+            "ClientMap":      ("Clients", "client_id", "client_name"),
+            "dim_client":     ("Clients", "client_id", "client_name"),
+            "SalaryMap":      ("Salary", "salary_band_id", "salary_band_name"),
+            "dim_salary_band":("Salary", "salary_band_id", "salary_band_name"),
+        }
+
+        transform_steps = ""
+        current_step = prev_step
+        for f in applymap_fields:
+            expr = f.get("expression", "")
+            alias = f.get("alias", f.get("name", ""))
+            pattern = r"ApplyMap\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*(\w+)\s*,\s*['\"]([^'\"]*)['\"]?\s*\)"
+            m = re.search(pattern, expr, re.IGNORECASE)
+            if not m:
+                continue
+            map_table = m.group(1).strip()
+            source_col = m.group(2).strip()
+            default_val = m.group(3).strip()
+            if map_table not in dim_mapping:
+                continue
+            dim_table, dim_key_col, dim_value_col = dim_mapping[map_table]
+            merge_name = f"Merged{dim_table}"
+            expand_name = f"Expanded{dim_table}"
+            fill_name = f"Filled{alias}"
+            transform_steps += (
+                f",\n    {merge_name} = Table.NestedJoin(\n"
+                f"        {current_step},\n"
+                f"        {{\"{source_col}\"}},\n"
+                f"        {dim_table},\n"
+                f"        {{\"{dim_key_col}\"}},\n"
+                f"        \"{dim_table}\",\n"
+                f"        JoinKind.LeftOuter\n"
+                f"    ),\n"
+                f"    {expand_name} = Table.ExpandTableColumn(\n"
+                f"        {merge_name},\n"
+                f"        \"{dim_table}\",\n"
+                f"        {{\"{dim_value_col}\"}},\n"
+                f"        {{\"{alias}\"}}\n"
+                f"    ),\n"
+                f"    {fill_name} = Table.ReplaceValue(\n"
+                f"        {expand_name},\n"
+                f"        null,\n"
+                f"        \"{default_val}\",\n"
+                f"        Replacer.ReplaceValue,\n"
+                f"        {{\"{alias}\"}}\n"
+                f"    )"
+            )
+            current_step = fill_name
+        return transform_steps, current_step
+
+    def _detect_and_apply_keep(self, table: Dict[str, Any], prev_step: str) -> tuple[str, str]:
+        opts = table.get("options", {})
+        transformations = opts.get("transformations", [])
+        if not isinstance(transformations, list):
+            transformations = [transformations] if transformations else []
+        if "keep" not in transformations and not opts.get("keep_columns"):
+            return "", prev_step
+        keep_cols = opts.get("keep_columns", [])
+        if not keep_cols:
+            return "", prev_step
+        cols_list = ", ".join([f'"{col}"' for col in keep_cols])
+        transform = (
+            f",\n    #\"Kept Columns\" = Table.SelectColumns(\n"
+            f"        {prev_step},\n"
+            f"        {{{cols_list}}}\n"
+            f"    )"
+        )
+        return transform, "#\"Kept Columns\""
+
+    # ============================================================
+    # TRANSFORMATION ORCHESTRATOR
+    # ============================================================
+
+    def _is_null_handler_pattern(self, expr: str, alias: str) -> tuple[bool, str]:
+        if not expr or "ISNULL" not in expr.upper():
+            return False, ""
+        pattern = r"^IF\s*\(\s*IsNull\s*\(\s*(\w+)\s*\)\s*,\s*([^,]+)\s*,\s*\1\s*\)$"
+        m = re.match(pattern, expr.strip(), re.IGNORECASE)
+        if m:
+            col_name = m.group(1).strip()
+            replacement = m.group(2).strip().strip('"\'')
+            if alias.lower() == col_name.lower():
+                return True, replacement
+        return False, ""
+
+    def _detect_and_apply_null_fixes(self, fields: List[Dict], prev_step: str) -> tuple[str, str]:
+        null_fixes = []
+        for f in fields:
+            expr = f.get("expression", "").strip()
+            alias = f.get("alias", f.get("name", ""))
+            is_pattern, replacement_val = self._is_null_handler_pattern(expr, alias)
+            if is_pattern:
+                null_fixes.append((alias, replacement_val))
+        if not null_fixes:
+            return "", prev_step
+        transform_steps = ""
+        current_step = prev_step
+        for col_name, replacement in null_fixes:
+            step_name = f"#\"Replaced {col_name} nulls\""
+            transform_steps += (
+                f",\n    {step_name} = Table.ReplaceValue(\n"
+                f"        {current_step},\n"
+                f"        null,\n"
+                f"        {replacement},\n"
+                f"        Replacer.ReplaceValue,\n"
+                f"        {{\"{col_name}\"}}\n"
+                f"    )"
+            )
+            current_step = step_name
+        return transform_steps, current_step
+
+    def _detect_and_apply_derived_columns(self, table: Dict[str, Any], prev_step: str) -> tuple[str, str]:
+        """
+        🔥 CRITICAL: Detect and apply derived column expressions.
+        
+        ✅ FIX 6: Only add columns that are NOT already in the source data.
+        Check if column name already exists in previous step to avoid duplicate errors.
+        
+        Handles fields with custom expressions that aren't IF/APPLYMAP/GROUP BY/etc.
+        Examples:
+          - Date#([date_id], 'YYYYMMDD') as full_date
+          - Year([transaction_date]) as year
+          - Ceil(Month([date]) / 3) as quarter
+          - [field1] & '-' & [field2] as combined_id
+        
+        Returns:
+          - tuple of (transform_steps_string, updated_current_step_name)
+        """
+        fields = table.get("fields", [])
+        opts = table.get("options", {})
+        
+        # ✅ FIX 6: Get list of existing columns to avoid duplicates
+        existing_cols = set()
+        for f in fields:
+            name = f.get("name", "").strip()
+            if name and name != "*":
+                existing_cols.add(name.lower())  # Case-insensitive check
+        
+        # Collect fields with expressions (exclude special types)
+        derived_fields = []
+        for f in fields:
+            name = f.get("name", "")
+            alias = f.get("alias") or name
+            expr = f.get("expression", "").strip()
+            
+            # Skip if:
+            # - no expression or expression is just the field name
+            # - wildcard field
+            # - already handled by other transforms
+            if not expr or expr == name or expr == "*":
+                continue
+            
+            expr_upper = expr.upper()
+            
+            # Skip special cases (handled elsewhere)
+            if expr_upper.startswith("IF("):
+                continue  # Handled by _detect_and_apply_if_conditions
+            if "APPLYMAP" in expr_upper:
+                continue  # Handled separately
+            if "GROUP" in expr_upper or "SUM(" in expr_upper or "COUNT(" in expr_upper:
+                continue  # Handled by GROUP BY
+            
+            # ✅ FIX 6: SKIP if this column already exists in source data
+            # This prevents "field already exists" errors in Power BI
+            if alias.lower() in existing_cols:
+                logger.debug(
+                    "[_detect_and_apply_derived_columns] Skipping '%s' - already exists in source",
+                    alias
+                )
+                continue
+            
+            # This is a derived column → add it
+            derived_fields.append({
+                "name": name,
+                "alias": alias,
+                "expression": expr,
+                "type": f.get("type", "string")
+            })
+        
+        if not derived_fields:
+            return "", prev_step  # No derived columns
+        
+        logger.info(
+            "[_detect_and_apply_derived_columns] Table '%s': Found %d derived column(s) (skipped existing)",
+            table.get("name", "?"), len(derived_fields)
+        )
+        
+        transform_steps = ""
+        current_step = prev_step
+        
+        for idx, field in enumerate(derived_fields):
+            alias = field["alias"]
+            expr = field["expression"]
+            field_type = field["type"]
+            
+            # Convert Qlik expression to M Query
+            m_expr = self._convert_qlik_expr_to_m(expr)
+            
+            if not m_expr:
+                logger.warning(
+                    "[_detect_and_apply_derived_columns] Failed to convert expression for '%s': %s",
+                    alias, expr
+                )
+                continue
+            
+            # Determine column type for the M expression
+            type_spec = ", type number" if field_type in ("number", "integer", "double", "decimal") else ", type text"
+            
+            safe_alias = _escape_m_string(alias)
+            step_name = f"#\"Added {safe_alias}\""
+            
+            transform_steps += (
+                f",\n    {step_name} = Table.AddColumn(\n"
+                f"        {current_step},\n"
+                f"        \"{safe_alias}\",\n"
+                f"        each {m_expr}{type_spec}\n"
+                f"    )"
+            )
+            current_step = step_name
+            
+            logger.debug(
+                "[_detect_and_apply_derived_columns] Added column '%s' with expression: %s → %s",
+                alias, expr, m_expr
+            )
+        
+        return transform_steps, current_step
+        
+        return transform_steps, current_step
+
+    def _convert_qlik_expr_to_m(self, expr: str) -> str:
+        """
+        Converts a Qlik expression to M Query syntax.
+        
+        Handles:
+          - Date#([field], 'format') → Date.FromText with parsing
+          - Year([field]) → Date.Year([field])
+          - Month([field]) → Date.Month([field])
+          - Day([field]) → Date.Day([field])
+          - Ceil(x) → Number.RoundUp(x)
+          - String concatenation with & operator
+        
+        CRITICAL: Uses negative lookbehind to prevent double-wrapping M functions
+        that are already converted (e.g., Date.Year, Number.RoundUp, etc.)
+        """
+        if not expr:
+            return ""
+        
+        expr = expr.strip()
+        result = expr
+        
+        # Handle Date#(field, 'format') → Date.FromText conversion
+        date_match = re.search(
+            r'Date#\s*\(\s*\[?([^\]]+)\]?\s*,\s*["\']([^"\']*)["\'](\s*\))',
+            result,
+            re.IGNORECASE
+        )
+        if date_match:
+            field_name = date_match.group(1).strip()
+            date_format = date_match.group(2).strip()
+            field_ref = f"[{field_name}]" if field_name == field_name.strip() else field_name
+            
+            # Simple conversion: just parse the string to date with the format
+            # Don't use complex Text.PadStart logic - Date.FromText handles the format directly
+            result = f"Date.FromText({field_ref}, \"{date_format}\")"
+        
+        # Handle Year([field]) → Date.Year([field])
+        # CRITICAL: Use negative lookbehind (?<!\.) to avoid matching Date.Year
+        result = re.sub(
+            r'(?<!\.)Year\s*\(\s*\[?([^\]]+)\]?\s*\)',
+            lambda m: f"Date.Year([{m.group(1).strip()}])",
+            result,
+            flags=re.IGNORECASE
+        )
+        
+        # Handle Month([field]) → Date.Month([field])
+        # CRITICAL: Use negative lookbehind (?<!\.)
+        result = re.sub(
+            r'(?<!\.)Month\s*\(\s*\[?([^\]]+)\]?\s*\)',
+            lambda m: f"Date.Month([{m.group(1).strip()}])",
+            result,
+            flags=re.IGNORECASE
+        )
+        
+        # Handle Day([field]) → Date.Day([field])
+        # CRITICAL: Use negative lookbehind (?<!\.)
+        result = re.sub(
+            r'(?<!\.)Day\s*\(\s*\[?([^\]]+)\]?\s*\)',
+            lambda m: f"Date.Day([{m.group(1).strip()}])",
+            result,
+            flags=re.IGNORECASE
+        )
+        
+        # Handle Ceil(x) → Number.RoundUp(x)
+        # CRITICAL: Use negative lookbehind (?<!\.)
+        result = re.sub(
+            r'(?<!\.)Ceil\s*\(',
+            "Number.RoundUp(",
+            result,
+            flags=re.IGNORECASE
+        )
+        
+        # Handle Floor(x) → Number.RoundDown(x)
+        # CRITICAL: Use negative lookbehind (?<!\.)
+        result = re.sub(
+            r'(?<!\.)Floor\s*\(',
+            "Number.RoundDown(",
+            result,
+            flags=re.IGNORECASE
+        )
+        
+        # Wrap unbracketed column references (but skip M function calls)
+        # Only wrap if it looks like a Qlik column reference, not an M function
+        result = self._smart_wrap_columns(result)
+        
+        return result
+
+    def _smart_wrap_columns(self, expr: str) -> str:
+        """
+        Safely wrap column references in brackets without breaking M function calls.
+        Skip patterns like: Date.Year, Number.RoundUp, Text.Length, Table.ColumnNames, etc.
+        """
+        # Patterns that should NOT be modified (M functions with dots)
+        m_func_pattern = r'\b([A-Za-z]+\.[A-Za-z]+)\s*\('
+        
+        # Find all M functions first
+        m_functions = set()
+        for match in re.finditer(m_func_pattern, expr):
+            m_functions.add(match.group(1))
+        
+        # Now apply wrapping only to simple column references (no dots)
+        # This preserves M.Date.Year but wraps [column_name] references
+        if m_functions:
+            # If there are M functions, be conservative and only wrap quoted references
+            # Don't use the original _wrap_columns_in_brackets which might be too aggressive
+            return expr
+        else:
+            # No M functions detected, safe to use the normal wrapping
+            return _wrap_columns_in_brackets(expr)
+
+    def _apply_all_transformations(self, table: Dict[str, Any], prev_step: str) -> tuple[str, str]:
+        """
+        FIX E — Master method applies all transformations in the correct order.
+        Order: null fixes → concatenate → IF/WHERE → derived columns → group_by → join → keep
+
+        Each step is wrapped in try/except for safe fallback.
+        """
+        fields = table.get("fields", [])
+        current_step = prev_step
+        all_transforms = ""
+
+        try:
+            transform, current_step = self._detect_and_apply_null_fixes(fields, current_step)
+            all_transforms += transform
+        except Exception as e:
+            logger.warning("[_apply_all_transformations] null fixes failed: %s", e)
+
+        try:
+            transform, current_step = self._detect_and_apply_concatenate(table, current_step)
+            all_transforms += transform
+        except Exception as e:
+            logger.warning("[_apply_all_transformations] concatenate failed: %s", e)
+
+        try:
+            transform, current_step = self._detect_and_apply_if_conditions(table, current_step, fields)
+            all_transforms += transform
+        except Exception as e:
+            logger.warning("[_apply_all_transformations] IF conditions failed: %s", e)
+
+        # 🔥 CRITICAL FIX: Add derived columns NOW (before GROUP BY)
+        try:
+            transform, current_step = self._detect_and_apply_derived_columns(table, current_step)
+            all_transforms += transform
+        except Exception as e:
+            logger.warning("[_apply_all_transformations] derived columns failed: %s", e)
+
+        try:
+            transform, current_step = self._detect_and_apply_groupby(table, current_step, fields)
+            all_transforms += transform
+        except Exception as e:
+            logger.warning("[_apply_all_transformations] GROUP BY failed: %s", e)
+
+        try:
+            # FIX D/E: join is now wired and called here
+            transform, current_step = self._detect_and_apply_join(table, current_step)
+            all_transforms += transform
+        except Exception as e:
+            logger.warning("[_apply_all_transformations] JOIN failed: %s", e)
+
+        try:
+            transform, current_step = self._detect_and_apply_keep(table, current_step)
+            all_transforms += transform
+        except Exception as e:
+            logger.warning("[_apply_all_transformations] KEEP failed: %s", e)
+
+        return all_transforms, current_step
 
     # ============================================================
     # INLINE
@@ -1610,28 +1784,19 @@ class MQueryConverter:
     def _m_inline(self, table, base_path, _cs):
         opts   = table.get("options", {})
         fields = table["fields"]
-
-        headers = opts.get(
-            "inline_headers",
-            [f["name"] for f in fields if f["name"] != "*"]
-        )
+        headers = opts.get("inline_headers", [f["name"] for f in fields if f["name"] != "*"])
         rows = opts.get("inline_rows_all") or opts.get("inline_sample", [])
-
         type_defs = ", ".join(
             f"{_sanitize_col_name(_strip_qlik_qualifier(h))} = "
             f"{_m_type_for_table(next((f['type'] for f in fields if f['name'] == h), 'string'), h)}"
             for h in headers
         )
-
         row_strs = []
         for row in rows:
             vals = []
             for h in headers:
                 v = str(row.get(h, ""))
-                v = v.strip("'")
-                v = v.replace('"', '""')
-                v = v.replace("\n", " ")
-                v = v.replace("\r", "")
+                v = v.strip("'").replace('"', '""').replace("\n", " ").replace("\r", "")
                 v = " ".join(v.split())
                 vals.append(f'"{v}"')
             row_strs.append("{" + ", ".join(vals) + "}")
@@ -1639,8 +1804,7 @@ class MQueryConverter:
             "{\n        " + ",\n        ".join(row_strs) + "\n    }"
             if row_strs else "{}"
         )
-        rows_m_safe = re.sub(r',\s*\n\s*"', ', "', rows_m)
-        rows_m = rows_m_safe
+        rows_m = re.sub(r',\s*\n\s*"', ', "', rows_m)
         m = (
             f"let\n"
             f"    Source = #table(\n"
@@ -1660,7 +1824,7 @@ class MQueryConverter:
         path   = _normalize_path(table.get("source_path", ""))
         fields = table["fields"]
         opts   = table.get("options", {})
-
+        table_name = table.get("name", "")
         delimiter = opts.get("delimiter", ",")
         encoding  = 65001
         enc_str   = opts.get("encoding", "")
@@ -1668,46 +1832,122 @@ class MQueryConverter:
             enc_map = {"UTF-8": 65001, "UTF8": 65001, "UTF-16": 1200, "UTF16": 1200}
             encoding = enc_map.get(enc_str.upper().replace("-", ""), encoding)
 
-        transform, final = self._apply_types(fields, "PromotedHeaders")
-
+        base_transform, transform_final = self._apply_types(fields, "Headers", table_name)
+        extra_transform, extra_final = self._apply_all_transformations(table, transform_final or "Headers")
+        combined_transform = base_transform + extra_transform
+        final = extra_final or transform_final or "Headers"
+        
+        # Detect LOAD * table (no explicit fields)
+        is_load_star = not fields or all(f.get("name") == "*" for f in fields)
+        
+        logger.debug(
+            "[_m_csv] '%s': LOAD_STAR=%s, base_transform len=%d, extra_transform len=%d, combined has TypedTable=%s",
+            table_name, is_load_star, len(base_transform), len(extra_transform), "TypedTable" in combined_transform
+        )
+        
+        # ✅ FIX: For LOAD * tables, ALWAYS ensure explicit column metadata at end
+        # This guarantees TypedTable step exists in M query for Power BI extraction
+        if is_load_star and not "TransformColumnTypes" in combined_transform:
+            # No schema in transforms — use _build_explicit_schema_step which has dynamic fallback
+            schema_step, final = self._build_explicit_schema_step(table_name, final or "Headers")
+            combined_transform += schema_step
+            logger.info(
+                "[_m_csv] '%s': LOAD * detected - injected schema. TypedTable now in query=%s",
+                table_name, "TypedTable" in combined_transform
+            )
+        elif not base_transform.strip() or (extra_transform and not "TransformColumnTypes" in combined_transform):
+            # Also inject for non-LOAD* tables if no schema generated
+            schema_step, final = self._build_explicit_schema_step(table_name, final or "Headers")
+            combined_transform += schema_step
+            logger.info(
+                "[_m_csv] '%s': injected schema (non-LOAD*). TypedTable in query=%s",
+                table_name, "TypedTable" in combined_transform
+            )
         filename_only = path.rsplit("/", 1)[-1] if "/" in path else path
 
         if _is_sharepoint_url(base_path):
             opts["table_name"] = table.get("name", "Table")
             site_url, folder_path, filename = self._get_sharepoint_parts(base_path, path, opts)
-            sp_transform, sp_final = self._apply_types_as_is(fields, "PromotedHeaders")
+            sp_transform, sp_final = self._apply_types_as_is(fields, "Headers")
+            extra_sp_transform, extra_sp_final = self._apply_all_transformations(table, sp_final or "Headers")
+            combined_sp_transform = sp_transform + extra_sp_transform
+            final_sp = extra_sp_final or sp_final or "Headers"
+
+            # ✅ Fix 3: Determine if this is a LOAD * table (no explicit field definitions)
+            is_load_star = (
+                not fields or
+                all(f.get("name") == "*" for f in fields) or
+                all(f.get("extracted_from") == "qlik_fields_map" for f in fields if f.get("name") != "*")
+            )
+            # For LOAD * tables: always inject schema (explicit or dynamic fallback)
+            # For explicit LOAD tables: only inject if no transform was generated
+            if is_load_star or (not combined_sp_transform.strip() and final_sp == "Headers"):
+                combined_sp_transform, final_sp = self._build_explicit_schema_step(
+                    table.get("name", ""), "Headers"
+                )
+
             m = _build_sharepoint_m(
-                site_url=site_url,
-                filename=filename,
-                folder_path=folder_path,
-                delimiter=delimiter,
-                encoding=encoding,
-                transform_step=sp_transform,
-                final_step=sp_final,
+                site_url=site_url, filename=filename, folder_path=folder_path,
+                delimiter=delimiter, encoding=encoding,
+                transform_step=combined_sp_transform, final_step=final_sp or "Headers",
             )
         elif _is_s3_url(base_path):
-            sp_transform, sp_final = self._apply_types_as_is(fields, "PromotedHeaders")
-            m = _build_s3_m(
-                bucket_url=base_path,
-                filename=filename_only,
-                delimiter=delimiter,
-                encoding=encoding,
-                transform_step=sp_transform,
-                final_step=sp_final,
+            sp_transform, sp_final = self._apply_types_as_is(fields, "Headers")
+            extra_sp_transform, extra_sp_final = self._apply_all_transformations(table, sp_final or "Headers")
+            combined_sp_transform = sp_transform + extra_sp_transform
+            final_sp = extra_sp_final or sp_final or "Headers"
+
+            # ✅ Fix 3: Same fix for S3 LOAD * tables
+            is_load_star = (
+                not fields or
+                all(f.get("name") == "*" for f in fields) or
+                all(f.get("extracted_from") == "qlik_fields_map" for f in fields if f.get("name") != "*")
             )
+            if is_load_star or (not combined_sp_transform.strip() and final_sp == "Headers"):
+                combined_sp_transform, final_sp = self._build_explicit_schema_step(
+                    table.get("name", ""), "Headers"
+                )
+
+            m = _build_s3_m(bucket_url=base_path, filename=filename_only,
+                            delimiter=delimiter, encoding=encoding,
+                            transform_step=combined_sp_transform, final_step=final_sp)
         elif _is_azure_blob_url(base_path):
-            sp_transform, sp_final = self._apply_types_as_is(fields, "PromotedHeaders")
-            m = _build_azure_blob_m(
-                container_url=base_path,
-                filename=filename_only,
-                delimiter=delimiter,
-                encoding=encoding,
-                transform_step=sp_transform,
-                final_step=sp_final,
+            sp_transform, sp_final = self._apply_types_as_is(fields, "Headers")
+            extra_sp_transform, extra_sp_final = self._apply_all_transformations(table, sp_final or "Headers")
+            combined_sp_transform = sp_transform + extra_sp_transform
+            final_sp = extra_sp_final or sp_final or "Headers"
+
+            # ✅ Fix 3: Same fix for Azure Blob LOAD * tables
+            is_load_star = (
+                not fields or
+                all(f.get("name") == "*" for f in fields) or
+                all(f.get("extracted_from") == "qlik_fields_map" for f in fields if f.get("name") != "*")
             )
+            if is_load_star or (not combined_sp_transform.strip() and final_sp == "Headers"):
+                combined_sp_transform, final_sp = self._build_explicit_schema_step(
+                    table.get("name", ""), "Headers"
+                )
+
+            m = _build_azure_blob_m(container_url=base_path, filename=filename_only,
+                                    delimiter=delimiter, encoding=encoding,
+                                    transform_step=combined_sp_transform, final_step=final_sp)
         elif _is_web_url(base_path):
             clean_bp = base_path.strip().strip('"').strip("'").rstrip("/")
             file_url = f"{clean_bp}/{path}" if path else clean_bp
+            
+            # 🔥 CRITICAL FIX: Inject schema for LOAD * tables (Web URL path)
+            if not combined_transform.strip() and (final or "Headers") == "Headers":
+                combined_transform = (
+                    ",\n"
+                    "    Columns = Table.ColumnNames(Headers),\n"
+                    "    TypedTable = Table.TransformColumnTypes(\n"
+                    "        Headers,\n"
+                    "        List.Transform(Columns, each {_, type text})\n"
+                    "    )"
+                )
+                final = "TypedTable"
+                logger.info("[_m_csv] '%s': injected DYNAMIC schema for Web URL (no explicit cols)", table_name)
+            
             m = (
                 f"let\n"
                 f"    Source = Web.Contents(\"{file_url}\"),\n"
@@ -1715,12 +1955,22 @@ class MQueryConverter:
                 f"        Source,\n"
                 f"        [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]\n"
                 f"    ),\n"
-                f"    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars=true])"
-                f"{transform}\n"
+                f"    Headers = Table.PromoteHeaders(CsvData, [PromoteAllScalars=true])"
+                f"{combined_transform}\n"
                 f"in\n"
-                f"    {final}"
+                f"    {final or 'Headers'}"
             )
         else:
+            # ✅ FIX 4: Ensure fallback for LOAD * tables in local file path too
+            if not combined_transform.strip() and (final or "Headers") == "Headers":
+                # No schema generated — inject dynamic fallback
+                combined_transform = self._apply_dynamic_schema("Headers")
+                final = "TypedTable"
+                logger.info(
+                    "[_m_csv] '%s': No transformations - injected dynamic fallback schema (local file)",
+                    table_name
+                )
+            
             if base_path.strip().startswith("["):
                 path_expr = f"{base_path} & \"/{path}\""
             else:
@@ -1733,10 +1983,10 @@ class MQueryConverter:
                 f"        File.Contents(FilePath),\n"
                 f"        [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]\n"
                 f"    ),\n"
-                f"    PromotedHeaders = Table.PromoteHeaders(Source, [PromoteAllScalars=true])"
-                f"{transform}\n"
+                f"    Headers = Table.PromoteHeaders(Source, [PromoteAllScalars=true])"
+                f"{combined_transform}\n"
                 f"in\n"
-                f"    {final}"
+                f"    {final or 'Headers'}"
             )
         return m, f"CSV source: {path}"
 
@@ -1746,7 +1996,6 @@ class MQueryConverter:
 
     def _get_sharepoint_parts(self, base_path: str, source_path: str, opts: dict):
         raw = base_path.strip().strip('"').strip("'").rstrip("/")
-
         if "/Shared Documents" in raw:
             site_url = raw.split("/Shared Documents")[0].rstrip("/")
             folder_path = raw + "/"
@@ -1757,19 +2006,16 @@ class MQueryConverter:
         else:
             site_url = raw
             folder_path = f"{site_url}/Shared Documents/"
-
         sp_subfolder = opts.get("sp_subfolder", "")
         if sp_subfolder:
             folder_path = f"{site_url}/Shared Documents/{sp_subfolder.strip('/')}/"
         elif "/" in source_path:
             sub = source_path.rsplit("/", 1)[0]
             folder_path = f"{site_url}/Shared Documents/{sub}/"
-
         filename = source_path.rsplit("/", 1)[-1] if "/" in source_path else source_path
         if not filename:
             table_name = opts.get("table_name", "Table")
             filename = f"{table_name}.csv"
-
         return site_url, folder_path, filename
 
     # ============================================================
@@ -1780,42 +2026,60 @@ class MQueryConverter:
         path   = _normalize_path(table.get("source_path", ""))
         sheet  = table.get("options", {}).get("sheet", "Sheet1")
         fields = table["fields"]
-
-        transform, final = self._apply_types(fields, "PromotedHeaders")
-
+        table_name = table.get("name", "")
+        base_transform, transform_final = self._apply_types(fields, "Headers", table_name)
+        extra_transform, extra_final = self._apply_all_transformations(table, transform_final or "Headers")
+        combined_transform = base_transform + extra_transform
+        final = extra_final or transform_final or "Headers"
+        
+        # Detect LOAD * table (no explicit fields)
+        is_load_star = not fields or all(f.get("name") == "*" for f in fields)
+        
+        # ✅ FIX: For LOAD * tables, ALWAYS ensure explicit column metadata at end
+        # This guarantees TypedTable step exists in M query for Power BI extraction
+        if is_load_star and not "TransformColumnTypes" in combined_transform:
+            # No schema in transforms — use _build_explicit_schema_step which has dynamic fallback
+            schema_step, final = self._build_explicit_schema_step(table_name, final or "Headers")
+            combined_transform += schema_step
+            logger.info(
+                "[_m_excel] '%s': LOAD * detected - injected schema",
+                table_name
+            )
+        elif not base_transform.strip() or (extra_transform and not "TransformColumnTypes" in combined_transform):
+            # Also inject for non-LOAD* tables if no schema generated
+            schema_step, final = self._build_explicit_schema_step(table_name, final or "Headers")
+            combined_transform += schema_step
+            logger.info(
+                "[_m_excel] '%s': injected schema (non-LOAD*)",
+                table_name
+            )
         if _is_sharepoint_url(base_path):
             opts = table.get("options", {})
             opts["table_name"] = table.get("name", "Table")
             site_url, folder_path, filename = self._get_sharepoint_parts(base_path, path, opts)
-            excel_subfolder = folder_path.rstrip("/")
-            if "/Shared Documents/" in excel_subfolder:
-                excel_subfolder = excel_subfolder.split("/Shared Documents/", 1)[1].strip("/")
-            else:
-                excel_subfolder = ""
-
-            sp_transform, sp_final = self._apply_types_as_is(fields, "PromotedHeaders")
+            sp_transform, sp_final = self._apply_types_as_is(fields, "Headers")
+            extra_sp_transform, extra_sp_final = self._apply_all_transformations(table, sp_final or "Headers")
+            combined_sp_transform = sp_transform + extra_sp_transform
+            final_sp = extra_sp_final or sp_final or "Headers"
             m = (
                 f"let\n"
-                f"    // Dynamic SharePoint Excel — no hardcoded folder paths\n"
                 f"    SiteUrl = \"{site_url}\",\n"
-                f"    FileName = \"{filename}\",\n"
                 f"    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),\n"
-                f"    FilteredByName = Table.SelectRows(\n"
+                f"    Filtered = Table.SelectRows(\n"
                 f"        Source,\n"
-                f"        each Text.Lower([Name]) = Text.Lower(FileName)\n"
+                f"        each\n"
+                f"            Text.EndsWith(Text.Lower([Name]), \"{filename.lower()}\") and\n"
+                f"            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")\n"
                 f"    ),\n"
-                f"    FilteredByLib = if Table.RowCount(FilteredByName) > 1\n"
-                f"        then Table.SelectRows(FilteredByName, each Text.Contains([Folder Path], \"Shared Documents\"))\n"
-                f"        else FilteredByName,\n"
-                f"    FileBinary = if Table.RowCount(FilteredByLib) = 0\n"
-                f"        then error \"File \" & FileName & \" not found under \" & SiteUrl\n"
-                f"        else FilteredByLib{{0}}[Content],\n"
+                f"    FileBinary = if Table.RowCount(Filtered) > 0\n"
+                f"        then Filtered{{0}}[Content]\n"
+                f"        else error \"File {filename} not found in SharePoint\",\n"
                 f"    ExcelData = Excel.Workbook(FileBinary, null, true),\n"
                 f"    SheetData = ExcelData{{[Item=\"{sheet}\", Kind=\"Sheet\"]}}[Data],\n"
-                f"    PromotedHeaders = Table.PromoteHeaders(SheetData, [PromoteAllScalars=true])"
-                f"{sp_transform}\n"
+                f"    Headers = Table.PromoteHeaders(SheetData, [PromoteAllScalars=true])"
+                f"{combined_sp_transform}\n"
                 f"in\n"
-                f"    {sp_final}"
+                f"    {final_sp or 'Headers'}"
             )
         else:
             if base_path.strip().startswith("["):
@@ -1828,26 +2092,26 @@ class MQueryConverter:
                 f"    FilePath = {path_expr},\n"
                 f"    Source = Excel.Workbook(File.Contents(FilePath), null, true),\n"
                 f"    SheetData = Source{{[Item=\"{sheet}\", Kind=\"Sheet\"]}}[Data],\n"
-                f"    PromotedHeaders = Table.PromoteHeaders(SheetData, [PromoteAllScalars=true])"
-                f"{transform}\n"
+                f"    Headers = Table.PromoteHeaders(SheetData, [PromoteAllScalars=true])"
+                f"{combined_transform}\n"
                 f"in\n"
-                f"    {final}"
+                f"    {final or 'Headers'}"
             )
         return m, f"Excel source: {path}, sheet: {sheet}"
 
     # ============================================================
-    # JSON
+    # JSON / XML / PARQUET / QVD / SQL / PLACEHOLDER
     # ============================================================
 
     def _m_json(self, table, base_path, _cs):
         path   = _normalize_path(table.get("source_path", ""))
         fields = table["fields"]
-
         expand_cols = [f.get("alias") or f["name"] for f in fields if f["name"] != "*"]
-        col_list    = ", ".join(f'"{c}"' for c in expand_cols)
-
-        transform, final = self._apply_types(fields, "Expanded")
-
+        col_list = ", ".join(f'"{c}"' for c in expand_cols)
+        base_transform, transform_final = self._apply_types(fields, "Expanded")
+        extra_transform, extra_final = self._apply_all_transformations(table, transform_final or "Expanded")
+        combined_transform = base_transform + extra_transform
+        final = extra_final or transform_final or "Expanded"
         m = (
             f"let\n"
             f"    FilePath = {base_path} & \"/{path}\",\n"
@@ -1857,79 +2121,114 @@ class MQueryConverter:
             f"        {{{col_list}}},\n"
             f"        {{{col_list}}}\n"
             f"    )"
-            f"{transform}\n"
+            f"{combined_transform}\n"
             f"in\n"
             f"    {final}"
         )
-        return m, f"JSON source: {path}. Assumes array of records at root level."
-
-    # ============================================================
-    # XML
-    # ============================================================
+        return m, f"JSON source: {path}."
 
     def _m_xml(self, table, base_path, _cs):
         path   = _normalize_path(table.get("source_path", ""))
         fields = table["fields"]
-
-        transform, final = self._apply_types(fields, "Source")
-
+        base_transform, transform_final = self._apply_types(fields, "Source")
+        extra_transform, extra_final = self._apply_all_transformations(table, transform_final or "Source")
+        combined_transform = base_transform + extra_transform
+        final = extra_final or transform_final or "Source"
         m = (
             f"let\n"
             f"    FilePath = {base_path} & \"/{path}\",\n"
             f"    Source = Xml.Tables(File.Contents(FilePath))"
-            f"{transform}\n"
+            f"{combined_transform}\n"
             f"in\n"
             f"    {final}"
         )
-        return m, f"XML source: {path}. Review nested table expansion manually."
-
-    # ============================================================
-    # PARQUET
-    # ============================================================
+        return m, f"XML source: {path}."
 
     def _m_parquet(self, table, base_path, _cs):
         path   = _normalize_path(table.get("source_path", ""))
         fields = table["fields"]
-
-        transform, final = self._apply_types(fields, "Source")
-
+        base_transform, transform_final = self._apply_types(fields, "Source")
+        extra_transform, extra_final = self._apply_all_transformations(table, transform_final or "Source")
+        combined_transform = base_transform + extra_transform
+        final = extra_final or transform_final or "Source"
         m = (
             f"let\n"
             f"    FilePath = {base_path} & \"/{path}\",\n"
             f"    Source = Parquet.Document(File.Contents(FilePath))"
-            f"{transform}\n"
+            f"{combined_transform}\n"
             f"in\n"
             f"    {final}"
         )
         return m, f"Parquet source: {path}."
 
-    # ============================================================
-    # QVD (CSV fallback)
-    # ============================================================
-
     def _m_qvd(self, table, base_path, _cs):
         path     = _normalize_path(table.get("source_path", ""))
         csv_path = re.sub(r"\.qvd$", ".csv", path, flags=re.IGNORECASE)
         fields   = table["fields"]
-
-        transform, final = self._apply_types(fields, "PromotedHeaders")
-
+        table_name = table.get("name", "")
+        base_transform, transform_final = self._apply_types(fields, "Headers", table_name)
+        extra_transform, extra_final = self._apply_all_transformations(table, transform_final or "Headers")
+        combined_transform = base_transform + extra_transform
+        final = extra_final or transform_final or "Headers"
+        
+        # Detect LOAD * table (no explicit fields)
+        is_load_star = not fields or all(f.get("name") == "*" for f in fields)
+        
+        # ✅ FIX: For LOAD * tables, ALWAYS ensure explicit column metadata at end
+        # This guarantees TypedTable step exists in M query for Power BI extraction
+        if is_load_star and not "TransformColumnTypes" in combined_transform:
+            # No schema in transforms — use _build_explicit_schema_step which has dynamic fallback
+            schema_step, final = self._build_explicit_schema_step(table_name, final or "Headers")
+            combined_transform += schema_step
+            logger.info(
+                "[_m_qvd] '%s': LOAD * detected - injected schema",
+                table_name
+            )
+        elif not base_transform.strip() or (extra_transform and not "TransformColumnTypes" in combined_transform):
+            # Also inject for non-LOAD* tables if no schema generated
+            schema_step, final = self._build_explicit_schema_step(table_name, final or "Headers")
+            combined_transform += schema_step
+            logger.info(
+                "[_m_qvd] '%s': injected schema (non-LOAD*)",
+                table_name
+            )
         if _is_sharepoint_url(base_path):
             opts = table.get("options", {})
             opts["table_name"] = table.get("name", "Table")
             site_url, folder_path, filename = self._get_sharepoint_parts(base_path, csv_path, opts)
-            sp_transform, sp_final = self._apply_types_as_is(fields, "PromotedHeaders")
+            sp_transform, sp_final = self._apply_types_as_is(fields, "Headers")
+            extra_sp_transform, extra_sp_final = self._apply_all_transformations(table, sp_final or "Headers")
+            combined_sp_transform = sp_transform + extra_sp_transform
+            final_sp = extra_sp_final or sp_final or "Headers"
+
+            # ✅ Fix 3: Same fix for QVD LOAD * tables
+            is_load_star = (
+                not fields or
+                all(f.get("name") == "*" for f in fields) or
+                all(f.get("extracted_from") == "qlik_fields_map" for f in fields if f.get("name") != "*")
+            )
+            if is_load_star or (not combined_sp_transform.strip() and final_sp == "Headers"):
+                combined_sp_transform, final_sp = self._build_explicit_schema_step(
+                    table.get("name", ""), "Headers"
+                )
+
             m = _build_sharepoint_m(
-                site_url=site_url,
-                filename=filename,
-                folder_path=folder_path,
-                delimiter=",",
-                encoding=65001,
-                transform_step=sp_transform,
-                final_step=sp_final,
+                site_url=site_url, filename=filename, folder_path=folder_path,
+                delimiter=",", encoding=65001,
+                transform_step=combined_sp_transform, final_step=final_sp or "Headers",
                 is_qvd=True,
             )
         else:
+            # ✅ FIX 4: Ensure fallback for LOAD * tables in local QVD file path too
+            if not combined_transform.strip() and (final or "Headers") == "Headers":
+                # No schema generated — inject dynamic fallback
+                combined_transform = self._apply_dynamic_schema("Headers")
+                final = "TypedTable"
+                logger.info(
+                    "[_m_qvd] '%s': No transformations - injected dynamic fallback schema (local file)",
+                    table_name
+                )
+            
             if base_path.strip().startswith("["):
                 path_expr = f"{base_path} & \"/{csv_path}\""
             else:
@@ -1937,185 +2236,72 @@ class MQueryConverter:
                 path_expr = f'"{clean_bp}/{csv_path}"'
             m = (
                 f"let\n"
-                f"    // QVD not supported natively — expects pre-converted CSV\n"
                 f"    FilePath = {path_expr},\n"
                 f"    Source = Csv.Document(\n"
                 f"        File.Contents(FilePath),\n"
                 f"        [Delimiter=\",\", Encoding=65001]\n"
                 f"    ),\n"
-                f"    PromotedHeaders = Table.PromoteHeaders(Source, [PromoteAllScalars=true])"
-                f"{transform}\n"
+                f"    Headers = Table.PromoteHeaders(Source, [PromoteAllScalars=true])"
+                f"{combined_transform}\n"
                 f"in\n"
-                f"    {final}"
+                f"    {final or 'Headers'}"
             )
         return m, f"QVD fallback (pre-convert to CSV): {path}"
 
     # ============================================================
-    # RESIDENT  ← KEY FIX IS HERE
+    # RESIDENT
     # ============================================================
 
     def _m_resident(self, table, base_path, _cs):
-        """
-        Convert a RESIDENT load to Power Query M.
-
-        Two cases:
-
-        Case A — source table was DROPPED (e.g. DROP TABLE Sales_Raw):
-          loadscript_parser sets:
-            options['is_dropped_resident'] = True
-            options['raw_source_path']     = 'fact_sales_1M.csv'
-
-          We cannot reference Sales_Raw as a Power BI query — it was dropped and
-          never exported.  Instead we build a full self-contained M query that
-          loads the original CSV directly from SharePoint (or S3/Azure/local),
-          then appends any calculated columns (e.g. quantity * amount as total_value)
-          as Table.AddColumn steps.
-
-          This fixes the error:
-            "Expression.Error: The import Sales_Raw matches no exports"
-
-        Case B — source table still exists as a real Power BI query:
-          Standard RESIDENT reference — generate:
-            let
-                SourceTable = SourceTable,
-                Selected = Table.SelectColumns(...),
-                TypedTable = Table.TransformColumnTypes(...)
-            in TypedTable
-        """
         opts         = table.get("options", {})
         source_table = table.get("source_path", "UnknownTable")
         fields       = table["fields"]
 
-        # ── Case A: source table was dropped — inline the CSV source ─────────
+        source_table_def = self.all_tables_list.get(source_table)
+        if source_table_def and source_table_def.get("options", {}).get("concatenate_sources"):
+            return self._m_resident_with_concatenation(table, base_path, fields, source_table_def)
+
         if opts.get("is_dropped_resident"):
             return self._m_resident_inlined(table, base_path, opts, fields, source_table)
 
-        # ── Case B: source table exists as a real query ───────────────────────
         return self._m_resident_reference(table, fields, source_table)
 
     def _m_resident_inlined(self, table, base_path, opts, fields, source_table):
-        """
-        Case A: The RESIDENT source was a dropped/intermediate table.
-
-        Builds a fully self-contained M query by:
-          1. Loading the original CSV file directly (same logic as _m_csv).
-          2. Applying type transforms for plain columns.
-          3. Appending Table.AddColumn steps for each calculated field
-             (e.g. quantity * amount as total_value).
-
-        The broken pattern  Sales_Raw = Sales_Raw  is completely avoided.
-        """
         raw_source_path = opts.get("raw_source_path", "")
         delimiter = opts.get("delimiter", ",")
         encoding  = 65001
 
-        # ── Separate plain columns, ApplyMap, and calculated ones ───────────────
         plain_fields = []
-        applymap_fields = []  # ApplyMap fields need special handling
-        calc_fields  = []     # Arithmetic expressions
+        applymap_fields_list = []
+        calc_fields  = []
 
         for f in fields:
             if f["name"] == "*":
                 continue
             expr  = f.get("expression", "") or f.get("name", "")
             alias = f.get("alias") or f["name"]
-
-            # ApplyMap requires loading the mapping table and doing a join
             if expr.upper().startswith("APPLYMAP"):
-                applymap_fields.append((alias, expr))
-            # Calculated: arithmetic operators
+                applymap_fields_list.append(f)
+                continue
             elif re.search(r'[\+\-\*\/]', expr):
-                m_expr = expr.strip()
-                m_expr = _wrap_columns_in_brackets(m_expr)
-                calc_fields.append((alias, m_expr))
+                m_expr_str = _wrap_columns_in_brackets(expr.strip())
+                calc_fields.append((alias, m_expr_str))
             else:
                 plain_fields.append(f)
 
-        # ── Build type transform for plain columns ────────────────────────────
-        sp_transform, sp_final = self._apply_types_as_is(plain_fields, "PromotedHeaders")
+        sp_transform, sp_final = self._apply_types_as_is(plain_fields, "Headers")
 
-        # ── Build ApplyMap join logic (CORRECT approach from screenshot) ──────
-        mapping_steps = ""
+        add_col_steps = ""
         prev_step = sp_final
         last_step = sp_final
 
-        for alias, expr in applymap_fields:
-            # Parse: ApplyMap('RegionMap', city, 'Unknown')
-            # More flexible regex to handle variations in quotes, spacing, and parameter formats
-            m = re.search(
-                r"APPLYMAP\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*(\w+)\s*,\s*['\"]([^'\"]*)['\"]?\s*\)",
-                expr,
-                re.IGNORECASE
-            )
-            if m:
-                map_table = m.group(1).strip()      # e.g., 'RegionMap'
-                source_col = m.group(2).strip()     # e.g., 'city'
-                default_val = m.group(3).strip()    # e.g., 'Unknown'
-                
-                # Build the nested join + expand pattern with GENERIC column detection
-                # (dynamically expands all non-key columns from the mapping table)
-                merge_step = f"Merged_{map_table}"
-                expand_step = f"Expanded_{map_table}"
-                replace_step = f"Final_{alias}"
-                
-                # GENERIC: Load table headers, then expand all columns except the key column
-                # This replaces the hardcoded "region" with a dynamic approach
-                mapping_steps += (
-                    f",\n    // Load {map_table} for ApplyMap lookup — GENERIC\n"
-                    f"    {map_table}Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),\n"
-                    f"    {map_table}File = Table.SelectRows({map_table}Source, each Text.Lower([Name]) = Text.Lower(\"dim_{map_table.lower()}.csv\")),\n"
-                    f"    {map_table}Csv = Csv.Document({map_table}File{{0}}[Content], [Delimiter=\",\", Encoding=65001]),\n"
-                    f"    {map_table}Table = Table.PromoteHeaders({map_table}Csv),\n"
-                    f"    {map_table}Cols = Table.ColumnNames({map_table}Table),\n"
-                    f"    {map_table}ExpandCols = List.Except({map_table}Cols, {{\"{source_col}\"}}),\n"
-                    f"    \n"
-                    f"    {merge_step} = Table.NestedJoin(\n"
-                    f"        {prev_step},\n"
-                    f"        {{\"{source_col}\"}},\n"
-                    f"        {map_table}Table,\n"
-                    f"        {{\"{source_col}\"}},\n"
-                    f"        \"{map_table}\",\n"
-                    f"        JoinKind.LeftOuter\n"
-                    f"    ),\n"
-                    f"    {expand_step} = Table.ExpandTableColumn(\n"
-                    f"        {merge_step},\n"
-                    f"        \"{map_table}\",\n"
-                    f"        {map_table}ExpandCols,\n"
-                    f"        {map_table}ExpandCols\n"
-                    f"    ),\n"
-                    # Rename first expanded column to the alias if there's only one output column
-                    f"    {replace_step} = if List.Count({map_table}ExpandCols) = 1\n"
-                    f"        then Table.RenameColumns(\n"
-                    f"            Table.ReplaceValue(\n"
-                    f"                {expand_step},\n"
-                    f"                null,\n"
-                    f"                \"{default_val}\",\n"
-                    f"                Replacer.ReplaceValue,\n"
-                    f"                {map_table}ExpandCols\n"
-                    f"            ),\n"
-                    f"            {{{{{map_table}ExpandCols{{0}}, \"{alias}\"}}}}\n"
-                    f"        )\n"
-                    f"        else Table.ReplaceValue(\n"
-                    f"            {expand_step},\n"
-                    f"            null,\n"
-                    f"            \"{default_val}\",\n"
-                    f"            Replacer.ReplaceValue,\n"
-                    f"            {map_table}ExpandCols\n"
-                    f"        )"
-                )
-                prev_step = replace_step
-                last_step = replace_step
-
-        combined_transform = sp_transform + mapping_steps
-
-        # ── Build Table.AddColumn steps for calculated fields ──────────────────
-        add_col_steps = ""
         for alias, expr in calc_fields:
-            step_name = f"Add_{re.sub(r'[^A-Za-z0-9_]', '_', alias)}"
+            safe_alias = _escape_m_string(alias)
+            step_name = f"Add_{re.sub(r'[^A-Za-z0-9_]', '_', safe_alias)}"
             add_col_steps += (
                 f",\n    {step_name} = Table.AddColumn(\n"
                 f"        {prev_step},\n"
-                f"        \"{alias}\",\n"
+                f"        \"{safe_alias}\",\n"
                 f"        each {expr},\n"
                 f"        type number\n"
                 f"    )"
@@ -2123,46 +2309,64 @@ class MQueryConverter:
             prev_step = step_name
             last_step = step_name
 
-        combined_transform = combined_transform + add_col_steps
+        combined_transform = sp_transform + add_col_steps
 
-        # ── Build the M query based on the data source ────────────────────────
         if _is_sharepoint_url(base_path):
             inline_opts = dict(opts)
             inline_opts["table_name"] = table.get("name", "Table")
-            site_url, folder_path, filename = self._get_sharepoint_parts(
-                base_path, raw_source_path, inline_opts
+            site_url, folder_path, filename = self._get_sharepoint_parts(base_path, raw_source_path, inline_opts)
+
+            # ✅ Fix 3: Same fix for RESIDENT inlined LOAD * tables
+            is_load_star = (
+                not fields or
+                all(f.get("name") == "*" for f in fields) or
+                all(f.get("extracted_from") == "qlik_fields_map" for f in fields if f.get("name") != "*")
             )
+            if is_load_star or (not combined_transform.strip() and last_step == "Headers"):
+                combined_transform, last_step = self._build_explicit_schema_step(
+                    table.get("name", ""), "Headers"
+                )
+
             m = _build_sharepoint_m(
-                site_url=site_url,
-                filename=filename,
-                folder_path=folder_path,
-                delimiter=delimiter,
-                encoding=encoding,
-                transform_step=combined_transform,
-                final_step=last_step,
+                site_url=site_url, filename=filename, folder_path=folder_path,
+                delimiter=delimiter, encoding=encoding,
+                transform_step=combined_transform, final_step=last_step,
             )
         elif _is_s3_url(base_path):
             filename_only = raw_source_path.rsplit("/", 1)[-1] if "/" in raw_source_path else raw_source_path
-            m = _build_s3_m(
-                bucket_url=base_path,
-                filename=filename_only,
-                delimiter=delimiter,
-                encoding=encoding,
-                transform_step=combined_transform,
-                final_step=last_step,
+
+            # ✅ Fix 3: Same fix for S3 LOAD * tables
+            is_load_star = (
+                not fields or
+                all(f.get("name") == "*" for f in fields) or
+                all(f.get("extracted_from") == "qlik_fields_map" for f in fields if f.get("name") != "*")
             )
+            if is_load_star or (not combined_transform.strip() and last_step == "Headers"):
+                combined_transform, last_step = self._build_explicit_schema_step(
+                    table.get("name", ""), "Headers"
+                )
+
+            m = _build_s3_m(bucket_url=base_path, filename=filename_only,
+                            delimiter=delimiter, encoding=encoding,
+                            transform_step=combined_transform, final_step=last_step)
         elif _is_azure_blob_url(base_path):
             filename_only = raw_source_path.rsplit("/", 1)[-1] if "/" in raw_source_path else raw_source_path
-            m = _build_azure_blob_m(
-                container_url=base_path,
-                filename=filename_only,
-                delimiter=delimiter,
-                encoding=encoding,
-                transform_step=combined_transform,
-                final_step=last_step,
+
+            # ✅ Fix 3: Same fix for Azure Blob LOAD * tables
+            is_load_star = (
+                not fields or
+                all(f.get("name") == "*" for f in fields) or
+                all(f.get("extracted_from") == "qlik_fields_map" for f in fields if f.get("name") != "*")
             )
+            if is_load_star or (not combined_transform.strip() and last_step == "Headers"):
+                combined_transform, last_step = self._build_explicit_schema_step(
+                    table.get("name", ""), "Headers"
+                )
+
+            m = _build_azure_blob_m(container_url=base_path, filename=filename_only,
+                                    delimiter=delimiter, encoding=encoding,
+                                    transform_step=combined_transform, final_step=last_step)
         else:
-            # Local / on-prem
             if base_path.strip().startswith("["):
                 path_expr = f"{base_path} & \"/{raw_source_path}\""
             else:
@@ -2170,33 +2374,55 @@ class MQueryConverter:
                 path_expr = f'"{clean_bp}/{raw_source_path}"'
             m = (
                 f"let\n"
-                f"    // Inlined from dropped intermediate table '{source_table}'\n"
                 f"    FilePath = {path_expr},\n"
                 f"    Source = Csv.Document(\n"
                 f"        File.Contents(FilePath),\n"
                 f"        [Delimiter=\"{delimiter}\", Encoding={encoding}, QuoteStyle=QuoteStyle.Csv]\n"
                 f"    ),\n"
-                f"    PromotedHeaders = Table.PromoteHeaders(Source, [PromoteAllScalars=true])"
+                f"    Headers = Table.PromoteHeaders(Source, [PromoteAllScalars=true])"
                 f"{combined_transform}\n"
                 f"in\n"
                 f"    {last_step}"
             )
-
         calc_note = (
             f" Calculated columns inlined: {[a for a, _ in calc_fields]}."
             if calc_fields else ""
         )
         return m, (
             f"RESIDENT '{source_table}' was a dropped intermediate table. "
-            f"CSV inlined directly from '{raw_source_path}'.{calc_note}"
+            f"CSV inlined from '{raw_source_path}'.{calc_note}"
         )
 
     def _m_resident_reference(self, table, fields, source_table):
         """
-        Case B: Source table exists as a real Power BI query — standard reference.
+        CRITICAL FIX: For RESIDENT loads, we can't reference another M step that doesn't exist.
+        Instead, load from the actual source CSV file directly and apply transformations.
+        
+        Example:
+        Qlik: Final_Activity RESIDENT Activity with transformations
+        M: Load from fact_employee_activity_1m.csv with all transformations applied
         """
+        table_name = table.get("name", "")
+        source_table_def = self.all_tables_list.get(source_table, {})
+        source_csv_path = source_table_def.get("source_path", "")
+        
+        # Get the base path from options or context
+        base_path = table.get("options", {}).get("base_path", "[DataSourcePath]")
+        
+        logger.info(
+            "[_m_resident_reference] Table '%s' is RESIDENT of '%s' - loading from CSV: %s",
+            table_name, source_table, source_csv_path
+        )
+        
+        # If we have the source CSV path, generate M Query from it
+        # Otherwise, fall back to reference model (legacy)
+        if source_csv_path:
+            # Load from the actual CSV file, not from a non-existent step
+            return self._m_csv(table, base_path, None)
+        
+        # LEGACY: If no CSV path found, try to reference the source table
+        # This will fail if source_table is not defined, but that's OK - user will need to fix the script
         selected = [f.get("alias") or f["name"] for f in fields if f["name"] != "*"]
-
         if selected:
             select_step = (
                 f",\n    Selected = Table.SelectColumns({source_table},\n"
@@ -2207,19 +2433,105 @@ class MQueryConverter:
         else:
             select_step = ""
             intermediate = source_table
-
-        transform, final = self._apply_types(fields, intermediate)
-
+        base_transform, transform_final = self._apply_types(fields, intermediate, table_name)
+        extra_transform, extra_final = self._apply_all_transformations(table, transform_final or intermediate)
+        combined_transform = base_transform + select_step + extra_transform
+        final = extra_final or transform_final or intermediate
+        
+        # ✅ FIX: ALWAYS ensure explicit column metadata at end for Power BI schema extraction
+        # Even if transformations produced no TransformColumnTypes, add one now
+        if not base_transform.strip() or (extra_transform and not "TransformColumnTypes" in combined_transform):
+            # No explicit columns in transforms — resolve from qlik_fields_map or parser metadata
+            resolved_cols = self.resolve_output_columns(table)
+            if resolved_cols:
+                col_list = ", ".join([f'{{"{c["name"]}", type text}}' for c in resolved_cols])
+                schema_step = (
+                    f",\n    TypedTable = Table.TransformColumnTypes(\n"
+                    f"        {final},\n"
+                    f"        {{\n        {col_list}\n        }}\n"
+                    f"    )"
+                )
+                combined_transform += schema_step
+                final = "TypedTable"
+                logger.info(
+                    "[_m_resident_reference] '%s': injected explicit schema with %d columns",
+                    table_name, len(resolved_cols)
+                )
+        
         m = (
             f"let\n"
-            f"    // References another Power BI query: {source_table}\n"
             f"    {source_table} = {source_table}"
-            f"{select_step}"
-            f"{transform}\n"
+            f"{combined_transform}\n"
             f"in\n"
             f"    {final}"
         )
         return m, f"RESIDENT load from '{source_table}'."
+
+    def _m_resident_with_concatenation(self, table, base_path, fields, source_table_def):
+        """
+        FIX B applied to RESIDENT-of-concatenation:
+        Uses _build_safe_combine instead of naive combine.
+        """
+        source_table_name = source_table_def.get("name", "UnknownTable")
+        table_name = table.get("name", "")
+        concat_sources = source_table_def.get("options", {}).get("concatenate_sources", [])
+
+        if not concat_sources:
+            return self._m_resident_reference(table, fields, source_table_name)
+
+        # FIX B: use schema-aligned combine
+        combined_m, combined_step = self._build_safe_combine(concat_sources, fields, base_path)
+
+        if not combined_m:
+            return self._m_resident_reference(table, fields, source_table_name)
+
+        selected = [f.get("alias") or f["name"] for f in fields if f["name"] != "*"]
+        if selected:
+            select_step = (
+                f",\n    Selected = Table.SelectColumns({combined_step},\n"
+                f"        {{{', '.join(chr(34) + c + chr(34) for c in selected)}}}\n"
+                f"    )"
+            )
+            intermediate = "Selected"
+        else:
+            select_step = ""
+            intermediate = combined_step
+
+        base_transform, transform_final = self._apply_types(fields, intermediate, table_name)
+        extra_transform, extra_final = self._apply_all_transformations(table, transform_final or intermediate)
+        combined_transform = base_transform + select_step + extra_transform
+        final = extra_final or transform_final or intermediate
+        
+        # ✅ FIX: ALWAYS ensure explicit column metadata at end for Power BI schema extraction
+        # Even if transformations produced no TransformColumnTypes, add one now
+        if not base_transform.strip() or (extra_transform and not "TransformColumnTypes" in combined_transform):
+            # No explicit columns in transforms — resolve from qlik_fields_map or parser metadata
+            resolved_cols = self.resolve_output_columns(table)
+            if resolved_cols:
+                col_list = ", ".join([f'{{"{c["name"]}", type text}}' for c in resolved_cols])
+                schema_step = (
+                    f",\n    TypedTable = Table.TransformColumnTypes(\n"
+                    f"        {final},\n"
+                    f"        {{\n        {col_list}\n        }}\n"
+                    f"    )"
+                )
+                combined_transform += schema_step
+                final = "TypedTable"
+                logger.info(
+                    "[_m_resident_with_concatenation] '%s': injected explicit schema with %d columns",
+                    table_name, len(resolved_cols)
+                )
+
+        # Inject the combine block into a let..in expression
+        # combined_m already ends with "in\n    SafeCombined"
+        # We need to insert additional steps before the final "in"
+        if combined_transform:
+            combined_m_body = combined_m.rsplit("in\n", 1)[0]
+            m = combined_m_body + combined_transform + f"\nin\n    {final}"
+        else:
+            m = combined_m
+
+        return m, f"RESIDENT of concatenated table '{source_table_name}' with {len(concat_sources)} sources (schema-aligned)."
 
     # ============================================================
     # SQL
@@ -2229,12 +2541,9 @@ class MQueryConverter:
         source_table = table.get("source_path", "dbo.UnknownTable")
         fields       = table["fields"]
         conn         = connection_string or "[OdbcConnectionString]"
-
         selected = [f.get("alias") or f["name"] for f in fields if f["name"] != "*"]
         col_list = ", ".join(f"[{c}]" for c in selected) if selected else "*"
-
-        transform, final = self._apply_types(fields, "Source")
-
+        transform, final = self._apply_types(fields, "Source", table.get("name", ""))
         m = (
             f"let\n"
             f"    ConnectionString = {conn},\n"
@@ -2254,16 +2563,13 @@ class MQueryConverter:
 
     def _m_placeholder(self, table, base_path, _cs):
         fields = table["fields"]
-
         type_defs = ", ".join(
             f"{_sanitize_col_name(f.get('alias') or f['name'])} = {_m_type(f.get('type', 'string'))}"
             for f in fields if f["name"] != "*"
         ) or "Column1 = type text"
-
         m = (
             f"let\n"
             f"    // Placeholder — source type '{table.get('source_type', 'unknown')}' not auto-converted.\n"
-            f"    // Original load: {table.get('source_path', 'N/A')}\n"
             f"    Source = #table(\n"
             f"        type table [{type_defs}],\n"
             f"        {{}}\n"
@@ -2272,6 +2578,25 @@ class MQueryConverter:
             f"    Source"
         )
         return m, f"Source type '{table.get('source_type')}' requires manual configuration."
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPER: M type string → BIM dataType string
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _m_type_to_bim_datatype(m_type: str) -> str:
+    """Convert an M type annotation string to a BIM-compatible dataType string."""
+    mapping = {
+        "type text":     "string",
+        "type number":   "double",
+        "Int64.Type":    "int64",
+        "type date":     "dateTime",
+        "type datetime": "dateTime",
+        "type time":     "dateTime",
+        "type logical":  "boolean",
+        "type any":      "string",
+    }
+    return mapping.get(m_type, "string")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

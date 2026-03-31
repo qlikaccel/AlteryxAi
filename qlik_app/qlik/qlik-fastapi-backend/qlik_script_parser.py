@@ -352,6 +352,38 @@ class QlikScriptParser:
         if where_m:
             options["where"] = where_m.group(1).strip()
 
+        # ── 🔥 GROUP BY detection ────────────────────────────────────────────
+        group_match = re.search(r'GROUP\s+BY\s+(.+?)(?=\b(?:ORDER|JOIN|RESIDENT|CONCATENATE|;)\b|$)', 
+                               block, re.IGNORECASE | re.DOTALL)
+        if group_match:
+            group_fields = [f.strip() for f in group_match.group(1).split(',')]
+            options["is_group_by"] = True
+            options["group_by_columns"] = group_fields
+            logger.debug("[QlikParser] GROUP BY detected: %s", group_fields)
+
+        # ── 🔥 JOIN detection ────────────────────────────────────────────
+        join_match = re.search(r'(LEFT|INNER|RIGHT|OUTER)?\s*JOIN\s*\((\w+)\)', 
+                              block, re.IGNORECASE)
+        if join_match:
+            join_type = (join_match.group(1) or "inner").lower()
+            join_table = join_match.group(2).strip()
+            options["is_join"] = True
+            options["join_type"] = join_type
+            options["join_table"] = join_table
+            logger.debug("[QlikParser] JOIN detected: %s JOIN with table '%s'", 
+                        join_type.upper(), join_table)
+
+        # ── 🔥 CONCATENATE detection ────────────────────────────────────────
+        concat_match = re.search(r'CONCATENATE\s*(?:\((\w+)\))?', 
+                                block, re.IGNORECASE)
+        if concat_match:
+            concat_target = concat_match.group(1).strip() if concat_match.group(1) else ""
+            options["is_concatenate"] = True
+            if concat_target:
+                options["concat_target"] = concat_target
+            logger.debug("[QlikParser] CONCATENATE detected with target: %s", 
+                        concat_target or "(auto-match)")
+
         # ── Alias resolution ────────────────────────────────────────────────
         alias_m = _RE_ALIAS_KEYWORD.search(block) or _RE_ALIAS_AS.search(block)
         if alias_m and not table_name:
