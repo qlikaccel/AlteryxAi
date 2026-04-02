@@ -443,6 +443,7 @@ interface SelectedTableData {
   name: string;
   rows: any[];
   summary: any;
+  columns?: string[];
 }
 
 interface SelectedTable {
@@ -822,14 +823,21 @@ export default function ExportPage() {
                   // Multi-table: build CSV payloads for each table (pass in-memory)
                   selectedTables.forEach((t, idx) => {
                     const tableRows = t.data?.rows || [];
-                    if (tableRows.length > 0) {
-                      const headers = Object.keys(tableRows[0]);
-                      const csv = [
-                        headers.join(","),
-                        ...tableRows.map((r: any) => headers.map((h) => `"${r[h] ?? ""}"`).join(",")),
-                      ].join("\n");
-                      csvPayloads[`migration_csv_${idx}`] = csv;
+                    const fallbackColumns = t.data?.columns || [];
+                    const headers = tableRows.length > 0
+                      ? Object.keys(tableRows[0])
+                      : fallbackColumns;
+
+                    if (headers.length === 0) {
+                      return;
                     }
+
+                    const csv = [
+                      headers.join(","),
+                      ...tableRows.map((r: any) => headers.map((h) => `"${r[h] ?? ""}"`).join(",")),
+                    ].join("\n");
+
+                    csvPayloads[`migration_csv_${idx}`] = csv;
                   });
 
                   // DAX: lightweight generated content (metadata only)

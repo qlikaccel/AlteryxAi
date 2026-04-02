@@ -111,6 +111,7 @@ def _to_rest_payload(rel: Dict[str, Any]) -> Dict[str, Any]:
         "fromColumn": str(rel.get("from_column") or rel.get("fromColumn", "")),
         "toTable": str(rel.get("to_table") or rel.get("toTable", "")),
         "toColumn": str(rel.get("to_column") or rel.get("toColumn", "")),
+        "cardinality": cardinality,
         "crossFilteringBehavior": cross_filter,  # REST API spelling
         "isActive": bool(rel.get("is_active", True)),
     }

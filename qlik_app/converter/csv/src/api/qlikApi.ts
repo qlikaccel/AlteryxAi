@@ -123,17 +123,48 @@ export const fetchTableData = async (
     }
 
     // Support both shapes: { rows: [...] } or direct array
-    if (res.data && res.data.rows) return res.data.rows;
+    if (res.data && res.data.rows) {
+      const rows = res.data.rows;
+      const firstRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+      const hasPlaceholder = firstRow
+        ? Object.values(firstRow).some(
+            (v) => typeof v === "string" && v.toLowerCase().includes("not accessible")
+          )
+        : false;
+
+      if (!hasPlaceholder) return rows;
+    }
     if (Array.isArray(res.data)) return res.data;
 
-    return [];
+    throw new Error("Primary table-data endpoint returned no usable rows");
   } catch (error: any) {
-    console.error("❌ Failed to fetch table data:", error.response?.data || error.message);
+    console.warn("⚠️ Primary table-data endpoint failed, trying enhanced endpoint:", error.response?.data || error.message);
 
-    const errorMessage =
-      error.response?.data?.detail || error.message || "Could not fetch table data";
+    try {
+      const enhancedUrl = `${BASE_URL}/applications/${appId}/table/${table_Name}/data/enhanced`;
+      const params: any = {};
+      if (limit !== undefined) params.limit = limit;
+      if (offset !== undefined) params.offset = offset;
 
-    throw new Error(`Could not fetch table "${table_Name}". Error: ${errorMessage}`);
+      const enhancedRes = await axios.get(enhancedUrl, { params, headers: getAuthHeaders() });
+      if (enhancedRes.data && enhancedRes.data.success === false) {
+        throw new Error(enhancedRes.data.error || "Enhanced endpoint failed");
+      }
+
+      if (enhancedRes.data && enhancedRes.data.rows) return enhancedRes.data.rows;
+      if (Array.isArray(enhancedRes.data)) return enhancedRes.data;
+    } catch (enhancedError: any) {
+      console.error("❌ Failed to fetch table data from both endpoints:", enhancedError.response?.data || enhancedError.message);
+      const errorMessage =
+        enhancedError.response?.data?.detail ||
+        error.response?.data?.detail ||
+        enhancedError.message ||
+        error.message ||
+        "Could not fetch table data";
+      throw new Error(`Could not fetch table "${table_Name}". Error: ${errorMessage}`);
+    }
+
+    return [];
   }
 };
 

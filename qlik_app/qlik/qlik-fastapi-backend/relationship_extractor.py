@@ -427,6 +427,35 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Field synonym map
+# Qlik scripts often rename the same concept differently across tables.
+# Map known alternative names → canonical form so the extractor can match them.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_FIELD_SYNONYMS: Dict[str, str] = {
+    # Vehicle Identification Number aliases
+    "vehicleid":   "VIN",
+    "vehicleid_": "VIN",
+    "vehicle_id":  "VIN",
+    "vehicleno":   "VIN",
+    "vehicle_no":  "VIN",
+    "vinnumber":   "VIN",
+    "vin_number":  "VIN",
+    "vinnr":       "VIN",
+    "vin_nr":      "VIN",
+    "chassisno":   "ChassisNumber",
+    "chassis_no":  "ChassisNumber",
+}
+
+
+def _normalize_field_synonym(raw_field: str) -> str:
+    """Return the canonical synonym for a field name, or the base name if no synonym exists."""
+    base = raw_field.split(".")[-1] if "." in raw_field else raw_field
+    clean = base.lower().replace("-", "").replace("_", "").replace(" ", "")
+    return _FIELD_SYNONYMS.get(clean, base)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Data classes (plain dicts for JSON-compatibility)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -617,13 +646,14 @@ class RelationshipExtractor:
         #     for field in table.get("fields", []):
         #         field_map[field].append(table["name"])
         field_map: Dict[str, List[str]] = defaultdict(list)
-        # orig_field_map stores (table, base_field) -> original field name
+        # orig_field_map stores (table, norm_field) -> original field name
+        # norm_field is after synonym normalisation (e.g. VehicleID → VIN)
         orig_field_map: Dict[tuple, str] = {}
         for table in self.tables:
             for field in table.get("fields", []):
-                base_field = field.split(".")[-1] if "." in field else field
-                field_map[base_field].append(table["name"])
-                orig_field_map[(table["name"], base_field)] = field
+                norm_field = _normalize_field_synonym(field)
+                field_map[norm_field].append(table["name"])
+                orig_field_map[(table["name"], norm_field)] = field
         # Fields appearing in 3+ tables are common attributes (Brand, Model, City etc.)
         # not join keys — skip them to avoid false-positive relationships
         # Only skip fields that appear in the majority of tables (>60%) — these are
@@ -871,7 +901,20 @@ class RelationshipExtractor:
         if one_is_date_dim:
             is_key = True   # always relate date dimension
 
-        if not is_key:
+        # In Qlik's associative engine, ANY shared field between a pure Master/Dim table
+        # and another table IS a valid join key — regardless of the field name.
+        # ModelName, VariantName, etc. are real FKs when they appear in a *_Master table.
+        # IMPORTANT: exclude tables that carry both "master" AND a fact keyword in their name
+        # (e.g. Vehicle_Fact_MASTER) — those are central fact/bridge tables, not pure dimensions.
+        pure_master_keywords = ("master", "dim", "lookup", "ref")
+        fact_in_name_keywords = ("fact", "history", "transaction", "sales", "order", "booking")
+        one_lower_name = one_side.lower()
+        one_is_master = (
+            any(kw in one_lower_name for kw in pure_master_keywords)
+            and not any(fk in one_lower_name for fk in fact_in_name_keywords)
+        )
+
+        if not is_key and not one_is_master:
             return (
                 "manyToMany",
                 "⚠️  '%s' looks like a descriptive field, not a join key. "

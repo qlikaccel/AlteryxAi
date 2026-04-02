@@ -541,7 +541,7 @@ export default function SummaryPage() {
       const convertResponse = await fetch(`${apiBase}/api/migration/convert-to-mquery`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parsed_script_json: JSON.stringify(scriptToConvert), table_name: "", base_path: dataSourcePath.trim() || "" }),
+        body: JSON.stringify({ parsed_script_json: JSON.stringify(scriptToConvert), table_name: "", base_path: dataSourcePath.trim() || "", app_id: appId }),
       });
       if (!convertResponse.ok) throw new Error(`Failed to convert to M Query: ${convertResponse.status}`);
       const convertResult = await convertResponse.json();
@@ -602,7 +602,7 @@ export default function SummaryPage() {
           appId, selectedTable, publishMethod: "M_QUERY", showWorkflow: true,
           tableCount: relatedTablesCount, totalRows: totalRowsAllTables, rowCount: totalRowsAllTables,
           columns: rows && rows.length > 0 ? Object.keys(rows[0]) : [],
-          mqueryData: { dataset_name: selectedTable || "Qlik_Dataset", combined_mquery: mquery || "", raw_script: mquery ? "" : loadscript, data_source_path: dataSourcePath?.trim() || "", app_id: appId },
+          mqueryData: { dataset_name: selectedTable || "Qlik_Dataset", combined_mquery: mquery || "", raw_script: loadscript || "", data_source_path: dataSourcePath?.trim() || "", app_id: appId },
         },
       });
     } catch (error: any) {
@@ -741,6 +741,13 @@ export default function SummaryPage() {
         }
       }
 
+      // Publish the full visible app model, not just the first detected related subset.
+      // This prevents important bridge/fact tables like Final_Activity from being omitted.
+      const allVisibleTableNames = (sortedFilteredTables.length ? sortedFilteredTables : tables)
+        .map((t) => (typeof t === "string" ? t : t?.name))
+        .filter(Boolean) as string[];
+      related = allVisibleTableNames.filter((name) => name !== sel);
+
       const headers = masterRows.length > 0 ? Object.keys(masterRows[0]) : [];
       const csv = [headers.join(","), ...masterRows.map((r: any) => headers.map((h) => `"${r[h] ?? ""}"`).join(","))].join("\n");
       const cols = headers;
@@ -774,7 +781,16 @@ export default function SummaryPage() {
       const selectedData: any[] = [];
       const csvPayloads: Record<string, string> = { migration_csv_0: csv };
       const daxPayloads: Record<string, string> = { migration_dax: daxContent };
-      selectedData.push({ name: sel, data: { name: sel, rows: masterRows || [], summary }, actualRowCount: masterRowCount });
+      selectedData.push({
+        name: sel,
+        data: {
+          name: sel,
+          rows: masterRows || [],
+          summary,
+          columns: (masterRows && masterRows.length > 0) ? Object.keys(masterRows[0]) : [],
+        },
+        actualRowCount: masterRowCount,
+      });
 
       for (let idx = 0; idx < related.length; idx++) {
         const relName = related[idx];
@@ -785,11 +801,40 @@ export default function SummaryPage() {
           const relRows = await fetchTableData(appId, relName, relLimit);
           const { generateSummaryFromData } = await import("../api/qlikApi");
           const relSummary = generateSummaryFromData(relRows, relName);
-          selectedData.push({ name: relName, data: { name: relName, rows: relRows, summary: relSummary }, actualRowCount: relTotal });
+          selectedData.push({
+            name: relName,
+            data: {
+              name: relName,
+              rows: relRows,
+              summary: relSummary,
+              columns: (relRows && relRows.length > 0)
+                ? Object.keys(relRows[0])
+                : ((relMeta?.columns as string[]) || []),
+            },
+            actualRowCount: relTotal,
+          });
           const relHeaders = relRows.length > 0 ? Object.keys(relRows[0]) : [];
           const relCsv = [relHeaders.join(","), ...relRows.map((r: any) => relHeaders.map((h) => `"${r[h] ?? ""}"`).join(","))].join("\n");
           csvPayloads[`migration_csv_${idx + 1}`] = relCsv;
-        } catch (e) { console.warn("Failed to load related table:", relName, e); }
+        } catch (e) {
+          console.warn("Failed to load related table:", relName, e);
+          // Keep table in the publish set with schema-only payload so relationships are not lost.
+          try {
+            const relMeta = await fetchTableDataSimple(appId, relName).catch(() => null);
+            selectedData.push({
+              name: relName,
+              data: {
+                name: relName,
+                rows: [],
+                summary: null,
+                columns: ((relMeta?.columns as string[]) || []),
+              },
+              actualRowCount: relMeta?.row_count || relMeta?.rowCount || relMeta?.no_of_rows || 0,
+            });
+          } catch (_metaErr) {
+            // If metadata is also unavailable, skip as last resort.
+          }
+        }
       }
 
       setTableLoading(false);

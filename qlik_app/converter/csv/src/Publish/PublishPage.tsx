@@ -132,6 +132,15 @@ export default function PublishPage() {
   const [daxData, setDAXData] = useState<string>("");
   const [customTableName, setCustomTableName] = useState(tableName);
 
+  const actionRequiredMessage =
+    result?.publishResult?.message ||
+    result?.publishResult?.detail ||
+    result?.publishResult?.error ||
+    result?.batchResult?.message ||
+    result?.dataset?.message ||
+    "";
+  const showActionRequiredBanner = actionRequiredMessage.includes("Action required");
+
   // Capture page load time from WizardContext
   useEffect(() => {
     const elapsed = getLastElapsed?.();
@@ -398,9 +407,12 @@ export default function PublishPage() {
       url: realDatasetURL,
       workspaceId: data?.dataset?.workspace_id,
       datasetId: data?.dataset?.id,
+      message: data?.message || "",
+      publishResult: data,
       publishTime: new Date(),
     };
   };
+
 
   const handlePublish = async () => {
     try {
@@ -501,52 +513,61 @@ export default function PublishPage() {
         for (let i = 0; i < tableCount; i++) {
           const csvText = state?.csvPayloads?.[`migration_csv_${i}`] || sessionStorage.getItem(`migration_csv_${i}`) || "";
           const tName = selectedTablesToPublish[i]?.name || `Table_${i + 1}`;
-          if (!csvText) continue;
+          const selectedTableRows = selectedTablesToPublish[i]?.data?.rows || [];
+          const selectedTableColumns = selectedTablesToPublish[i]?.data?.columns || [];
 
-          // Parse CSV into rows
-          const lines = csvText.trim().split('\n').filter((l: string) => l.trim());
-          if (lines.length < 2) continue;
-          /*
-          const headers = lines[0].split(',').map((h: string) => h.trim().replace(/^"|"$/g, ''));
-          const rows = lines.slice(1).map((line: string) => {
-            const vals = line.split(',');
-            const row: any = {};
-            headers.forEach((h: string, idx: number) => {
-              row[h] = vals[idx]?.trim().replace(/^"|"$/g, '') ?? null;
-            });
-            return row;
-          });
-          */
-          const parseCSVLine = (line: string): string[] => {
-          const result: string[] = [];
-          let current = '';
-          let inQuotes = false;
-          for (let i = 0; i < line.length; i++) {
-            const ch = line[i];
-            if (ch === '"') {
-              if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-              else inQuotes = !inQuotes;
-            } else if (ch === ',' && !inQuotes) {
-              result.push(current.trim());
-              current = '';
-            } else {
-              current += ch;
+          // Parse CSV payload when present; otherwise fallback to selected table in-memory payload.
+          let rows: any[] = [];
+          let headers: string[] = [];
+
+          if (csvText) {
+            const lines = csvText.trim().split('\n').filter((l: string) => l.trim());
+            if (lines.length > 0) {
+              const parseCSVLine = (line: string): string[] => {
+                const result: string[] = [];
+                let current = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                  const ch = line[i];
+                  if (ch === '"') {
+                    if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+                    else inQuotes = !inQuotes;
+                  } else if (ch === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                  } else {
+                    current += ch;
+                  }
+                }
+                result.push(current.trim());
+                return result;
+              };
+
+              headers = parseCSVLine(lines[0]);
+              rows = lines.slice(1).map((line: string) => {
+                const vals = parseCSVLine(line);
+                const row: any = {};
+                headers.forEach((h: string, idx: number) => {
+                  row[h] = vals[idx] ?? null;
+                });
+                return row;
+              });
             }
           }
-          result.push(current.trim());
-          return result;
-        };
-        const headers = parseCSVLine(lines[0]);
-        const rows = lines.slice(1).map((line: string) => {
-          const vals = parseCSVLine(line);
-          const row: any = {};
-          headers.forEach((h: string, idx: number) => {
-            row[h] = vals[idx] ?? null;
-          });
-          return row;
-        });
 
-          batchTables.push({ name: tName, rows });
+          if (!headers.length) {
+            if (selectedTableRows.length > 0) {
+              headers = Object.keys(selectedTableRows[0] || {});
+              rows = selectedTableRows;
+            } else if (selectedTableColumns.length > 0) {
+              headers = selectedTableColumns;
+              rows = [];
+            }
+          }
+
+          if (!headers.length) continue;
+
+          batchTables.push({ name: tName, rows, columns: headers });
           console.log(`📦 Prepared table ${i + 1}/${tableCount}: ${tName} (${rows.length} rows)`);
         }
 
@@ -566,9 +587,15 @@ export default function PublishPage() {
         if (!batchRes.ok) throw new Error(batchData?.detail || "Batch publish failed");
 
         console.log("✅ Batch publish successful:", batchData);
+        try {
+          sessionStorage.setItem("last_publish_response", JSON.stringify(batchData, null, 2));
+        } catch {}
         setPublishedTableName(batchData.dataset_name || appName);
         setDatasetURL(batchData.workspace_url || "");
-        setResult({ published_tables: batchTables.map((t: any) => ({ tableName: t.name, rowCount: t.rows.length, url: batchData.workspace_url })) });
+        setResult({
+          published_tables: batchTables.map((t: any) => ({ tableName: t.name, rowCount: t.rows.length, url: batchData.workspace_url })),
+          batchResult: batchData,
+        });
       } else {
         // Combined mode or single table - use updated logic (prefer navigation state payloads)
         setCurrentStep(0);
@@ -1251,6 +1278,27 @@ export default function PublishPage() {
           <div className="success-message">
             Dataset "<strong>{publishedTableName}</strong>" published to Power BI Cloud
           </div>
+
+          {showActionRequiredBanner && (
+            <div
+              style={{
+                backgroundColor: "#fff3cd",
+                border: "2px solid #f59e0b",
+                borderRadius: "8px",
+                padding: "16px",
+                marginBottom: "16px",
+                color: "#7c5200",
+              }}
+            >
+              <strong>Action Required</strong>
+              <p style={{ margin: "8px 0 0" }}>
+                Go to Power BI Service - Dataset Settings - Data source credentials - Edit - OAuth2 - Sign in.
+              </p>
+              <p style={{ margin: "8px 0 0" }}>
+                Without this step, SharePoint-backed tables will remain empty until you sign in and trigger a refresh.
+              </p>
+            </div>
+          )}
 
           {/* URL BOX */}
           <div className="url-box">

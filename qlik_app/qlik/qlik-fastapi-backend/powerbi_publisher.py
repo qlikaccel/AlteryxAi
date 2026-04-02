@@ -2188,6 +2188,17 @@ class _Publisher:
 
         tmd_tables = []
         skipped_tables = []
+        required_rel_cols_by_table: Dict[str, set] = {}
+
+        for rel in relationships or []:
+            ft = rel.get("fromTable") or rel.get("from_table", "")
+            fc = _strip_qlik_qualifier(rel.get("fromColumn") or rel.get("from_column", ""))
+            tt = rel.get("toTable") or rel.get("to_table", "")
+            tc = _strip_qlik_qualifier(rel.get("toColumn") or rel.get("to_column", ""))
+            if ft and fc:
+                required_rel_cols_by_table.setdefault(ft, set()).add(fc)
+            if tt and tc:
+                required_rel_cols_by_table.setdefault(tt, set()).add(tc)
 
         for t in tables_m:
             table_name  = t.get("name", "Unknown")
@@ -2237,6 +2248,7 @@ class _Publisher:
                 # steps). Columns from qlik_fields_map that are absent from the M expression
                 # are derived — omitting them from the BIM is safe; they appear after refresh.
                 m_produced_cols = _extract_m_produced_columns(expr_str)
+                required_rel_cols = required_rel_cols_by_table.get(table_name, set())
 
                 for c in resolved_cols:
                     col_name = (c.get("name") or "").strip()
@@ -2247,13 +2259,20 @@ class _Publisher:
                     # If M expression uses dynamic schema (List.Transform / no explicit cols),
                     # m_produced_cols will be empty — pass all resolved cols through.
                     if m_produced_cols and col_name not in m_produced_cols:
-                        logger.debug(
-                            "[BIM] '%s': SKIP derived column '%s' — not produced by M expression "
-                            "(it's a Qlik computed column absent from the CSV source). "
-                            "It will appear after first dataset refresh.",
-                            table_name, col_name
-                        )
-                        continue
+                        if col_name in required_rel_cols:
+                            logger.info(
+                                "[BIM] '%s': KEEP relationship key column '%s' even though "
+                                "not detected in static M output scan",
+                                table_name, col_name,
+                            )
+                        else:
+                            logger.debug(
+                                "[BIM] '%s': SKIP derived column '%s' — not produced by M expression "
+                                "(it's a Qlik computed column absent from the CSV source). "
+                                "It will appear after first dataset refresh.",
+                                table_name, col_name
+                            )
+                            continue
 
                     # FIX A: force 'string' for file-based sources to avoid
                     # VT_BSTR->VT_DATE / VT_BSTR->VT_I8 type mismatch on refresh
@@ -2271,6 +2290,26 @@ class _Publisher:
                         "[BIM] '%s': %d/%d columns pass M-expression validation",
                         table_name, len(columns), len(resolved_cols)
                     )
+
+                # Ensure all relationship key columns exist in BIM columns.
+                # Scripts flow can produce partial static column detection for resident/
+                # transformed tables; without these keys, relationships are dropped.
+                if required_rel_cols:
+                    existing_col_names = {c.get("name") for c in columns}
+                    for rel_col in required_rel_cols:
+                        if rel_col and rel_col not in existing_col_names:
+                            columns.append({
+                                "name": rel_col,
+                                "dataType": "string",
+                                "sourceColumn": rel_col,
+                                "summarizeBy": "none",
+                                "annotations": [{"name": "SummarizationSetBy", "value": "Automatic"}],
+                            })
+                            logger.info(
+                                "[BIM] '%s': Added missing relationship key column '%s'",
+                                table_name,
+                                rel_col,
+                            )
             else:
                 # ✅ NEW FIX: If resolve_output_columns is empty, try extracting from
                 # the TypedTable step that was injected by _m_csv/_m_excel/_m_qvd/_m_resident
@@ -2294,6 +2333,23 @@ class _Publisher:
                                 "summarizeBy":  "none",
                                 "annotations":  [{"name": "SummarizationSetBy", "value": "Automatic"}],
                             })
+
+                if required_rel_cols:
+                    existing_col_names = {c.get("name") for c in columns}
+                    for rel_col in required_rel_cols:
+                        if rel_col and rel_col not in existing_col_names:
+                            columns.append({
+                                "name": rel_col,
+                                "dataType": "string",
+                                "sourceColumn": rel_col,
+                                "summarizeBy": "none",
+                                "annotations": [{"name": "SummarizationSetBy", "value": "Automatic"}],
+                            })
+                            logger.info(
+                                "[BIM] '%s': Added missing relationship key column '%s' (fallback path)",
+                                table_name,
+                                rel_col,
+                            )
 
             # ── Step 2: Fallback — field list (filter wildcards) ──────────────
             if not columns:
@@ -2599,23 +2655,21 @@ class _Publisher:
 
             if resp.status_code in (200, 201, 202):
                 dataset_id = ""
+                op_failure_reason = ""
                 location_header = resp.headers.get("Location") or resp.headers.get("location")
-                if location_header:
-                    match = re.search(r"[0-9a-fA-F-]{36}", location_header)
-                    if match:
-                        dataset_id = match.group(0)
 
                 if resp.status_code == 202:
-                    op_url    = resp.headers.get("Location")
-                    polled_id = self._poll(op_url, headers) if op_url else ""
-                    if polled_id == "SUCCEEDED_NO_ID":
-                        dataset_id = ""
+                    op_url = location_header
+                    poll_result = self._poll(op_url, headers) if op_url else {"status": "Failed", "dataset_id": "", "error": "Missing operation Location header"}
+                    op_status = poll_result.get("status", "")
+                    if op_status != "Succeeded":
+                        op_failure_reason = poll_result.get("error", "Fabric async operation failed")
                     else:
-                        dataset_id = dataset_id or polled_id
+                        dataset_id = poll_result.get("dataset_id", "")
                 else:
                     dataset_id = (resp.json() if resp.text.strip() else {}).get("id", "")
 
-                if not dataset_id or dataset_id == "SUCCEEDED_NO_ID":
+                if not dataset_id and not op_failure_reason:
                     dataset_id = self._find_dataset_id(dataset_name, headers)
 
                 if dataset_id:
@@ -2624,16 +2678,18 @@ class _Publisher:
                         "Authorization": f"Bearer {pbi_token}",
                         "Content-Type":  "application/json",
                     }
-                    self._trigger_refresh(dataset_id, pbi_headers)
-
                     is_sharepoint = any(
                         d in (data_source_path or "").lower()
                         for d in ("sharepoint.com", "sharepoint-df.com")
                     )
-                    cred_msg = (
-                        "Action required: Go to dataset Settings -> "
-                        "Data source credentials -> Edit -> OAuth2 -> Sign in once to enable refresh."
-                    ) if is_sharepoint else ""
+
+                    if not is_sharepoint:
+                        self._trigger_refresh(dataset_id, pbi_headers)
+                    else:
+                        logger.info(
+                            "[Fabric API] Skipping auto-refresh for SharePoint dataset — "
+                            "user must set OAuth2 credentials first"
+                        )
 
                     bim_tables = bim_obj.get("model", {}).get("tables", [])
                     return {
@@ -2649,11 +2705,19 @@ class _Publisher:
                         ),
                         "message": (
                             f"Semantic model '{dataset_name}' deployed via Fabric API "
-                            f"with {len(bim_tables)} table(s)."
-                            + (f" {cred_msg}" if cred_msg else "")
+                            f"with {len(bim_tables)} table(s). "
+                            + (
+                                "Action required: Data will not load until you set SharePoint credentials. "
+                                "Go to Power BI Service -> Your dataset -> Settings -> Data source credentials "
+                                "-> Edit -> OAuth2 -> Sign in. Then click Refresh."
+                                if is_sharepoint else
+                                "Dataset refreshed successfully."
+                            )
                         ),
                     }
-                return {"success": False, "error": "Async op succeeded but no dataset ID returned"}
+                if op_failure_reason:
+                    return {"success": False, "error": op_failure_reason}
+                return {"success": False, "error": "Async operation completed but no dataset ID was found"}
 
             return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text[:400]}"}
 
@@ -2678,7 +2742,7 @@ class _Publisher:
             logger.error("[Power BI API] Refresh error: %s", ex)
             return False
 
-    def _poll(self, op_url: str, headers: Dict, max_wait: int = 120) -> str:
+    def _poll(self, op_url: str, headers: Dict, max_wait: int = 120) -> Dict[str, str]:
         logger.info("[Fabric API] Polling: %s", op_url)
         for i in range(max_wait // 3):
             time.sleep(3)
@@ -2689,14 +2753,24 @@ class _Publisher:
                     status = body.get("status", "")
                     logger.info("[Fabric API] Poll %d: %s", i + 1, status)
                     if status == "Succeeded":
-                        return "SUCCEEDED_NO_ID"
+                        dataset_id = ""
+                        item_id = body.get("id", "")
+                        if isinstance(item_id, str) and re.fullmatch(r"[0-9a-fA-F-]{36}", item_id):
+                            dataset_id = item_id
+                        return {"status": "Succeeded", "dataset_id": dataset_id, "error": ""}
                     if status in ("Failed", "Cancelled"):
                         logger.warning("[Fabric API] Op %s: %s", status, body)
-                        return ""
+                        error_obj = body.get("error", {}) if isinstance(body.get("error", {}), dict) else {}
+                        error_code = error_obj.get("errorCode", "")
+                        error_msg = error_obj.get("message", "")
+                        reason = f"Fabric operation {status}"
+                        if error_code or error_msg:
+                            reason = f"Fabric operation {status}: {error_code} {error_msg}".strip()
+                        return {"status": status, "dataset_id": "", "error": reason}
             except Exception as ex:
                 logger.warning("[Fabric API] Poll error: %s", ex)
         logger.warning("[Fabric API] Polling timed out after %ds", max_wait)
-        return ""
+        return {"status": "Timeout", "dataset_id": "", "error": f"Fabric operation timed out after {max_wait}s"}
 
     def _find_dataset_id(self, dataset_name: str, headers: Dict) -> str:
         try:
@@ -2725,7 +2799,12 @@ class _Publisher:
 
                 cols = []
                 for f in raw_fields:
-                    fname = (f.get("alias") or f.get("name") or "").strip()
+                    if isinstance(f, dict):
+                        fname = str(f.get("alias") or f.get("name") or "").strip()
+                        ftype = str(f.get("type", "string") or "string")
+                    else:
+                        fname = str(f or "").strip()
+                        ftype = "string"
                     if not fname or fname == "*":
                         continue
                     plain = _strip_qlik_qualifier(fname)
@@ -2734,7 +2813,7 @@ class _Publisher:
                     # FIX A: always string for file sources
                     cols.append({
                         "name":     plain,
-                        "dataType": "string" if is_file else _tabular_type(f.get("type", "string")),
+                        "dataType": "string" if is_file else _tabular_type(ftype),
                     })
 
                 # USE UNIVERSAL SCHEMA RESOLVER - No fake placeholders

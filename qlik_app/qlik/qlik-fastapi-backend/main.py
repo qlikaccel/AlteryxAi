@@ -77,7 +77,15 @@ from simple_mquery_generator import SimpleMQueryGenerator
 from processor import PowerBIProcessor
 from table_tracker import enhance_tables_with_timestamps
 from powerbi_service_delegated import PowerBIService, infer_schema_from_rows
+from powerbi_relationships import apply_relationships, verify_relationships
 from powerbi_auth import get_auth_manager
+from relationship_service import (
+    _sanitize_col_name,
+    infer_relationships_unified,
+    sanitize_rel_columns,
+    normalize_table_rows,
+    resolve_relationships_unified,
+)
 
 # Optional: new publisher (from powerbi_dataset_publisher.py)
 try:
@@ -2371,6 +2379,109 @@ async def powerbi_login_test():
     return result
 
 
+def _relationship_key(rel: Dict[str, Any]) -> tuple:
+    return (
+        str(rel.get("fromTable", rel.get("from_table", ""))).lower(),
+        str(rel.get("fromColumn", rel.get("from_column", ""))).lower(),
+        str(rel.get("toTable", rel.get("to_table", ""))).lower(),
+        str(rel.get("toColumn", rel.get("to_column", ""))).lower(),
+    )
+
+
+def _sanitize_col(name: str) -> str:
+    return _sanitize_col_name(name)
+
+
+def _apply_relationships_with_retry(
+    workspace_id: Optional[str],
+    dataset_id: str,
+    inferred_relationships: List[Dict[str, Any]],
+    access_token: str,
+) -> Dict[str, Any]:
+    if not inferred_relationships:
+        return {
+            "success": True,
+            "status": "skipped",
+            "reason": "No relationships inferred",
+            "inferred_count": 0,
+        }
+
+    if not workspace_id:
+        return {
+            "success": False,
+            "status": "skipped",
+            "reason": "Workspace ID not available (likely personal workspace)",
+            "inferred_count": len(inferred_relationships),
+        }
+
+    apply_result = apply_relationships(
+        workspace_id=workspace_id,
+        dataset_id=dataset_id,
+        relationships=inferred_relationships,
+        access_token=access_token,
+    )
+
+    verify_before = verify_relationships(
+        workspace_id=workspace_id,
+        dataset_id=dataset_id,
+        expected_relationships=inferred_relationships,
+        access_token=access_token,
+    )
+
+    retry_result: Dict[str, Any] = {"status": "not_needed"}
+    verify_after = verify_before
+
+    if verify_before.get("success") is False:
+        raw = verify_before.get("raw", []) if isinstance(verify_before, dict) else []
+        raw_keys = {
+            (
+                str(item.get("fromTable", "")).lower(),
+                str(item.get("fromColumn", "")).lower(),
+                str(item.get("toTable", "")).lower(),
+                str(item.get("toColumn", "")).lower(),
+            )
+            for item in raw
+        }
+
+        missing = [r for r in inferred_relationships if _relationship_key(r) not in raw_keys]
+
+        if missing:
+            swapped = []
+            for rel in missing:
+                swapped.append({
+                    "fromTable": rel.get("toTable"),
+                    "fromColumn": rel.get("toColumn"),
+                    "toTable": rel.get("fromTable"),
+                    "toColumn": rel.get("fromColumn"),
+                    "cardinality": rel.get("cardinality", "ManyToOne"),
+                    "crossFilteringBehavior": rel.get("crossFilteringBehavior", "Single"),
+                })
+
+            retry_result = apply_relationships(
+                workspace_id=workspace_id,
+                dataset_id=dataset_id,
+                relationships=swapped,
+                access_token=access_token,
+                overwrite=False,
+            )
+
+            verify_after = verify_relationships(
+                workspace_id=workspace_id,
+                dataset_id=dataset_id,
+                expected_relationships=inferred_relationships,
+                access_token=access_token,
+            )
+
+    return {
+        "success": bool(verify_after.get("success", False)),
+        "inferred_count": len(inferred_relationships),
+        "applied": apply_result,
+        "verified_before_retry": verify_before,
+        "retry": retry_result,
+        "verified_after_retry": verify_after,
+    }
+
+
 @app.post("/powerbi/process")
 async def process_for_powerbi(
     csv_file: UploadFile = File(None),
@@ -2441,6 +2552,13 @@ async def process_for_powerbi(
         if not rows or not columns:
             raise HTTPException(status_code=400, detail="CSV has no rows/columns")
 
+        orig_headers, col_name_map, sanitized_rows = normalize_table_rows(
+            table_name=meta_table or "QlikTable",
+            rows=rows,
+            provided_columns=columns,
+        )
+        sanitized_columns = [col_name_map.get(c, _sanitize_col(c)) for c in orig_headers]
+
         # Dataset/table naming - PRIORITY: custom table name, then app name
         dataset_name = meta_table or meta_app_name or "Qlik_Migrated_Dataset"
         table_name = meta_table or "QlikTable"
@@ -2460,11 +2578,25 @@ async def process_for_powerbi(
                 raise HTTPException(status_code=401, detail="Not logged in. Please login using /powerbi/login/initiate endpoint")
             
             # Create service with user token
-            pbi = PowerBIService(access_token=auth.get_access_token())
-            schema = infer_schema_from_rows(rows)
+            access_token = auth.get_access_token()
+            pbi = PowerBIService(access_token=access_token)
+            schema = infer_schema_from_rows(sanitized_rows)
             dataset_id, created = pbi.get_or_create_push_dataset(dataset_name, table_name, schema)
-            push_res = pbi.push_rows(dataset_id, table_name, rows)
+            push_res = pbi.push_rows(dataset_id, table_name, sanitized_rows)
             print(f"DEBUG: Push result: {push_res}")
+
+            # Infer and apply relationships for CSV flow (single table may infer none).
+            tables_m = [{"name": table_name, "fields": sanitized_columns, "source_type": "csv"}]
+            inferred_relationships = resolve_relationships_unified(
+                tables_m=tables_m,
+                col_name_map_by_table={table_name: col_name_map},
+            )
+            relationships_apply_result = _apply_relationships_with_retry(
+                workspace_id=pbi.workspace_id,
+                dataset_id=dataset_id,
+                inferred_relationships=inferred_relationships,
+                access_token=access_token,
+            )
             
             # Data is now saved to Power BI Cloud permanently
             print(f"✅ Dataset saved to Power BI Cloud!")
@@ -2511,6 +2643,7 @@ async def process_for_powerbi(
                 }
             },
             "push": push_res,
+            "relationships": relationships_apply_result,
             "refresh": refresh_res,
             "dax": {
                 "parsed_measures": dax_measures,
@@ -2518,6 +2651,7 @@ async def process_for_powerbi(
             },
             "local_parse": {
                 "columns": columns,
+                "sanitized_columns": sanitized_columns,
                 "row_count": len(rows)
             }
         }
@@ -2547,11 +2681,14 @@ async def process_batch_for_powerbi(payload: dict = Body(...)):
         if not tables:
             raise HTTPException(status_code=400, detail="No tables provided")
         
-        pbi = PowerBIService(access_token=auth.get_access_token())
+        access_token = auth.get_access_token()
+        pbi = PowerBIService(access_token=access_token)
         
         # Step 1: Build schema for all tables
         dataset_tables_schema = []
+        tables_m: List[Dict[str, Any]] = []
         all_rows_by_table = {}
+        col_name_map_by_table: Dict[str, Dict[str, str]] = {}
         total_rows = 0
         
         for idx, table in enumerate(tables):
@@ -2563,18 +2700,34 @@ async def process_batch_for_powerbi(payload: dict = Body(...)):
                 continue
             
             print(f"📦 Preparing table {idx + 1}/{len(tables)}: {table_name} ({len(table_rows)} rows)")
+
+            orig_headers, col_name_map, sanitized_table_rows = normalize_table_rows(
+                table_name=table_name,
+                rows=table_rows,
+                provided_columns=table.get("columns", []),
+            )
+            col_name_map_by_table[table_name] = col_name_map
             
             # Infer schema from this table's rows
-            table_schema = infer_schema_from_rows(table_rows)
+            table_schema = infer_schema_from_rows(sanitized_table_rows)
             
             # Add to dataset schema
             dataset_tables_schema.append({
                 "name": table_name,
                 "columns": table_schema
             })
+
+            field_names = [c.get("name") for c in table_schema if isinstance(c, dict) and c.get("name")]
+            if not field_names and sanitized_table_rows:
+                field_names = list((sanitized_table_rows[0] or {}).keys())
+            tables_m.append({
+                "name": table_name,
+                "fields": field_names,
+                "source_type": "csv",
+            })
             
-            all_rows_by_table[table_name] = table_rows
-            total_rows += len(table_rows)
+            all_rows_by_table[table_name] = sanitized_table_rows
+            total_rows += len(sanitized_table_rows)
         
         if not dataset_tables_schema:
             raise HTTPException(status_code=400, detail="No tables with data to publish")
@@ -2622,27 +2775,38 @@ async def process_batch_for_powerbi(payload: dict = Body(...)):
         
         # Step 3: Push rows for each table into the single dataset
         pushed_tables = []
-        for table_name, table_rows in all_rows_by_table.items():
+        for table_name, sanitized_table_rows in all_rows_by_table.items():
             try:
-                print(f"📤 Pushing {len(table_rows)} rows to table '{table_name}'...")
-                push_result = pbi.push_rows(dataset_id, table_name, table_rows)
+                print(f"📤 Pushing {len(sanitized_table_rows)} rows to table '{table_name}'...")
+                push_result = pbi.push_rows(dataset_id, table_name, sanitized_table_rows)
                 
                 pushed_tables.append({
                     "table_name": table_name,
-                    "rows_count": len(table_rows),
+                    "rows_count": len(sanitized_table_rows),
                     "status": "success"
                 })
                 
-                print(f"   ✅ Successfully pushed {len(table_rows)} rows to {table_name}")
+                print(f"   ✅ Successfully pushed {len(sanitized_table_rows)} rows to {table_name}")
                 
             except Exception as e:
                 print(f"   ❌ Failed to push rows to table {table_name}: {e}")
                 pushed_tables.append({
                     "table_name": table_name,
-                    "rows_count": len(table_rows),
+                    "rows_count": len(sanitized_table_rows),
                     "error": str(e),
                     "status": "failed"
                 })
+
+        inferred_relationships = resolve_relationships_unified(
+            tables_m=tables_m,
+            col_name_map_by_table=col_name_map_by_table,
+        )
+        relationships_apply_result = _apply_relationships_with_retry(
+            workspace_id=pbi.workspace_id,
+            dataset_id=dataset_id,
+            inferred_relationships=inferred_relationships,
+            access_token=access_token,
+        )
         
         workspace_url = f"https://app.powerbi.com/groups/{pbi.workspace_id}"
         
@@ -2655,7 +2819,8 @@ async def process_batch_for_powerbi(payload: dict = Body(...)):
             "rows_pushed": total_rows,
             "tables_count": len(tables),
             "tables_published": len([t for t in pushed_tables if t.get("status") == "success"]),
-            "published_tables": pushed_tables
+            "published_tables": pushed_tables,
+            "relationships": relationships_apply_result,
         }
     
     except HTTPException:
@@ -2740,6 +2905,13 @@ async def powerbi_advanced(
         
         if not rows or not columns:
             raise HTTPException(status_code=400, detail="CSV has no valid rows/columns")
+
+        orig_headers, col_name_map, sanitized_rows = normalize_table_rows(
+            table_name=meta_table or "FactTable",
+            rows=rows,
+            provided_columns=columns,
+        )
+        sanitized_columns = [col_name_map.get(c, _sanitize_col(c)) for c in orig_headers]
         
         # Dataset naming
         dataset_name = meta_app_name or meta_table or "Qlik_Advanced_Dataset"
@@ -2758,16 +2930,29 @@ async def powerbi_advanced(
                     detail="Not logged in. Please use /powerbi/login/acquire-token"
                 )
             
-            pbi = PowerBIService(access_token=auth.get_access_token())
-            schema = infer_schema_from_rows(rows)
+            access_token = auth.get_access_token()
+            pbi = PowerBIService(access_token=access_token)
+            schema = infer_schema_from_rows(sanitized_rows)
             
             # Create/get dataset
             dataset_id, created = pbi.get_or_create_push_dataset(dataset_name, table_name, schema)
             print(f"✅ Dataset ID: {dataset_id} (Created: {created})")
             
             # Push data
-            push_res = pbi.push_rows(dataset_id, table_name, rows)
+            push_res = pbi.push_rows(dataset_id, table_name, sanitized_rows)
             print(f"✅ Data pushed successfully")
+
+            tables_m = [{"name": table_name, "fields": sanitized_columns, "source_type": "csv"}]
+            inferred_relationships = resolve_relationships_unified(
+                tables_m=tables_m,
+                col_name_map_by_table={table_name: col_name_map},
+            )
+            relationships_apply_result = _apply_relationships_with_retry(
+                workspace_id=pbi.workspace_id,
+                dataset_id=dataset_id,
+                inferred_relationships=inferred_relationships,
+                access_token=access_token,
+            )
             
             # Apply measures
             measures_applied = {}
@@ -2807,12 +2992,18 @@ async def powerbi_advanced(
                     "columns": columns,
                     "push_status": push_res
                 },
+                "relationships": relationships_apply_result,
                 "dax": {
                     "measures_parsed": len(measures_list),
                     "measures_list": measures_list,
                     "measures_applied": measures_applied
                 },
-                "refresh": refresh_res
+                "refresh": refresh_res,
+                "local_parse": {
+                    "columns": columns,
+                    "sanitized_columns": sanitized_columns,
+                    "row_count": len(rows)
+                }
             }
         
         except HTTPException:

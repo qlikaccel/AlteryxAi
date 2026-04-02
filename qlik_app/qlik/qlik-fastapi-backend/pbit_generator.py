@@ -37,6 +37,9 @@ def parse_combined_mquery(combined_m: str) -> List[Dict[str, str]]:
     """
     Split a combined M Query string (with // Table: Name [type] headers)
     into per-table dicts: {name, source_type, m_expression}
+    
+    Each table's M expression extends from its header to the next table header
+    (or EOF). We extract the M code block (let...in ...) verbatim.
     """
     tables: List[Dict[str, str]] = []
     header_re = re.compile(r"// Table:\s+(.+?)\s+\[(\w+)\]", re.IGNORECASE)
@@ -45,18 +48,35 @@ def parse_combined_mquery(combined_m: str) -> List[Dict[str, str]]:
     for i, match in enumerate(headers):
         name = match.group(1).strip()
         source_type = match.group(2).strip()
-        end = headers[i + 1].start() if i + 1 < len(headers) else len(combined_m)
-        chunk = combined_m[match.start():end]
-        # Extract the let...in block from the chunk.
-        # Matches any valid final step: TypedTable, PromotedHeaders, Source, etc.
-        let_match = re.search(r"(let\b.*\bin\s+\w+\s*$)", chunk, re.DOTALL | re.IGNORECASE | re.MULTILINE)
-        if let_match:
-            m_expr = let_match.group(1).strip()
-        else:
-            lines = [l for l in chunk.split("\n") if not l.strip().startswith("//")]
-            m_expr = "\n".join(lines).strip()
+        # Section extends from this header to the next header (or EOF)
+        section_start = match.start()
+        section_end = headers[i + 1].start() if i + 1 < len(headers) else len(combined_m)
+        
+        # Extract the section and remove leading comments (// header)
+        section = combined_m[section_start:section_end]
+        lines = section.split("\n")
+        
+        # Skip the // Table: header line
+        m_lines = []
+        skip_header = True
+        for line in lines:
+            if skip_header and line.strip().startswith("// Table:"):
+                skip_header = False
+                continue
+            # Skip other comments but keep M code
+            if line.strip().startswith("//") and not line.strip().startswith("// "):
+                continue
+            m_lines.append(line)
+        
+        m_expr = "\n".join(m_lines).strip()
+        
+        # Remove trailing blank lines or comments
+        while m_expr and (m_expr.endswith("\n") or m_expr.endswith(" ")):
+            m_expr = m_expr.rstrip()
+        
         if m_expr:
             tables.append({"name": name, "source_type": source_type, "m_expression": m_expr})
+    
     return tables
 
 

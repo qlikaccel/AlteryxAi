@@ -26,12 +26,21 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel as _BaseModel
 
 from six_stage_orchestrator import SixStageOrchestrator, run_migration_pipeline
+from relationship_service import (
+    _sanitize_col_name,
+    infer_relationships_unified,
+    sanitize_rel_columns,
+    build_col_name_map_for_tables_m,
+    normalize_table_rows,
+    resolve_relationships_unified,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # QLIK SYSTEM TABLE FILTER
 # ─────────────────────────────────────────────────────────────────────────────
 QLIK_SYSTEM_PREFIXES = (
     "__",
+    "_",
     "AutoCalendar",
     "MasterCalendar",
     "GeoData",
@@ -46,6 +55,12 @@ def _is_system_table(table_name: str) -> bool:
         if table_name.startswith(prefix):
             return True
     return False
+
+
+def _is_applymap_dimension_table(table_obj: Dict[str, Any]) -> bool:
+    """Return True for helper tables generated from ApplyMap lookup mappings."""
+    opts = table_obj.get("options") if isinstance(table_obj, dict) else None
+    return isinstance(opts, dict) and bool(opts.get("is_applymap_dimension"))
 
 logger = logging.getLogger(__name__)
 
@@ -400,6 +415,7 @@ class ConvertToMQueryRequest(_BaseModel):
     table_name:         str = ""
     base_path:          str = ""
     connection_string:  str = ""
+    app_id:             str = ""
 
 
 @router.post("/convert-to-mquery")
@@ -409,11 +425,13 @@ async def convert_to_mquery_endpoint(
     table_name_q:         str = Query("", alias="table_name"),
     base_path_q:          str = Query("", alias="base_path"),
     connection_string_q:  str = Query("", alias="connection_string"),
+    app_id_q:             str = Query("", alias="app_id"),
 ):
     _parsed_json    = request.parsed_script_json or parsed_script_json_q
     _table_name     = request.table_name         or table_name_q
     _base_path      = request.base_path or base_path_q or os.getenv("DATA_SOURCE_PATH", "[DataSourcePath]")
     _connection_str = request.connection_string  or connection_string_q
+    _app_id         = request.app_id or app_id_q
 
     logger.info("[convert_to_mquery_endpoint] Table: %s  base_path: %s", _table_name or "(all)", _base_path)
 
@@ -442,6 +460,15 @@ async def convert_to_mquery_endpoint(
             "[convert_to_mquery_endpoint] qlik_fields_map found in parse_result: %d tables",
             len(_qlik_fields_map),
         )
+    elif _app_id:
+        # Final fallback for scripts flow: auto-fetch schema from Qlik data model.
+        # This prevents LOAD * tables from becoming dynamic-only during conversion.
+        _qlik_fields_map = _build_qlik_fields_map(_app_id)
+        if _qlik_fields_map:
+            logger.info(
+                "[convert_to_mquery_endpoint] qlik_fields_map auto-fetched via app_id: %d tables",
+                len(_qlik_fields_map),
+            )
 
     if not tables and not raw_script:
         raise HTTPException(
@@ -599,102 +626,9 @@ async def full_pipeline(
 # Relationship inference helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _tables_m_to_extractor_format(tables_m: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Convert tables_m to extractor format for relationship inference.
-    Uses original fields which work fine for detecting relationships.
-    """
-    result = []
-    for t in tables_m:
-        raw_fields = t.get("fields", [])
-        if raw_fields and isinstance(raw_fields[0], dict):
-            field_names = [
-                f.get("alias") or f.get("name", "")
-                for f in raw_fields
-                if f.get("name") and f.get("name") != "*"
-            ]
-        else:
-            field_names = [f for f in raw_fields if f and f != "*"]
-        result.append({
-            "name":        t["name"],
-            "source_type": t.get("source_type", ""),
-            "fields":      field_names,
-        })
-    return result
-
-
-def _remove_ambiguous_relationships(relationships: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    if not relationships:
-        return []
-
-    seen = set()
-    unique_rels = []
-    for rel in relationships:
-        key = (rel["fromTable"], rel["fromColumn"], rel["toTable"], rel["toColumn"])
-        if key not in seen:
-            seen.add(key)
-            unique_rels.append(rel)
-        else:
-            logger.warning("[relationship_dedup] DUPLICATE REMOVED: %s.%s → %s.%s", *key)
-
-    relationships = unique_rels
-
-    def find_all_paths(start, end, adj, visited=None, depth=0):
-        if visited is None:
-            visited = set()
-        if depth > 10:
-            return []
-        if start == end and depth > 0:
-            return [[end]]
-        if start in visited:
-            return []
-        visited.add(start)
-        paths = []
-        for nxt in adj.get(start, []):
-            for path in find_all_paths(nxt, end, adj, visited.copy(), depth + 1):
-                paths.append([start] + path)
-        return paths
-
-    adjacency: Dict[str, List[str]] = {}
-    for rel in relationships:
-        adjacency.setdefault(rel["fromTable"], []).append(rel["toTable"])
-
-    redundant_indices = set()
-    for idx, rel in enumerate(relationships):
-        ft, tt = rel["fromTable"], rel["toTable"]
-        if tt in adjacency.get(ft, []):
-            adjacency[ft].remove(tt)
-        if find_all_paths(ft, tt, adjacency):
-            redundant_indices.add(idx)
-            logger.warning("[relationship_dedup] INDIRECT PATH — removing direct: %s→%s", ft, tt)
-        adjacency.setdefault(ft, []).append(tt)
-
-    return [rel for idx, rel in enumerate(relationships) if idx not in redundant_indices]
-
-
 def _infer_relationships_from_tables(tables_m: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    from relationship_extractor import RelationshipExtractor
-    from relationship_normalizer import RelationshipNormalizer
-
-    extractor_tables = _tables_m_to_extractor_format(tables_m)
-    extractor = RelationshipExtractor(extractor_tables)
-    raw_rels = extractor.extract()
-    valid_rels = [r for r in raw_rels if r.get("cardinality") != "manyToMany"]
-    if not valid_rels:
-        return []
-    normalized = RelationshipNormalizer.normalize_list(valid_rels)
-    bim_rels = [
-        {
-            "fromTable":              n.from_table,
-            "fromColumn":             n.from_column,
-            "toTable":                n.to_table,
-            "toColumn":               n.to_column,
-            "cardinality":            n.cardinality,
-            "crossFilteringBehavior": n.direction,
-        }
-        for n in normalized
-    ]
-    return _remove_ambiguous_relationships(bim_rels)
+    # Backward-compatible wrapper consumed by other modules.
+    return infer_relationships_unified(tables_m, alias_aware=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -879,13 +813,23 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
         from pbit_generator import parse_combined_mquery
         if combined_m.strip():
             tables_m = parse_combined_mquery(combined_m)
+            logger.info("[publish_mquery] Parsed %d tables from combined M", len(tables_m))
+
+            # Initialize fields if missing
+            for t in tables_m:
+                if "fields" not in t:
+                    t["fields"] = []
 
             # Enrich fields from M expressions
             try:
                 from powerbi_publisher import _extract_fields_from_m
                 for t in tables_m:
-                    if not t.get("fields"):
-                        t["fields"] = _extract_fields_from_m(t.get("m_expression", ""))
+                    if not t.get("fields") or len(t["fields"]) == 0:
+                        extracted_fields = _extract_fields_from_m(t.get("m_expression", ""))
+                        if extracted_fields:
+                            t["fields"] = extracted_fields
+                            logger.info("[publish_mquery] Extracted %d fields from '%s' M expression", 
+                                       len(extracted_fields), t["name"])
             except Exception as extract_exc:
                 logger.warning("[publish_mquery] Field extraction failed: %s", extract_exc)
 
@@ -905,8 +849,6 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
                     for t in tables_m:
                         if fields_by_name.get(t["name"]):
                             t["fields"] = fields_by_name[t["name"]]
-                        if resolved_by_name.get(t["name"]):
-                            t["_resolved_for_rels"] = resolved_by_name[t["name"]]
                 except Exception as enrich_exc:
                     logger.warning("[publish_mquery] LoadScript enrichment failed: %s", enrich_exc)
 
@@ -957,15 +899,85 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
     data_source_path = request.data_source_path or request.sharepoint_url or "[DataSourcePath]"
     tables_m = _inject_applymap_dimension_tables(tables_m, data_source_path)
 
+    # Keep Scripts flow aligned with CSV flow: do not publish helper/system tables.
+    # These helper tables can appear as an unexpected 7th table (e.g. _cityKey2GeoPoint)
+    # and create inconsistent model behavior across flows.
+    pre_filter_count = len(tables_m)
+    tables_m = [
+        t for t in tables_m
+        if not _is_system_table(t.get("name", ""))
+        and not _is_applymap_dimension_table(t)
+    ]
+    if len(tables_m) != pre_filter_count:
+        logger.info(
+            "[publish_mquery] Filtered %d helper/system table(s) before publish",
+            pre_filter_count - len(tables_m),
+        )
+
     # ── Step 4: Relationship inference ───────────────────────────────────────
-    relationships = request.relationships or []
-    if not relationships:
-        try:
-            relationships = _infer_relationships_from_tables(tables_m)
-            if relationships:
-                logger.info("[publish_mquery] Auto-inferred %d relationship(s)", len(relationships))
-        except Exception as rel_exc:
-            logger.warning("[publish_mquery] Relationship inference failed: %s", rel_exc)
+    if request.relationships:
+        logger.info(
+            "[publish_mquery] Ignoring client-provided relationships (%d). Using relationship_service as source-of-truth.",
+            len(request.relationships),
+        )
+    # ── Step 3c: Final fallback — populate fields from qlik_fields_map for tables ──
+    # that still have no fields after all extraction attempts above.
+    # This is the critical path for the M Query flow: parse_combined_mquery returns
+    # tables with no fields, _extract_fields_from_m may return [] for dynamic-schema
+    # tables, and LoadScript enrichment may also fail. qlik_fields_map (auto-fetched
+    # from Qlik GetTablesAndKeys) has authoritative field lists for every table.
+    if qlik_fields_map:
+        for t in tables_m:
+            table_name = t.get("name", "")
+            map_fields = qlik_fields_map.get(table_name, [])
+            if not map_fields:
+                continue
+
+            existing_fields_raw = t.get("fields") or []
+            existing_field_names: List[str] = []
+            for f in existing_fields_raw:
+                if isinstance(f, dict):
+                    n = str(f.get("alias") or f.get("name") or "").strip()
+                else:
+                    n = str(f or "").strip()
+                if n and n != "*":
+                    existing_field_names.append(n)
+
+            merged: List[str] = []
+            seen = set()
+            for n in existing_field_names + list(map_fields):
+                key = str(n).strip().lower()
+                if key and key not in seen:
+                    seen.add(key)
+                    merged.append(str(n).strip())
+
+            if not merged:
+                continue
+
+            added_count = max(0, len(merged) - len(existing_field_names))
+            t["fields"] = merged
+            if added_count > 0 or not existing_field_names:
+                logger.info(
+                    "[publish_mquery] qlik_fields_map merge: '%s' fields %d -> %d (+%d)",
+                    table_name,
+                    len(existing_field_names),
+                    len(merged),
+                    added_count,
+                )
+
+    try:
+        col_name_map_by_table = build_col_name_map_for_tables_m(tables_m)
+        relationships = resolve_relationships_unified(tables_m, col_name_map_by_table)
+        logger.info(
+            "[publish_mquery] Unified inferred %d relationship(s) from %d tables "
+            "(fields populated: %d)",
+            len(relationships),
+            len(tables_m),
+            sum(1 for t in tables_m if t.get("fields")),
+        )
+    except Exception as rel_exc:
+        logger.warning("[publish_mquery] Unified relationship inference failed: %s", rel_exc)
+        relationships = []
 
     # ── Step 5: Publish ───────────────────────────────────────────────────────
     try:
@@ -1084,17 +1096,32 @@ async def generate_pbit_endpoint(request: GeneratePbitRequest):
 # PUBLISH TABLES (Flow 2 - CSV Export Path)
 # ===========================================================================
 
-MAX_INLINE_ROWS = 500
+# Optional row cap for CSV inline publish.
+# Default 0 = no cap (prevents data loss). Set env MAX_INLINE_ROWS to enforce cap.
+MAX_INLINE_ROWS = int(os.getenv("MAX_INLINE_ROWS", "0") or "0")
 
 
 def _sanitize_col(name: str) -> str:
-    import re as _re
-    return _re.sub(r'[^A-Za-z0-9_]', '_', name)
+    return _sanitize_col_name(name)
+
+
+def _to_m_text_literal(value: Any) -> str:
+    """Encode arbitrary scalar values safely for M quoted text literals."""
+    s = "" if value is None else str(value)
+    return (
+        s.replace("#", "#(#)")
+        .replace("\r\n", "#(cr)#(lf)")
+        .replace("\n", "#(lf)")
+        .replace("\r", "#(cr)")
+        .replace("\t", "#(tab)")
+        .replace('"', '""')
+    )
 
 
 class PublishTablesRequest(_BaseModel):
     dataset_name: str  = "Qlik_Migrated_Dataset"
     tables:       list = []
+    relationships: list = []
 
 
 @router.post("/publish-tables")
@@ -1108,39 +1135,59 @@ async def publish_tables_endpoint(request: PublishTablesRequest):
         raise HTTPException(status_code=400, detail="POWERBI_WORKSPACE_ID not set")
 
     tables_m = []
+    col_name_map_by_table: Dict[str, Dict[str, str]] = {}
     for t in request.tables:
         name = t.get("name", "Table")
         rows = t.get("rows", [])
-        if not rows:
+        provided_columns = t.get("columns", []) or []
+
+        orig_headers, table_col_map, normalized_rows = normalize_table_rows(
+            table_name=name,
+            rows=rows,
+            provided_columns=provided_columns,
+        )
+
+        if not orig_headers:
+            logger.warning("[publish_tables] Skipping table '%s': no rows and no columns metadata", name)
             continue
 
-        orig_headers = list(rows[0].keys())
-        safe_headers = [_sanitize_col(h) for h in orig_headers]
+        safe_headers = [table_col_map[h] for h in orig_headers]
+        col_name_map_by_table[name] = dict(table_col_map)
 
-        total_rows = len(rows)
-        if total_rows > MAX_INLINE_ROWS:
+        total_rows = len(normalized_rows)
+        if MAX_INLINE_ROWS > 0 and total_rows > MAX_INLINE_ROWS:
             logger.info("[publish_tables] Table '%s': capping %d rows to %d", name, total_rows, MAX_INLINE_ROWS)
-            rows = rows[:MAX_INLINE_ROWS]
+            normalized_rows = normalized_rows[:MAX_INLINE_ROWS]
 
         fields = [{"name": h, "type": _infer_type_from_name(h)} for h in safe_headers]
 
-        record_rows = []
-        for row in rows:
-            pairs = ", ".join(
-                '{} = "{}"'.format(s, str(row.get(o, "") or "").replace('"', '""'))
-                for o, s in zip(orig_headers, safe_headers)
-            )
-            record_rows.append(f"        [{pairs}]")
-        record_rows_str = ",\n".join(record_rows)
+        if normalized_rows:
+            record_rows = []
+            for row in normalized_rows:
+                pairs = ", ".join(
+                    '{} = "{}"'.format(s, _to_m_text_literal(row.get(s, "")))
+                    for s in safe_headers
+                )
+                record_rows.append(f"        [{pairs}]")
+            record_rows_str = ",\n".join(record_rows)
 
-        m_expr = (
-            f"let\n"
-            f"    Source = Table.FromRecords({{\n"
-            f"{record_rows_str}\n"
-            f"    }})\n"
-            f"in\n"
-            f"    Source"
-        )
+            m_expr = (
+                f"let\n"
+                f"    Source = Table.FromRecords({{\n"
+                f"{record_rows_str}\n"
+                f"    }})\n"
+                f"in\n"
+                f"    Source"
+            )
+        else:
+            header_list = ", ".join(f'"{h}"' for h in safe_headers)
+            m_expr = (
+                f"let\n"
+                f"    Source = Table.FromRows({{}}, {{{header_list}}})\n"
+                f"in\n"
+                f"    Source"
+            )
+
         tables_m.append({
             "name": name, "source_type": "inline",
             "m_expression": m_expr, "fields": fields,
@@ -1149,12 +1196,19 @@ async def publish_tables_endpoint(request: PublishTablesRequest):
     if not tables_m:
         raise HTTPException(status_code=400, detail="No tables with data provided")
 
-    relationships = []
+    if request.relationships:
+        logger.info(
+            "[publish_tables] Ignoring client-provided relationships (%d). Using relationship_service as source-of-truth.",
+            len(request.relationships),
+        )
+
+    relationship_source = "relationship_service_unified"
     try:
-        relationships = _infer_relationships_from_tables(tables_m)
-        logger.info("[publish_tables] Inferred %d relationship(s)", len(relationships))
+        relationships = resolve_relationships_unified(tables_m, col_name_map_by_table)
+        logger.info("[publish_tables] Unified inferred %d relationship(s)", len(relationships))
     except Exception as e:
-        logger.warning("[publish_tables] Relationship inference failed: %s", e)
+        logger.warning("[publish_tables] Unified relationship inference failed: %s", e)
+        relationships = []
 
     result = publish_semantic_model(
         dataset_name=request.dataset_name,
@@ -1172,6 +1226,9 @@ async def publish_tables_endpoint(request: PublishTablesRequest):
         "dataset_id":      result.get("dataset_id", ""),
         "dataset_name":    request.dataset_name,
         "tables_deployed": len(tables_m),
+        "relationships_source": relationship_source,
+        "relationships_count": len(relationships),
+        "relationships_applied": relationships,
         "workspace_url":   result.get("workspace_url", ""),
         "message":         result.get("message", ""),
     }
