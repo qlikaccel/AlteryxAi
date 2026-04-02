@@ -28,20 +28,37 @@ import requests
 from pydantic import BaseModel
 
 class PublisherConfig(BaseModel):
-    tenant_id: str
-    client_id: str
-    client_secret: str
     workspace_id: str
     dataset_name: str
+    access_token: str = None  # Optional - use if already authenticated
+    tenant_id: str = None  # Optional - for service principal auth
+    client_id: str = None  # Optional - for service principal auth
+    client_secret: str = None  # Optional - for service principal auth
+    xmla_endpoint: str = None  # Optional - for XMLA connectivity
+    base_data_path: str = None  # Optional - for file-based sources
+    odbc_connection: str = None  # Optional - for ODBC sources
 
 def get_powerbi_token(config: PublisherConfig) -> str:
-    app = ConfidentialClientApplication(
-        config.client_id, authority=f"https://login.microsoftonline.com/{config.tenant_id}",
-        client_credential=config.client_secret
-    )
-    result = app.acquire_token_for_client(scopes=["https://analysis.windows.net/powerbi/api/.default"])
-    if "access_token" not in result: raise ValueError(f"Auth failed: {result.get('error_description')}")
-    return result["access_token"]  # [web:6]
+    # Priority 1: Use provided access_token if available
+    if config.access_token:
+        return config.access_token
+    
+    # Priority 2: Obtain token via service principal if credentials provided
+    if config.tenant_id and config.client_id and config.client_secret:
+        app = ConfidentialClientApplication(
+            config.client_id, 
+            authority=f"https://login.microsoftonline.com/{config.tenant_id}",
+            client_credential=config.client_secret
+        )
+        result = app.acquire_token_for_client(
+            scopes=["https://analysis.windows.net/powerbi/api/.default"]
+        )
+        if "access_token" not in result:
+            raise ValueError(f"Auth failed: {result.get('error_description')}")
+        return result["access_token"]
+    
+    # If we get here, no valid auth method was provided
+    raise ValueError("No access_token or credentials provided for Power BI authentication")
 
 def inject_schema_if_missing(m_expr: str, source_type: str = "") -> str:
     """
@@ -102,6 +119,71 @@ in
         logger.warning(f"[inject_schema] ⚠️  Could not inject - M query format unexpected")
         return m_expr
 
+
+
+def validate_m_query_columns(
+    table: Dict[str, Any],
+    m_expression: str,
+    converter: "MQueryConverter",
+) -> List[str]:
+    """
+    RC-6: Pre-publish column validation.
+
+    Checks that every column in the BIM schema (resolve_output_columns) is
+    actually produced by the M expression (present in AddColumn / TypedTable
+    / TransformColumnTypes steps).
+
+    Returns a list of column names that are MISSING from the M expression.
+    An empty list means the M query is consistent with the schema.
+    """
+    import re
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    expected_cols = {
+        col["name"]
+        for col in converter.resolve_output_columns(table)
+        if col.get("name")
+    }
+    if not expected_cols:
+        return []  # Nothing to validate
+
+    # Extract column names mentioned in the M expression steps
+    present_cols: set = set()
+
+    # AddColumn steps: Table.AddColumn(prev, "colname", …)
+    for m in re.finditer(
+        r'Table\.AddColumn\s*\([^,]+,\s*"([^"]+)"', m_expression
+    ):
+        present_cols.add(m.group(1))
+
+    # TransformColumnTypes / SelectColumns: {"colname", type …}
+    for m in re.finditer(r'\{"([^"]+)"(?:,\s*type|\s*})', m_expression):
+        present_cols.add(m.group(1))
+
+    # ExpandTableColumn columns list: {"col1", "col2"}
+    for m in re.finditer(r'Table\.ExpandTableColumn\s*\([^{]+\{([^}]+)\}', m_expression):
+        for col_match in re.finditer(r'"([^"]+)"', m.group(1)):
+            present_cols.add(col_match.group(1))
+
+    missing = sorted(expected_cols - present_cols)
+
+    if missing:
+        logger.warning(
+            "[validate_m_query_columns] Table '%s': %d column(s) expected by BIM "
+            "but NOT found in M expression: %s",
+            table.get("name", "?"),
+            len(missing),
+            missing,
+        )
+    else:
+        logger.info(
+            "[validate_m_query_columns] Table '%s': all %d expected column(s) present",
+            table.get("name", "?"),
+            len(expected_cols),
+        )
+
+    return missing
 
 
 def generate_cloud_m(table: Dict[str, Any], qlik_fields_map: Dict[str, Any] = None) -> str:
@@ -175,6 +257,18 @@ def generate_cloud_m(table: Dict[str, Any], qlik_fields_map: Dict[str, Any] = No
                 logger.info(f"[generate_cloud_m] ✅ Schema injected for {table_name}")
             else:
                 logger.info(f"[generate_cloud_m] ℹ️ No schema injection needed for {table_name}")
+            
+            # RC-6: Validate derived columns before returning
+            missing_cols = validate_m_query_columns(table, m_expr, converter)
+            if missing_cols:
+                raise RuntimeError(
+                    f"[validate] Table '{table_name}' M query is missing "
+                    f"{len(missing_cols)} column(s) that the BIM schema expects: "
+                    f"{missing_cols}\n"
+                    f"Fix: check _auto_detect_transformations() detected these "
+                    f"fields and _detect_and_apply_derived_columns() emitted "
+                    f"Table.AddColumn steps for them."
+                )
             
             logger.info(f"[generate_cloud_m] Successfully converted {table_name}")
             return m_expr
@@ -308,7 +402,13 @@ def build_bim_relationships(inferred_relationships: List[Dict]) -> List[Dict]:
 #     schema = tables_to_push_schema(parse_result)
 
 
-def publish_from_parse_result(parse_result: Dict[str, Any], config: PublisherConfig) -> Dict[str, Any]:
+def publish_from_parse_result(
+    parse_result: Dict[str, Any],
+    config: PublisherConfig,
+    relationships: List[Dict[str, Any]] = None,
+    prefer_xmla: bool = False,
+    **kwargs
+) -> Dict[str, Any]:
     token = get_powerbi_token(config)
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
@@ -317,11 +417,86 @@ def publish_from_parse_result(parse_result: Dict[str, Any], config: PublisherCon
     # No separate extraction needed here — just pass parse_result as-is.
     schema = tables_to_push_schema(parse_result)
 
-    # ✅ Build relationships with ambiguity resolved BEFORE BIM payload
-    raw_relationships = parse_result.get("relationships", [])
+    # ✅ CRITICAL FIX: DO NOT inject relationships into BIM payload during dataset creation
+    # Reason: Power BI validates relationships during data import and fails if columns have duplicates
+    # Solution: Build relationships but apply them AFTER dataset creation via REST API
+    # This allows data to load first, then relationships are added without validation conflicts
+    raw_relationships = relationships or parse_result.get("relationships", [])
     resolved_relationships = build_bim_relationships(raw_relationships)
-
-    # Inject into BIM payload
-    schema["relationships"] = resolved_relationships
-
-    # ... rest of your publish logic
+    
+    # 🔥 Store relationships separately - DO NOT add to schema yet
+    schema["relationships"] = []  # Start with empty relationships
+    
+    # Create dataset via Push API
+    dataset_name = config.dataset_name or schema.get("name", "QlikConvertedDataset")
+    workspace_id = config.workspace_id
+    
+    # Build the push dataset payload
+    payload = {
+        "name": dataset_name,
+        "defaultMode": "Push",
+        "tables": schema.get("tables", [])
+    }
+    
+    # Add M queries as table sources
+    if schema.get("m_queries"):
+        for table in payload["tables"]:
+            table_name = table.get("name")
+            if table_name and table_name in schema.get("m_queries", {}):
+                table["source"] = [
+                    {
+                        "name": f"Query - {table_name}",
+                        "expression": schema["m_queries"][table_name],
+                        "type": "m"
+                    }
+                ]
+    
+    try:
+        # POST dataset to Power BI
+        url = f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/datasets"
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
+        
+        if resp.status_code not in (200, 201):
+            return {
+                "success": False,
+                "error": f"Dataset creation failed: {resp.status_code} - {resp.text[:500]}"
+            }
+        
+        dataset_id = resp.json().get("id")
+        if not dataset_id:
+            return {
+                "success": False,
+                "error": "No dataset ID returned from Power BI"
+            }
+        
+        # ✅ NOW apply relationships AFTER dataset exists (avoids validation conflicts)
+        if resolved_relationships:
+            from powerbi_relationships import apply_relationships
+            rel_result = apply_relationships(
+                workspace_id=workspace_id,
+                dataset_id=dataset_id,
+                relationships=resolved_relationships,
+                access_token=token,
+                overwrite=True
+            )
+            relationships_applied = rel_result.get("created", 0) + rel_result.get("updated", 0)
+        else:
+            relationships_applied = 0
+        
+        return {
+            "success": True,
+            "dataset_id": dataset_id,
+            "dataset_name": dataset_name,
+            "method": "Push API",
+            "tables_deployed": len(schema.get("tables", [])),
+            "relationships_applied": relationships_applied,
+            "duration_seconds": 0
+        }
+        
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"[publish_dataset] Error: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Publication error: {str(e)}"
+        }

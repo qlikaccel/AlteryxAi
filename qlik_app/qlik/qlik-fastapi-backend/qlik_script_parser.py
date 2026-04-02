@@ -384,6 +384,18 @@ class QlikScriptParser:
             logger.debug("[QlikParser] CONCATENATE detected with target: %s", 
                         concat_target or "(auto-match)")
 
+        # ── 🔥 KEEP detection ────────────────────────────────────────────────
+        keep_match = re.search(r'(LEFT|RIGHT|INNER)?\s*KEEP\s*\((\w+)\)', 
+                              block, re.IGNORECASE)
+        if keep_match:
+            keep_type = (keep_match.group(1) or "inner").lower()
+            keep_table = keep_match.group(2).strip()
+            options["is_keep"] = True
+            options["keep_type"] = keep_type
+            options["keep_table"] = keep_table
+            logger.debug("[QlikParser] KEEP detected: %s KEEP with table '%s'", 
+                        keep_type.upper(), keep_table)
+
         # ── Alias resolution ────────────────────────────────────────────────
         alias_m = _RE_ALIAS_KEYWORD.search(block) or _RE_ALIAS_AS.search(block)
         if alias_m and not table_name:
@@ -661,20 +673,50 @@ class QlikScriptParser:
 
     @staticmethod
     def _assign_missing_names(tables: List[Dict]) -> None:
-        """Give unnamed tables a derived name from their source path or index."""
+        """
+        Give unnamed tables a derived name from their source path or index.
+        
+        FIX 8: Handle duplicate file loads by appending _1, _2, etc., so that
+        when fact_employee_activity_1M.csv is loaded twice without explicit 
+        table names, they become fact_employee_activity_1M_1 and 
+        fact_employee_activity_1M_2 instead of overwriting.
+        """
         counter = 1
+        used_names = set()
+        
+        # First pass: collect all explicit table names (those already set)
+        for td in tables:
+            if td["name"]:
+                used_names.add(td["name"])
+        
+        # Second pass: assign names to unnamed tables, handling duplicates
         for td in tables:
             if td["name"]:
                 continue
+            
             path = td.get("source_path", "")
             if path:
                 # Derive from file name: /data/Sales Orders.qvd → SalesOrders
                 base = path.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
                 base = re.sub(r"\.[^.]+$", "", base)          # remove ext
                 base = re.sub(r"[^A-Za-z0-9_]", "_", base)   # sanitize
-                td["name"] = base or f"Table_{counter}"
+                proposed_name = base or f"Table_{counter}"
             else:
-                td["name"] = f"Table_{counter}"
+                proposed_name = f"Table_{counter}"
+            
+            # If name already exists (duplicate file load), append suffix
+            if proposed_name in used_names:
+                suffix = 1
+                unique_name = f"{proposed_name}_{suffix}"
+                while unique_name in used_names:
+                    suffix += 1
+                    unique_name = f"{proposed_name}_{suffix}"
+                td["name"] = unique_name
+                logger.debug("[_assign_missing_names] Duplicate file detected, renamed '%s' → '%s'", proposed_name, unique_name)
+            else:
+                td["name"] = proposed_name
+            
+            used_names.add(td["name"])
             counter += 1
 
 

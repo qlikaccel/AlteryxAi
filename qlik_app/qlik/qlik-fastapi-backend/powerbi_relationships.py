@@ -105,6 +105,11 @@ def _to_rest_payload(rel: Dict[str, Any]) -> Dict[str, Any]:
 
     name = rel.get("name") or rel.get("relationship_name") or _auto_name(rel)
 
+    # 🔥 CRITICAL FIX: Disable referential integrity checking during data import
+    # This prevents Power BI from validating relationship constraints while data is loading
+    # allowing duplicate values that would normally be rejected
+    rely_on_referential = bool(rel.get("rely_on_referential_integrity", False))
+
     return {
         "name": str(name),
         "fromTable": str(rel.get("from_table") or rel.get("fromTable", "")),
@@ -113,7 +118,8 @@ def _to_rest_payload(rel: Dict[str, Any]) -> Dict[str, Any]:
         "toColumn": str(rel.get("to_column") or rel.get("toColumn", "")),
         "cardinality": cardinality,
         "crossFilteringBehavior": cross_filter,  # REST API spelling
-        "isActive": bool(rel.get("is_active", True)),
+        "isActive": True,  # 🔥 Always active (rely_on_referential controls validation)
+        "relyOnReferentialIntegrity": rely_on_referential,  # 🔥 Defaults to False to avoid validation
     }
 
 
