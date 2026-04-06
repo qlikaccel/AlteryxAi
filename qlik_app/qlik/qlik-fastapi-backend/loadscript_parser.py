@@ -204,6 +204,7 @@ def _parse_field_list(field_text: str) -> List[Dict[str, Any]]:
     Parse a comma-separated field expression list (the part between LOAD and FROM/INLINE/RESIDENT).
     Returns list of field dicts with name, expression, alias, type.
     """
+    field_text = re.sub(r'^\s*DISTINCT\b\s*', '', field_text.strip(), flags=re.IGNORECASE)
     if not field_text.strip():
         return []
     if field_text.strip() == '*':
@@ -384,7 +385,7 @@ def _parse_single_statement(stmt: str) -> Optional[Dict[str, Any]]:
         options['keep_type'] = keep_type
         keep_match = re.search(r'(?:Left|Right|Inner)?\s*Keep\(([^)]*)\)', modifier)
         if keep_match and keep_match.group(1).strip():
-            options['keep_fields'] = keep_match.group(1).strip()
+            options['keep_table'] = keep_match.group(1).strip()
 
     # ── INLINE ──────────────────────────────────────────────────────────────
     inline_m = re.search(r'\bINLINE\b\s*[\[(](.*?)[\])]', stmt, re.IGNORECASE | re.DOTALL)
@@ -726,6 +727,9 @@ class LoadScriptParser:
         seen_names: set = set()
         load_counter = 0  # FIX: Track execution order
         concatenate_chain = {}  # FIX: Track: target_table → [list of csv sources]
+        pending_post_joins: Dict[str, List[Dict[str, Any]]] = {}
+        pending_post_keeps: Dict[str, List[Dict[str, Any]]] = {}
+        retained_dropped_tables: set = set()
 
         # ── Pass 1: collect all DROP TABLE target names ───────────────────────
         dropped_tables: set = set()
@@ -736,6 +740,18 @@ class LoadScriptParser:
             )
             if drop_m:
                 dropped_tables.add(drop_m.group(1).strip())
+
+        # Dropped tables that are later consumed by JOIN/KEEP statements must
+        # remain available as helper queries so the target table can inline them.
+        for stmt in stmts:
+            td_temp = _parse_single_statement(stmt)
+            if not td_temp:
+                continue
+            opts = td_temp.get('options', {})
+            if not (opts.get('is_join') or opts.get('is_keep')):
+                continue
+            if td_temp.get('source_type') == 'resident' and td_temp.get('source_path'):
+                retained_dropped_tables.add(td_temp['source_path'])
 
         # ── Pass 2: collect source paths of tables that will be dropped ───────
         # We need to know WHERE Sales_Raw was loaded from (e.g. fact_sales_1M.csv)
@@ -795,10 +811,6 @@ class LoadScriptParser:
             if not name:
                 continue
 
-            # ✅ FIX 12: Skip staging/intermediate tables that are dropped later
-            if name in dropped_tables:
-                continue
-
             # ✅ FIX 13: For resident tables whose source was dropped, inject
             # the original file path so mquery_converter can inline the CSV.
             if td['source_type'] == 'resident':
@@ -810,6 +822,31 @@ class LoadScriptParser:
                         f"   ℹ️  Table '{name}' is RESIDENT of dropped table '{resident_src}'. "
                         f"raw_source_path='{td['options']['raw_source_path']}'"
                     )
+
+            if td.get('options', {}).get('is_join') and td['options'].get('join_table'):
+                target_name = td['options']['join_table']
+                pending_post_joins.setdefault(target_name, []).append(td)
+                logger.info(
+                    "   ℹ️  Deferred JOIN load '%s' for target '%s'",
+                    name, target_name
+                )
+                continue
+
+            if td.get('options', {}).get('is_keep') and td['options'].get('keep_table'):
+                target_name = td['options']['keep_table']
+                pending_post_keeps.setdefault(target_name, []).append(td)
+                logger.info(
+                    "   ℹ️  Deferred KEEP load '%s' for target '%s'",
+                    name, target_name
+                )
+                continue
+
+            # ✅ FIX 12: Skip dropped staging tables unless they are still needed
+            # as helper queries by a later JOIN/KEEP operation.
+            if name in dropped_tables and name not in retained_dropped_tables:
+                continue
+            if name in dropped_tables:
+                td['options']['is_helper_table'] = True
 
             # Deduplicate by name
             if name in seen_names:
@@ -870,6 +907,13 @@ class LoadScriptParser:
                 "fields":      td['fields'],
                 "load_order":  load_counter,  # FIX: Track execution order
             })
+
+        for table in self.tables:
+            name = table.get('name')
+            if name in pending_post_joins:
+                table.setdefault('options', {})['post_join_loads'] = pending_post_joins[name]
+            if name in pending_post_keeps:
+                table.setdefault('options', {})['post_keep_loads'] = pending_post_keeps[name]
 
     # ------------------------------------------------------------------
     # Step 5.4 — Fields (with type inference)

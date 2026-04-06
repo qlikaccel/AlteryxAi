@@ -240,16 +240,38 @@ def _source_priority(source: str) -> int:
     return priorities.get(str(source or ""), 99)
 
 
+def _table_name_key_candidates(table_name: str) -> List[str]:
+    canonical = _canonical_field_name(table_name)
+    if not canonical:
+        return []
+
+    candidates = [canonical]
+    if canonical.endswith("ies") and len(canonical) > 3:
+        candidates.append(canonical[:-3] + "y")
+    if canonical.endswith("s") and len(canonical) > 1:
+        candidates.append(canonical[:-1])
+
+    seen = set()
+    ordered: List[str] = []
+    for value in candidates:
+        if value and value not in seen:
+            seen.add(value)
+            ordered.append(value)
+    return ordered
+
+
 def _is_probable_primary_key(table_name: str, column_name: str) -> bool:
-    t = _canonical_field_name(table_name)
     c = _canonical_field_name(column_name)
     if not c:
         return False
     if c == "id":
         return True
-    if c in {f"{t}id", f"{t}key"}:
-        return True
-    return c.endswith("id") and c.startswith(t) and len(c) > len(t)
+    for t in _table_name_key_candidates(table_name):
+        if c in {f"{t}id", f"{t}key"}:
+            return True
+        if c.endswith("id") and c.startswith(t) and len(c) > len(t):
+            return True
+    return False
 
 
 def _edge_key(rel: Dict[str, Any]) -> tuple:

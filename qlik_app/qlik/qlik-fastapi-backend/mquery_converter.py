@@ -115,17 +115,56 @@ def _infer_type_from_name(col_name: str) -> str:
 
 
 def _wrap_columns_in_brackets(expr: str) -> str:
-    if not expr or "[" in expr:
+    if not expr:
         return expr
+    placeholders: Dict[str, str] = {}
+
+    def _stash_string(match: re.Match[str]) -> str:
+        key = f"__STR_{len(placeholders)}__"
+        placeholders[key] = match.group(0)
+        return key
+
+    expr = re.sub(r'"[^"]*"|\'[^\']*\'', _stash_string, expr)
     expr = re.sub(r'\bIsNull\s*\(\s*([^,\)]+)\s*\)', r'(\1 = null)', expr, flags=re.IGNORECASE)
     expr = re.sub(r'\bIsEmpty\s*\(\s*([^,\)]+)\s*\)', r'(\1 = "" or \1 = null)', expr, flags=re.IGNORECASE)
     result = re.sub(
-        r'\b([A-Za-z_][A-Za-z0-9_]*)\b(?![\]])',
-        lambda m: f'[{m.group(1)}]' if m.group(1).lower() not in ('null', 'true', 'false', 'and', 'or') else m.group(1),
+        r'(?<![\[\.])\b([A-Za-z_][A-Za-z0-9_]*)\b(?!\s*(\(|\.|\]))',
+        lambda m: f'[{m.group(1)}]' if not m.group(1).startswith('__STR_') and m.group(1).lower() not in ('null', 'true', 'false', 'and', 'or', 'if', 'then', 'else', 'each') else m.group(1),
         expr
     )
     result = re.sub(r'\[\[([^\[\]]+)\]\]', r'[\1]', result)
+    for key, value in placeholders.items():
+        result = result.replace(key, value)
     return result
+
+
+def _convert_qlik_date_format_to_m(date_format: str) -> str:
+    if not date_format:
+        return ""
+    m_format = date_format.strip()
+    for source, target in (("YYYY", "yyyy"), ("YY", "yy"), ("DD", "dd")):
+        m_format = re.sub(source, target, m_format, flags=re.IGNORECASE)
+    return m_format
+
+
+def _is_quoted_string_literal(value: str) -> bool:
+    if not value or len(value) < 2:
+        return False
+    return value[0] == value[-1] and value[0] in ('"', "'")
+
+
+def _to_m_scalar_literal(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return '""'
+    if _is_numeric_literal(raw):
+        return raw
+    lowered = raw.lower()
+    if lowered in ("null", "true", "false"):
+        return lowered
+    if _is_quoted_string_literal(raw):
+        return f'"{raw[1:-1].replace(chr(34), chr(34) * 2)}"'
+    return _wrap_columns_in_brackets(raw)
 
 
 def _is_numeric_literal(value: str) -> bool:
@@ -148,6 +187,160 @@ def _escape_m_string(text: str) -> str:
     text = text.replace('"', '""')
     text = text.replace("\n", " ").replace("\r", "")
     return text
+
+
+def _indent_block(text: str, spaces: int = 4) -> str:
+    prefix = " " * spaces
+    return "\n".join(f"{prefix}{line}" if line else "" for line in text.splitlines())
+
+
+def _split_top_level_args(text: str) -> List[str]:
+    parts: List[str] = []
+    current: List[str] = []
+    depth_paren = 0
+    depth_bracket = 0
+    in_single = False
+    in_double = False
+
+    for char in text:
+        if char == "'" and not in_double:
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            in_double = not in_double
+        elif not in_single and not in_double:
+            if char == '(':
+                depth_paren += 1
+            elif char == ')':
+                depth_paren = max(0, depth_paren - 1)
+            elif char == '[':
+                depth_bracket += 1
+            elif char == ']':
+                depth_bracket = max(0, depth_bracket - 1)
+            elif char == ',' and depth_paren == 0 and depth_bracket == 0:
+                parts.append(''.join(current).strip())
+                current = []
+                continue
+        current.append(char)
+
+    tail = ''.join(current).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def _strip_outer_function_call(expr: str, function_name: str) -> Optional[str]:
+    pattern = rf'^\s*{function_name}\s*\((.*)\)\s*$'
+    match = re.match(pattern, expr, re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def _convert_if_expression_to_m(expr: str) -> Optional[str]:
+    inner = _strip_outer_function_call(expr, 'IF')
+    if inner is None:
+        return None
+
+    args = _split_top_level_args(inner)
+    if len(args) != 3:
+        return None
+
+    condition = _wrap_columns_in_brackets(args[0])
+    true_branch = _convert_if_expression_to_m(args[1]) or _to_m_scalar_literal(args[1])
+    false_branch = _convert_if_expression_to_m(args[2]) or _to_m_scalar_literal(args[2])
+    return f"if {condition} then {true_branch} else {false_branch}"
+
+
+def _field_output_name(field: Dict[str, Any]) -> str:
+    expr = (field.get("expression") or field.get("name") or "").strip()
+    expr = re.sub(r'^DISTINCT\s+', '', expr, flags=re.IGNORECASE)
+    alias = (field.get("alias") or field.get("name") or expr).strip()
+    name = alias or expr
+    if re.match(r'^\[.*\]$', name):
+        name = name[1:-1]
+    return _strip_qlik_qualifier(name)
+
+
+def _build_replace_existing_column_steps(
+    prev_step: str,
+    column_name: str,
+    row_expression: str,
+    type_spec: str,
+) -> tuple[str, str]:
+    temp_name = f"{column_name}__derived"
+    safe_column = _escape_m_string(column_name)
+    safe_temp = _escape_m_string(temp_name)
+    add_step = f"#\"Derived {safe_column}\""
+    remove_step = f"#\"Removed original {safe_column}\""
+    rename_step = f"#\"Replaced {safe_column}\""
+    transform = (
+        f",\n    {add_step} = Table.AddColumn(\n"
+        f"        {prev_step},\n"
+        f"        \"{safe_temp}\",\n"
+        f"        each {row_expression}{type_spec}\n"
+        f"    ),\n"
+        f"    {remove_step} = Table.RemoveColumns(\n"
+        f"        {add_step},\n"
+        f"        {{\"{safe_column}\"}}\n"
+        f"    ),\n"
+        f"    {rename_step} = Table.RenameColumns(\n"
+        f"        {remove_step},\n"
+        f"        {{\n            {{\"{safe_temp}\", \"{safe_column}\"}}\n        }}\n"
+        f"    )"
+    )
+    return transform, rename_step
+
+
+def _expression_references_column(expr: str, column_name: str) -> bool:
+    if not expr or not column_name:
+        return False
+    pattern = rf'(?<![A-Za-z0-9_])\[?{re.escape(column_name)}\]?(?![A-Za-z0-9_])'
+    return re.search(pattern, expr, re.IGNORECASE) is not None
+
+
+def _extract_expression_column_references(expr: str) -> List[str]:
+    if not expr:
+        return []
+
+    placeholders: Dict[str, str] = {}
+
+    def _stash_string(match: re.Match[str]) -> str:
+        key = f"__STR_{len(placeholders)}__"
+        placeholders[key] = match.group(0)
+        return key
+
+    sanitized = re.sub(r'"[^"]*"|\'[^\']*\'', _stash_string, expr)
+    refs: List[str] = []
+    seen: set[str] = set()
+    reserved = {
+        'if', 'then', 'else', 'and', 'or', 'not', 'null', 'true', 'false',
+        'sum', 'count', 'avg', 'average', 'min', 'max', 'total',
+        'date', 'date#', 'year', 'month', 'day', 'ceil', 'floor', 'round',
+        'upper', 'lower', 'trim', 'applymap'
+    }
+
+    for match in re.finditer(r'\[([^\]]+)\]|\b([A-Za-z_][A-Za-z0-9_]*)\b', sanitized):
+        token = (match.group(1) or match.group(2) or '').strip()
+        token_lower = token.lower()
+        if not token or token.startswith('__STR_') or token_lower in reserved:
+            continue
+        if token_lower not in seen:
+            seen.add(token_lower)
+            refs.append(token)
+    return refs
+
+
+def _current_step_exposes_column(step_name: str, available_columns: set[str], column_name: str) -> bool:
+    if not column_name:
+        return False
+    return column_name.strip().lower() in available_columns
+
+
+def _select_join_key(candidates: List[str]) -> str:
+    prioritized = [name for name in candidates if re.search(r'(^id$|_id$)', name, re.IGNORECASE)]
+    if prioritized:
+        return prioritized[0]
+    return candidates[0] if candidates else ""
 
 
 def _m_type(qlik_type: str, col_name: str = "") -> str:
@@ -364,6 +557,7 @@ class MQueryConverter:
         # dynamic List.Transform pattern so Power BI sees real column names in the BIM.
         # Format: {"Departments": ["department_id", "department_name"], ...}
         self.qlik_fields_map: Dict[str, List[str]] = {}
+        self._inline_binding_overrides: Dict[str, str] = {}
 
     # ============================================================
     # PUBLIC
@@ -383,6 +577,9 @@ class MQueryConverter:
         and renames them uniquely to prevent overwrites.
         """
         self.all_tables_list = {t["name"]: t for t in tables}
+        self._current_base_path = base_path
+        self._current_connection_string = connection_string
+        self._inline_binding_overrides = {}
         if qlik_fields_map:
             self.qlik_fields_map = qlik_fields_map
             logger.info(
@@ -434,6 +631,9 @@ class MQueryConverter:
     ) -> str:
         if all_tables_list:
             self.all_tables_list = {t["name"]: t for t in all_tables_list}
+        self._current_base_path = base_path
+        self._current_connection_string = connection_string
+        self._inline_binding_overrides = {}
         if qlik_fields_map:
             self.qlik_fields_map = qlik_fields_map
         m_expr, _ = self._dispatch(table, base_path, connection_string)
@@ -474,6 +674,28 @@ class MQueryConverter:
                     table_name, len(resolved)
                 )
                 return resolved
+
+        # Deferred JOIN/KEEP helpers may reuse the name of a dropped helper table.
+        # In that case, prefer the explicit projected field list on the operation
+        # over qlik_fields_map for the source helper table.
+        if opts.get("is_join") or opts.get("is_keep"):
+            explicit_cols: List[Dict[str, str]] = []
+            for f in fields:
+                raw_name = f.get("name", "")
+                if raw_name == "*":
+                    continue
+                alias = f.get("alias") or raw_name
+                col_name = _strip_qlik_qualifier(alias)
+                if not col_name:
+                    continue
+                expr = f.get("expression", "") or raw_name
+                if expr.upper().startswith("IF"):
+                    explicit_cols.append({"name": col_name, "dataType": "string"})
+                else:
+                    m_t = _m_type(f.get("type", "string"), col_name)
+                    explicit_cols.append({"name": col_name, "dataType": _m_type_to_bim_datatype(m_t)})
+            if explicit_cols:
+                return explicit_cols
 
         # ── PRIORITY 0: qlik_fields_map on self (most reliable for LOAD * tables)
         qlik_cols = self.qlik_fields_map.get(table_name, [])
@@ -820,17 +1042,18 @@ class MQueryConverter:
         aggregation_keywords = ("sum", "count", "avg", "average", "min", "max", "total")
         agg_fields = []
         for f in fields:
-            expr = f.get("expression", "").upper()
+            expr = f.get("expression", "")
             if not expr or expr == "*":
                 continue
-            if any(f"{kw.upper()}(" in expr for kw in aggregation_keywords):
+            expr_upper = expr.upper()
+            if any(f"{kw.upper()}(" in expr_upper for kw in aggregation_keywords):
                 agg_fields.append(f)
 
         if agg_fields and not opts.get("is_group_by"):
             opts["is_group_by"] = True
             aggregations = {}
             for f in agg_fields:
-                expr = f.get("expression", "").upper()
+                expr = f.get("expression", "")
                 alias = f.get("alias") or f.get("name", "")
                 for keyword in ("SUM", "COUNT", "AVG", "AVERAGE", "MIN", "MAX", "TOTAL"):
                     pattern = re.compile(rf"{keyword}\s*\(\s*([^\)]+)\s*\)", re.IGNORECASE)
@@ -1047,7 +1270,12 @@ class MQueryConverter:
                 m_type = _m_type(f.get("type", "number"), col_name)
                 pairs.append(f'{{"{col_name}", {m_type}}}')
                 continue
-            if "(" in expr or expr.upper().startswith("APPLYMAP") or expr.upper().startswith("IF"):
+            if (
+                "(" in expr
+                or expr.upper().startswith("APPLYMAP")
+                or expr.upper().startswith("IF")
+                or (expr != f.get("name", "") and re.search(r'[\+\-\*\/]', expr))
+            ):
                 continue
             raw_name = f.get("alias") or f["name"]
             col_name = _strip_qlik_qualifier(raw_name)
@@ -1244,17 +1472,11 @@ class MQueryConverter:
             expr = f.get("expression", "")
             alias = f.get("alias", f["name"])
             field_type = f.get("type", "string")
-            m_match = re.search(
-                r"IF\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)",
-                expr,
-                re.IGNORECASE
-            )
-            if m_match:
-                condition = _wrap_columns_in_brackets(m_match.group(1).strip())
-                true_val_raw = m_match.group(2).strip().strip('"\'')
-                false_val_raw = m_match.group(3).strip().strip('"\'')
-                true_val = true_val_raw if _is_numeric_literal(true_val_raw) else _wrap_columns_in_brackets(true_val_raw)
-                false_val = false_val_raw if _is_numeric_literal(false_val_raw) else _wrap_columns_in_brackets(false_val_raw)
+            converted_if = _convert_if_expression_to_m(expr)
+            if converted_if:
+                args = _split_top_level_args(_strip_outer_function_call(expr, 'IF') or '')
+                true_val_raw = args[1].strip() if len(args) == 3 else ''
+                false_val_raw = args[2].strip() if len(args) == 3 else ''
                 is_numeric = _is_numeric_literal(true_val_raw) or _is_numeric_literal(false_val_raw)
                 if not is_numeric:
                     alias_lower = alias.lower().replace("_", "").replace("-", "")
@@ -1263,6 +1485,8 @@ class MQueryConverter:
                                        "cost", "revenue", "salary", "value", "number"]
                     if any(kw in alias_lower for kw in numeric_keywords):
                         is_numeric = True
+                if field_type in ("number", "integer", "double", "decimal"):
+                    is_numeric = True
                 type_spec = f", type number" if is_numeric else f", type text"
                 safe_alias = _escape_m_string(alias)
                 step_name = f"#\"Added {safe_alias}\""
@@ -1270,7 +1494,7 @@ class MQueryConverter:
                     f",\n    {step_name} = Table.AddColumn(\n"
                     f"        {current_step},\n"
                     f"        \"{safe_alias}\",\n"
-                    f"        each if {condition} then {true_val} else {false_val}{type_spec}\n"
+                    f"        each {converted_if}{type_spec}\n"
                     f"    )"
                 )
                 current_step = step_name
@@ -1402,6 +1626,157 @@ class MQueryConverter:
             current_step = fill_name
         return transform_steps, current_step
 
+    def _build_inline_helper_binding(self, helper_name: str, helper_table: Dict[str, Any], seen: Optional[set] = None) -> tuple[str, str]:
+        seen = seen or set()
+        binding_name = re.sub(r'[^A-Za-z0-9_]', '_', helper_name) or "HelperQuery"
+        if binding_name in seen:
+            return "", binding_name
+        seen.add(binding_name)
+
+        prelude = ""
+        source_name = helper_table.get("source_path")
+        source_table = self.all_tables_list.get(source_name)
+        if (
+            helper_table.get("source_type") == "resident"
+            and source_table
+            and source_table.get("options", {}).get("is_helper_table")
+        ):
+            dependency_binding, dependency_name = self._build_inline_helper_binding(
+                f"HelperSource_{source_name}",
+                source_table,
+                seen,
+            )
+            prelude += dependency_binding
+            self._inline_binding_overrides[source_name] = dependency_name
+
+        helper_options = dict(helper_table.get("options", {}))
+        helper_options.pop("is_join", None)
+        helper_options.pop("join_table", None)
+        helper_options.pop("join_type", None)
+        helper_options.pop("is_keep", None)
+        helper_options.pop("keep_table", None)
+        helper_options.pop("post_join_loads", None)
+        helper_options.pop("post_keep_loads", None)
+        helper_table_for_binding = dict(helper_table)
+        helper_table_for_binding["options"] = helper_options
+
+        # Deferred resident JOIN/KEEP operations that read from a dropped helper table
+        # should still use the JOIN/KEEP load's own projected fields and transforms,
+        # but must not carry the bogus dropped-resident fallback that would force a
+        # fake file lookup like "employee_summary".
+        resident_source_name = helper_table.get("source_path")
+        resident_source_table = self.all_tables_list.get(resident_source_name)
+        if (
+            helper_table.get("source_type") == "resident"
+            and resident_source_table
+            and resident_source_table.get("options", {}).get("is_helper_table")
+        ):
+            helper_table_for_binding["options"].pop("is_dropped_resident", None)
+            helper_table_for_binding["options"].pop("raw_source_path", None)
+            helper_table_for_binding["options"].pop("resident_source", None)
+
+        helper_expr, _ = self._dispatch(
+            helper_table_for_binding,
+            getattr(self, "_current_base_path", "[DataSourcePath]"),
+            getattr(self, "_current_connection_string", None),
+        )
+        binding = prelude + f",\n    {binding_name} =\n{_indent_block(helper_expr, 8)}"
+        return binding, binding_name
+
+    def _detect_and_apply_post_joins(self, table: Dict[str, Any], prev_step: str) -> tuple[str, str]:
+        post_join_loads = table.get("options", {}).get("post_join_loads", [])
+        if not post_join_loads:
+            return "", prev_step
+
+        transform_steps = ""
+        current_step = prev_step
+        current_table_columns = {col["name"] for col in self.resolve_output_columns(table)}
+
+        for idx, join_load in enumerate(post_join_loads, start=1):
+            helper_binding, helper_name = self._build_inline_helper_binding(
+                f"JoinSource_{table.get('name', 'Table')}_{idx}",
+                join_load,
+            )
+            transform_steps += helper_binding
+
+            join_fields = [
+                _field_output_name(field)
+                for field in join_load.get("fields", [])
+                if _field_output_name(field) and _field_output_name(field) != "*"
+            ]
+            shared_candidates = [name for name in join_fields if name in current_table_columns]
+            join_key = _select_join_key(shared_candidates)
+            if not join_key and join_fields:
+                join_key = _select_join_key(join_fields)
+            if not join_key:
+                continue
+
+            expanded_columns = [col["name"] for col in self.resolve_output_columns(join_load) if col["name"] != join_key]
+            merge_step = f"#\"Joined Helper {idx}\""
+            transform_steps += (
+                f",\n    {merge_step} = Table.NestedJoin(\n"
+                f"        {current_step},\n"
+                f"        {{\"{join_key}\"}},\n"
+                f"        {helper_name},\n"
+                f"        {{\"{join_key}\"}},\n"
+                f"        \"{helper_name}\",\n"
+                f"        JoinKind.LeftOuter\n"
+                f"    )"
+            )
+            current_step = merge_step
+
+            if expanded_columns:
+                cols_literal = ", ".join(f'\"{col}\"' for col in expanded_columns)
+                expand_step = f"#\"Expanded Helper {idx}\""
+                transform_steps += (
+                    f",\n    {expand_step} = Table.ExpandTableColumn(\n"
+                    f"        {current_step},\n"
+                    f"        \"{helper_name}\",\n"
+                    f"        {{{cols_literal}}},\n"
+                    f"        {{{cols_literal}}}\n"
+                    f"    )"
+                )
+                current_step = expand_step
+
+        return transform_steps, current_step
+
+    def _detect_and_apply_post_keeps(self, table: Dict[str, Any], prev_step: str) -> tuple[str, str]:
+        post_keep_loads = table.get("options", {}).get("post_keep_loads", [])
+        if not post_keep_loads:
+            return "", prev_step
+
+        transform_steps = ""
+        current_step = prev_step
+        current_table_columns = {col["name"] for col in self.resolve_output_columns(table)}
+
+        for idx, keep_load in enumerate(post_keep_loads, start=1):
+            helper_binding, helper_name = self._build_inline_helper_binding(
+                f"KeepSource_{table.get('name', 'Table')}_{idx}",
+                keep_load,
+            )
+            transform_steps += helper_binding
+
+            keep_fields = [
+                _field_output_name(field)
+                for field in keep_load.get("fields", [])
+                if _field_output_name(field) and _field_output_name(field) != "*"
+            ]
+            shared_candidates = [name for name in keep_fields if name in current_table_columns]
+            keep_key = _select_join_key(shared_candidates)
+            if not keep_key:
+                continue
+
+            filter_step = f"#\"Applied KEEP {idx}\""
+            transform_steps += (
+                f",\n    {filter_step} = Table.SelectRows(\n"
+                f"        {current_step},\n"
+                f"        each List.Contains(Table.Column({helper_name}, \"{keep_key}\"), [{keep_key}])\n"
+                f"    )"
+            )
+            current_step = filter_step
+
+        return transform_steps, current_step
+
     def _detect_and_apply_keep(self, table: Dict[str, Any], prev_step: str) -> tuple[str, str]:
         """
         FIX 7 — Handle KEEP statements: INNER KEEP (TableName), LEFT KEEP, etc.
@@ -1521,41 +1896,50 @@ class MQueryConverter:
             return ""
         result = expr.strip()
 
-        # Date#(field, 'YYYYMMDD') → Date.FromText([field])
-        date_match = re.search(
-            r"Date#\s*\(\s*\[?([^\]\),]+)\]?\s*,\s*[\"']([^\"']*)[\"']\s*\)",
-            result, re.IGNORECASE
-        )
-        if date_match:
-            field_name = date_match.group(1).strip()
-            result = f"Date.FromText([{field_name}])"
+        converted_if = _convert_if_expression_to_m(result)
+        if converted_if:
+            return converted_if
 
-        # Year([field]) → Date.Year([field]) — negative lookbehind avoids Date.Year
+        # Qlik single-quoted literals -> M double-quoted literals.
+        result = re.sub(r"'([^']*)'", lambda m: f'"{m.group(1).replace(chr(34), chr(34) * 2)}"', result)
+
+        def _replace_date_hash(match: re.Match[str]) -> str:
+            field_name = match.group(1).strip()
+            date_format = _convert_qlik_date_format_to_m(match.group(2).strip())
+            if date_format:
+                return f'Date.FromText([{field_name}], [Format = "{date_format}"])'
+            return f'Date.FromText([{field_name}])'
+
         result = re.sub(
-            r'(?<!\.)Year\s*\(\s*\[?([^\]\),]+)\]?\s*\)',
-            lambda m: f"Date.Year([{m.group(1).strip()}])",
-            result, flags=re.IGNORECASE
+            r"Date#\s*\(\s*\[?([^\]\),]+)\]?\s*,\s*[\"']([^\"']*)[\"']\s*\)",
+            _replace_date_hash,
+            result,
+            flags=re.IGNORECASE,
         )
-        # Month([field]) → Date.Month([field])
-        result = re.sub(
-            r'(?<!\.)Month\s*\(\s*\[?([^\]\),]+)\]?\s*\)',
-            lambda m: f"Date.Month([{m.group(1).strip()}])",
-            result, flags=re.IGNORECASE
-        )
-        # Day([field]) → Date.Day([field])
-        result = re.sub(
-            r'(?<!\.)Day\s*\(\s*\[?([^\]\),]+)\]?\s*\)',
-            lambda m: f"Date.Day([{m.group(1).strip()}])",
-            result, flags=re.IGNORECASE
-        )
+
+        # Qlik Date() is usually a formatting/casting wrapper; keep the parsed date value.
+        result = re.sub(r'(?<!\.)Date\s*\(', 'Date.From(', result, flags=re.IGNORECASE)
+
+        # Convert date-part and rounding functions to M equivalents.
+        result = re.sub(r'(?<!\.)Upper\s*\(', 'Text.Upper(', result, flags=re.IGNORECASE)
+        result = re.sub(r'(?<!\.)Lower\s*\(', 'Text.Lower(', result, flags=re.IGNORECASE)
+        result = re.sub(r'(?<!\.)Trim\s*\(', 'Text.Trim(', result, flags=re.IGNORECASE)
+        result = re.sub(r'(?<!\.)Year\s*\(', 'Date.Year(', result, flags=re.IGNORECASE)
+        result = re.sub(r'(?<!\.)Month\s*\(', 'Date.Month(', result, flags=re.IGNORECASE)
+        result = re.sub(r'(?<!\.)Day\s*\(', 'Date.Day(', result, flags=re.IGNORECASE)
         # Ceil(x) → Number.RoundUp(x)
         result = re.sub(r'(?<!\.)Ceil\s*\(', "Number.RoundUp(", result, flags=re.IGNORECASE)
         # Floor(x) → Number.RoundDown(x)
         result = re.sub(r'(?<!\.)Floor\s*\(', "Number.RoundDown(", result, flags=re.IGNORECASE)
 
-        # Wrap bare field names in brackets if no M functions present
-        if not re.search(r'[A-Za-z]+\.[A-Za-z]+\s*\(', result):
-            result = _wrap_columns_in_brackets(result)
+        # Simple Qlik text concatenation like 'Q' & Ceil(...) needs explicit text conversion in M.
+        if "&" in result:
+            concat_parts = [part.strip() for part in result.split("&", 1)]
+            if len(concat_parts) == 2 and concat_parts[0].startswith('"') and not concat_parts[1].startswith("Text.From("):
+                result = f"{concat_parts[0]} & Text.From({concat_parts[1]})"
+
+        # Wrap remaining bare field names after function replacement.
+        result = _wrap_columns_in_brackets(result)
 
         return result
 
@@ -1572,18 +1956,16 @@ class MQueryConverter:
         (i.e., the alias differs from the raw field name AND is not a passthrough).
         """
         fields = table.get("fields", [])
-        aggregation_kws = ("sum(", "count(", "avg(", "average(", "min(", "max(", "total(")
-
-        # Build set of source column names to avoid double-adding passthrough cols
-        source_col_names = {
-            f.get("name", "").lower()
-            for f in fields
-            if f.get("name") and f.get("name") != "*"
-        }
+        aggregation_kws = ("SUM(", "COUNT(", "AVG(", "AVERAGE(", "MIN(", "MAX(", "TOTAL(")
 
         transform_steps = ""
         current_step = prev_step
         seen_aliases: set = set()
+        current_available_columns = {
+            col["name"].strip().lower()
+            for col in self.resolve_output_columns(table)
+            if col.get("name")
+        }
 
         for f in fields:
             name = f.get("name", "")
@@ -1606,10 +1988,6 @@ class MQueryConverter:
             if any(kw in expr_upper for kw in aggregation_kws):
                 continue
 
-            # Skip if alias == source column name (pure passthrough, already in CSV)
-            if alias.lower() in source_col_names and alias.lower() == name.lower():
-                continue
-
             # Skip duplicates
             if alias.lower() in seen_aliases:
                 continue
@@ -1623,16 +2001,42 @@ class MQueryConverter:
 
             # Infer return type
             expr_u = expr.upper()
-            if any(kw in expr_u for kw in ("DATE#", "DATE(", "MAKEDATE", "TODAY(", "NOW(")):
-                type_spec = ", type date"
+            if "&" in expr:
+                type_spec = ", type text"
             elif any(kw in expr_u for kw in ("YEAR(", "MONTH(", "DAY(", "CEIL(", "FLOOR(", "ROUND(")):
                 type_spec = ", type number"
+            elif any(kw in expr_u for kw in ("DATE#", "DATE(", "MAKEDATE", "TODAY(", "NOW(")):
+                type_spec = ", type date"
             elif re.search(r'[\+\-\*\/]', expr) and not re.search(r'&', expr):
                 type_spec = ", type number"
             else:
                 type_spec = ", type text"
 
             safe_alias = _escape_m_string(alias)
+            referenced_columns = {
+                ref.strip().lower()
+                for ref in _extract_expression_column_references(expr)
+                if ref.strip()
+            }
+            if (
+                alias.lower() == name.lower()
+                and name.lower() in referenced_columns
+                and _current_step_exposes_column(current_step, current_available_columns, alias)
+            ):
+                replacement_steps, replacement_final = _build_replace_existing_column_steps(
+                    current_step,
+                    alias,
+                    m_expr,
+                    type_spec,
+                )
+                transform_steps += replacement_steps
+                current_step = replacement_final
+                logger.info(
+                    "[derived_cols] Table '%s': Replaced existing column '%s' from expr: %s → %s",
+                    table.get("name", "?"), alias, expr[:60], m_expr[:60]
+                )
+                continue
+
             step_name = f"#\"Added {safe_alias}\""
             transform_steps += (
                 f",\n    {step_name} = Table.AddColumn(\n"
@@ -1646,6 +2050,7 @@ class MQueryConverter:
                 "[derived_cols] Table '%s': Added column '%s' from expr: %s → %s",
                 table.get("name", "?"), alias, expr[:60], m_expr[:60]
             )
+            current_available_columns.add(alias.lower())
 
         return transform_steps, current_step
 
@@ -1700,6 +2105,18 @@ class MQueryConverter:
             all_transforms += transform
         except Exception as e:
             logger.warning("[_apply_all_transformations] JOIN failed: %s", e)
+
+        try:
+            transform, current_step = self._detect_and_apply_post_joins(table, current_step)
+            all_transforms += transform
+        except Exception as e:
+            logger.warning("[_apply_all_transformations] deferred JOIN failed: %s", e)
+
+        try:
+            transform, current_step = self._detect_and_apply_post_keeps(table, current_step)
+            all_transforms += transform
+        except Exception as e:
+            logger.warning("[_apply_all_transformations] deferred KEEP failed: %s", e)
 
         try:
             transform, current_step = self._detect_and_apply_keep(table, current_step)
@@ -2202,46 +2619,11 @@ class MQueryConverter:
         raw_source_path = opts.get("raw_source_path", "")
         delimiter = opts.get("delimiter", ",")
         encoding  = 65001
-
-        plain_fields = []
-        applymap_fields_list = []
-        calc_fields  = []
-
-        for f in fields:
-            if f["name"] == "*":
-                continue
-            expr  = f.get("expression", "") or f.get("name", "")
-            alias = f.get("alias") or f["name"]
-            if expr.upper().startswith("APPLYMAP"):
-                applymap_fields_list.append(f)
-                continue
-            elif re.search(r'[\+\-\*\/]', expr):
-                m_expr_str = _wrap_columns_in_brackets(expr.strip())
-                calc_fields.append((alias, m_expr_str))
-            else:
-                plain_fields.append(f)
-
-        sp_transform, sp_final = self._apply_types_as_is(plain_fields, "Headers")
-
-        add_col_steps = ""
-        prev_step = sp_final
-        last_step = sp_final
-
-        for alias, expr in calc_fields:
-            safe_alias = _escape_m_string(alias)
-            step_name = f"Add_{re.sub(r'[^A-Za-z0-9_]', '_', safe_alias)}"
-            add_col_steps += (
-                f",\n    {step_name} = Table.AddColumn(\n"
-                f"        {prev_step},\n"
-                f"        \"{safe_alias}\",\n"
-                f"        each {expr},\n"
-                f"        type number\n"
-                f"    )"
-            )
-            prev_step = step_name
-            last_step = step_name
-
-        combined_transform = sp_transform + add_col_steps
+        table_name = table.get("name", "")
+        base_transform, transform_final = self._apply_types(fields, "Headers", table_name)
+        extra_transform, extra_final = self._apply_all_transformations(table, transform_final or "Headers")
+        combined_transform = base_transform + extra_transform
+        last_step = extra_final or transform_final or "Headers"
 
         if _is_sharepoint_url(base_path):
             inline_opts = dict(opts)
@@ -2316,31 +2698,47 @@ class MQueryConverter:
                 f"in\n"
                 f"    {last_step}"
             )
-        calc_note = (
-            f" Calculated columns inlined: {[a for a, _ in calc_fields]}."
-            if calc_fields else ""
-        )
         return m, (
             f"RESIDENT '{source_table}' was a dropped intermediate table. "
-            f"CSV inlined from '{raw_source_path}'.{calc_note}"
+            f"CSV inlined from '{raw_source_path}'."
         )
 
     def _m_resident_reference(self, table, fields, source_table):
         table_name = table.get("name", "")
-        selected = [f.get("alias") or f["name"] for f in fields if f["name"] != "*"]
+        source_reference = self._inline_binding_overrides.get(source_table, source_table)
+        has_wildcard = any(f.get("name") == "*" for f in fields)
+        selected = []
+        if not has_wildcard:
+            seen_selected = set()
+            for f in fields:
+                name = f.get("name", "")
+                if name == "*":
+                    continue
+                alias = f.get("alias") or name
+                expr = (f.get("expression", "") or name).strip()
+                if alias == name and expr == name:
+                    key = alias.lower()
+                    if key not in seen_selected:
+                        seen_selected.add(key)
+                        selected.append(alias)
+                for ref in _extract_expression_column_references(expr):
+                    key = ref.lower()
+                    if key not in seen_selected:
+                        seen_selected.add(key)
+                        selected.append(ref)
         if selected:
             select_step = (
-                f",\n    Selected = Table.SelectColumns({source_table},\n"
+                f",\n    Selected = Table.SelectColumns({source_reference},\n"
                 f"        {{{', '.join(chr(34) + c + chr(34) for c in selected)}}}\n"
                 f"    )"
             )
             intermediate = "Selected"
         else:
             select_step = ""
-            intermediate = source_table
+            intermediate = source_reference
         base_transform, transform_final = self._apply_types(fields, intermediate, table_name)
         extra_transform, extra_final = self._apply_all_transformations(table, transform_final or intermediate)
-        combined_transform = base_transform + select_step + extra_transform
+        combined_transform = select_step + base_transform + extra_transform
         final = extra_final or transform_final or intermediate
         
         # ✅ FIX: ALWAYS ensure explicit column metadata at end for Power BI schema extraction
@@ -2365,7 +2763,7 @@ class MQueryConverter:
         
         m = (
             f"let\n"
-            f"    {source_table} = {source_table}"
+            f"    {source_table} = {source_reference}"
             f"{combined_transform}\n"
             f"in\n"
             f"    {final}"

@@ -774,6 +774,7 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
     dataset_name = request.dataset_name or "Qlik_Migrated_Dataset"
     combined_m   = request.combined_mquery or ""
     raw_script   = request.raw_script or ""
+    data_source_path = request.data_source_path or request.sharepoint_url or "[DataSourcePath]"
 
     logger.info("[publish_mquery] Dataset: %s", dataset_name)
 
@@ -811,7 +812,43 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
     # ── Step 2: Parse M Query / LoadScript into table list ───────────────────
     try:
         from pbit_generator import parse_combined_mquery
-        if combined_m.strip():
+
+        # Prefer regenerating from raw_script whenever it is available.
+        # The frontend may carry an older combined_mquery string produced before
+        # converter fixes, while raw_script lets publish use the latest backend
+        # parser/converter logic and the real current SharePoint path.
+        if raw_script.strip():
+            from loadscript_parser import LoadScriptParser
+            from mquery_converter  import MQueryConverter
+
+            parse_result = LoadScriptParser(raw_script).parse(
+                qlik_fields_map=qlik_fields_map
+            )
+            raw_tables = parse_result.get("details", {}).get("tables", [])
+            all_converted = MQueryConverter().convert_all(
+                raw_tables,
+                base_path=data_source_path,
+                qlik_fields_map=qlik_fields_map,
+            )
+            tables_m = [
+                {
+                    "name":         t["name"],
+                    "source_type":  t["source_type"],
+                    "m_expression": t["m_expression"],
+                    "fields":       t.get("fields", []),
+                    "options":      t.get("options", {}),
+                    "source_path":  t.get("source_path", ""),
+                }
+                for t in all_converted
+            ]
+            before = len(tables_m)
+            tables_m = [t for t in tables_m if not _is_system_table(t["name"])]
+            logger.info(
+                "[publish_mquery] Rebuilt from raw_script using current converter: %d tables (%d system filtered)",
+                len(tables_m), before - len(tables_m)
+            )
+
+        elif combined_m.strip():
             tables_m = parse_combined_mquery(combined_m)
             logger.info("[publish_mquery] Parsed %d tables from combined M", len(tables_m))
 
@@ -833,25 +870,6 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
             except Exception as extract_exc:
                 logger.warning("[publish_mquery] Field extraction failed: %s", extract_exc)
 
-            # Enrich with LoadScript field metadata if raw_script provided
-            if raw_script:
-                try:
-                    from loadscript_parser import LoadScriptParser
-                    from mquery_converter import MQueryConverter
-                    parse_result = LoadScriptParser(raw_script).parse(
-                        qlik_fields_map=qlik_fields_map
-                    )
-                    raw_tables    = parse_result.get("details", {}).get("tables", [])
-                    all_converted = MQueryConverter().convert_all(
-                        raw_tables, qlik_fields_map=qlik_fields_map
-                    )
-                    fields_by_name = {t["name"]: t.get("fields", []) for t in all_converted}
-                    for t in tables_m:
-                        if fields_by_name.get(t["name"]):
-                            t["fields"] = fields_by_name[t["name"]]
-                except Exception as enrich_exc:
-                    logger.warning("[publish_mquery] LoadScript enrichment failed: %s", enrich_exc)
-
             before   = len(tables_m)
             tables_m = [t for t in tables_m if not _is_system_table(t["name"])]
             logger.info(
@@ -860,34 +878,7 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
             )
 
         else:
-            # Convert from raw LoadScript
-            from loadscript_parser import LoadScriptParser
-            from mquery_converter  import MQueryConverter
-            parse_result = LoadScriptParser(raw_script).parse(
-                qlik_fields_map=qlik_fields_map
-            )
-            raw_tables    = parse_result.get("details", {}).get("tables", [])
-            # ✅ Pass qlik_fields_map to converter so it injects explicit schemas
-            all_converted = MQueryConverter().convert_all(
-                raw_tables,
-                base_path="[DataSourcePath]",
-                qlik_fields_map=qlik_fields_map,
-            )
-            tables_m = [
-                {
-                    "name":         t["name"],
-                    "source_type":  t["source_type"],
-                    "m_expression": t["m_expression"],
-                    "fields":       t.get("fields", []),
-                }
-                for t in all_converted
-            ]
-            before   = len(tables_m)
-            tables_m = [t for t in tables_m if not _is_system_table(t["name"])]
-            logger.info(
-                "[publish_mquery] Converted LoadScript: %d tables (%d system filtered)",
-                len(tables_m), before - len(tables_m)
-            )
+            raise HTTPException(status_code=400, detail="Provide combined_mquery or raw_script.")
 
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Script parse/convert error: {exc}")
@@ -896,7 +887,6 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
         raise HTTPException(status_code=400, detail="No tables found in the provided script.")
 
     # ── Step 3: Inject ApplyMap dimension tables ──────────────────────────────
-    data_source_path = request.data_source_path or request.sharepoint_url or "[DataSourcePath]"
     tables_m = _inject_applymap_dimension_tables(tables_m, data_source_path)
 
     # Keep Scripts flow aligned with CSV flow: do not publish helper/system tables.
@@ -943,25 +933,47 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
                 if n and n != "*":
                     existing_field_names.append(n)
 
-            merged: List[str] = []
+            merged_names: List[str] = []
             seen = set()
             for n in existing_field_names + list(map_fields):
                 key = str(n).strip().lower()
                 if key and key not in seen:
                     seen.add(key)
-                    merged.append(str(n).strip())
+                    merged_names.append(str(n).strip())
 
-            if not merged:
+            if not merged_names:
                 continue
 
-            added_count = max(0, len(merged) - len(existing_field_names))
-            t["fields"] = merged
+            existing_by_name: Dict[str, Dict[str, Any]] = {}
+            for field in existing_fields_raw:
+                if not isinstance(field, dict):
+                    continue
+                field_name = str(field.get("alias") or field.get("name") or "").strip()
+                if field_name:
+                    existing_by_name[field_name.lower()] = field
+
+            merged_fields: List[Dict[str, Any]] = []
+            for field_name in merged_names:
+                existing_field = existing_by_name.get(field_name.lower())
+                if existing_field:
+                    merged_fields.append(existing_field)
+                else:
+                    merged_fields.append({
+                        "name": field_name,
+                        "alias": field_name,
+                        "expression": field_name,
+                        "type": "string",
+                        "extracted_from": "qlik_fields_map",
+                    })
+
+            added_count = max(0, len(merged_fields) - len(existing_field_names))
+            t["fields"] = merged_fields
             if added_count > 0 or not existing_field_names:
                 logger.info(
                     "[publish_mquery] qlik_fields_map merge: '%s' fields %d -> %d (+%d)",
                     table_name,
                     len(existing_field_names),
-                    len(merged),
+                    len(merged_fields),
                     added_count,
                 )
 
