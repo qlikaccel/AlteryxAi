@@ -1,5 +1,5 @@
 {
-  "name": "Vehicle_Fact_MASTER",
+  "name": "FactTransactions",
   "compatibilityLevel": 1550,
   "model": {
     "culture": "en-US",
@@ -11,12 +11,12 @@
     "sourceQueryCulture": "en-US",
     "tables": [
       {
-        "name": "Vehicle_Fact_MASTER",
+        "name": "FactTransactions",
         "columns": [
           {
-            "name": "ModelName",
+            "name": "ProductID",
             "dataType": "string",
-            "sourceColumn": "ModelName",
+            "sourceColumn": "ProductID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -26,9 +26,9 @@
             ]
           },
           {
-            "name": "VIN",
+            "name": "SalesRepID",
             "dataType": "string",
-            "sourceColumn": "VIN",
+            "sourceColumn": "SalesRepID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -38,9 +38,9 @@
             ]
           },
           {
-            "name": "ServiceType",
+            "name": "CustomerID",
             "dataType": "string",
-            "sourceColumn": "ServiceType",
+            "sourceColumn": "CustomerID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -50,9 +50,9 @@
             ]
           },
           {
-            "name": "VariantName",
+            "name": "TransactionID",
             "dataType": "string",
-            "sourceColumn": "VariantName",
+            "sourceColumn": "TransactionID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -62,9 +62,9 @@
             ]
           },
           {
-            "name": "FuelType",
+            "name": "TransactionDate",
             "dataType": "string",
-            "sourceColumn": "FuelType",
+            "sourceColumn": "TransactionDate",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -74,9 +74,9 @@
             ]
           },
           {
-            "name": "VehicleChannel",
+            "name": "Quantity",
             "dataType": "string",
-            "sourceColumn": "VehicleChannel",
+            "sourceColumn": "Quantity",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -86,9 +86,9 @@
             ]
           },
           {
-            "name": "ManufactureYear",
+            "name": "UnitPrice",
             "dataType": "string",
-            "sourceColumn": "ManufactureYear",
+            "sourceColumn": "UnitPrice",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -98,9 +98,9 @@
             ]
           },
           {
-            "name": "SalePrice",
+            "name": "Discount",
             "dataType": "string",
-            "sourceColumn": "SalePrice",
+            "sourceColumn": "Discount",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -110,9 +110,9 @@
             ]
           },
           {
-            "name": "ServiceDate",
+            "name": "Revenue",
             "dataType": "string",
-            "sourceColumn": "ServiceDate",
+            "sourceColumn": "Revenue",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -122,9 +122,189 @@
             ]
           },
           {
-            "name": "ServiceCost",
+            "name": "Status",
             "dataType": "string",
-            "sourceColumn": "ServiceCost",
+            "sourceColumn": "Status",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Channel",
+            "dataType": "string",
+            "sourceColumn": "Channel",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Year",
+            "dataType": "string",
+            "sourceColumn": "Year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Month",
+            "dataType": "string",
+            "sourceColumn": "Month",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "MonthName",
+            "dataType": "string",
+            "sourceColumn": "MonthName",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Quarter",
+            "dataType": "string",
+            "sourceColumn": "Quarter",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "CustomerName",
+            "dataType": "string",
+            "sourceColumn": "CustomerName",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "CustomerSegment",
+            "dataType": "string",
+            "sourceColumn": "CustomerSegment",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "CustomerRegion",
+            "dataType": "string",
+            "sourceColumn": "CustomerRegion",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "ProductName",
+            "dataType": "string",
+            "sourceColumn": "ProductName",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "SalesRepName",
+            "dataType": "string",
+            "sourceColumn": "SalesRepName",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "SalesRepRegion",
+            "dataType": "string",
+            "sourceColumn": "SalesRepRegion",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "SalesRepAnnualQuota",
+            "dataType": "string",
+            "sourceColumn": "SalesRepAnnualQuota",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "GrossProfit",
+            "dataType": "string",
+            "sourceColumn": "GrossProfit",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "DealTier",
+            "dataType": "string",
+            "sourceColumn": "DealTier",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "TransactionType",
+            "dataType": "string",
+            "sourceColumn": "TransactionType",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -136,7 +316,7 @@
         ],
         "partitions": [
           {
-            "name": "Vehicle_Fact_MASTER-Partition",
+            "name": "FactTransactions-Partition",
             "mode": "import",
             "source": {
               "type": "m",
@@ -147,193 +327,58 @@
                 "    Filtered = Table.SelectRows(",
                 "        Source,",
                 "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"vehicle_fact_master.csv\") and",
+                "            Text.EndsWith(Text.Lower([Name]), \"rawsalesorders\") and",
                 "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
                 "    ),",
                 "    File = if Table.RowCount(Filtered) > 0",
                 "        then Filtered{0}[Content]",
-                "        else error \"File Vehicle_Fact_MASTER.csv not found in SharePoint\",",
+                "        else error \"File RawSalesOrders not found in SharePoint\",",
                 "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
                 "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
                 "    TypedTable = Table.TransformColumnTypes(",
                 "        Headers,",
                 "        {",
-                "        {\"VIN\", type text},",
-                "        {\"ModelName\", type text},",
-                "        {\"VariantName\", type text},",
-                "        {\"FuelType\", type text},",
-                "        {\"VehicleChannel\", type text},",
-                "        {\"ManufactureYear\", Int64.Type},",
-                "        {\"SalePrice\", type number},",
-                "        {\"ServiceDate\", type date},",
-                "        {\"ServiceType\", type text},",
-                "        {\"ServiceCost\", type number}",
-                "        }",
-                "    ),",
-                "    #\"Derived VIN\" = Table.AddColumn(",
-                "        TypedTable,",
-                "        \"VIN__derived\",",
-                "        each [VIN], type text",
-                "    ),",
-                "    #\"Removed original VIN\" = Table.RemoveColumns(",
-                "        #\"Derived VIN\",",
-                "        {\"VIN\"}",
-                "    ),",
-                "    #\"Replaced VIN\" = Table.RenameColumns(",
-                "        #\"Removed original VIN\",",
-                "        {",
-                "            {\"VIN__derived\", \"VIN\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived ModelName\" = Table.AddColumn(",
-                "        #\"Replaced VIN\",",
-                "        \"ModelName__derived\",",
-                "        each [ModelName], type text",
-                "    ),",
-                "    #\"Removed original ModelName\" = Table.RemoveColumns(",
-                "        #\"Derived ModelName\",",
-                "        {\"ModelName\"}",
-                "    ),",
-                "    #\"Replaced ModelName\" = Table.RenameColumns(",
-                "        #\"Removed original ModelName\",",
-                "        {",
-                "            {\"ModelName__derived\", \"ModelName\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived VariantName\" = Table.AddColumn(",
-                "        #\"Replaced ModelName\",",
-                "        \"VariantName__derived\",",
-                "        each [VariantName], type text",
-                "    ),",
-                "    #\"Removed original VariantName\" = Table.RemoveColumns(",
-                "        #\"Derived VariantName\",",
-                "        {\"VariantName\"}",
-                "    ),",
-                "    #\"Replaced VariantName\" = Table.RenameColumns(",
-                "        #\"Removed original VariantName\",",
-                "        {",
-                "            {\"VariantName__derived\", \"VariantName\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived FuelType\" = Table.AddColumn(",
-                "        #\"Replaced VariantName\",",
-                "        \"FuelType__derived\",",
-                "        each [FuelType], type text",
-                "    ),",
-                "    #\"Removed original FuelType\" = Table.RemoveColumns(",
-                "        #\"Derived FuelType\",",
-                "        {\"FuelType\"}",
-                "    ),",
-                "    #\"Replaced FuelType\" = Table.RenameColumns(",
-                "        #\"Removed original FuelType\",",
-                "        {",
-                "            {\"FuelType__derived\", \"FuelType\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived VehicleChannel\" = Table.AddColumn(",
-                "        #\"Replaced FuelType\",",
-                "        \"VehicleChannel__derived\",",
-                "        each [VehicleChannel], type text",
-                "    ),",
-                "    #\"Removed original VehicleChannel\" = Table.RemoveColumns(",
-                "        #\"Derived VehicleChannel\",",
-                "        {\"VehicleChannel\"}",
-                "    ),",
-                "    #\"Replaced VehicleChannel\" = Table.RenameColumns(",
-                "        #\"Removed original VehicleChannel\",",
-                "        {",
-                "            {\"VehicleChannel__derived\", \"VehicleChannel\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived ManufactureYear\" = Table.AddColumn(",
-                "        #\"Replaced VehicleChannel\",",
-                "        \"ManufactureYear__derived\",",
-                "        each [ManufactureYear], type text",
-                "    ),",
-                "    #\"Removed original ManufactureYear\" = Table.RemoveColumns(",
-                "        #\"Derived ManufactureYear\",",
-                "        {\"ManufactureYear\"}",
-                "    ),",
-                "    #\"Replaced ManufactureYear\" = Table.RenameColumns(",
-                "        #\"Removed original ManufactureYear\",",
-                "        {",
-                "            {\"ManufactureYear__derived\", \"ManufactureYear\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived SalePrice\" = Table.AddColumn(",
-                "        #\"Replaced ManufactureYear\",",
-                "        \"SalePrice__derived\",",
-                "        each [SalePrice], type text",
-                "    ),",
-                "    #\"Removed original SalePrice\" = Table.RemoveColumns(",
-                "        #\"Derived SalePrice\",",
-                "        {\"SalePrice\"}",
-                "    ),",
-                "    #\"Replaced SalePrice\" = Table.RenameColumns(",
-                "        #\"Removed original SalePrice\",",
-                "        {",
-                "            {\"SalePrice__derived\", \"SalePrice\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived ServiceDate\" = Table.AddColumn(",
-                "        #\"Replaced SalePrice\",",
-                "        \"ServiceDate__derived\",",
-                "        each [ServiceDate], type text",
-                "    ),",
-                "    #\"Removed original ServiceDate\" = Table.RemoveColumns(",
-                "        #\"Derived ServiceDate\",",
-                "        {\"ServiceDate\"}",
-                "    ),",
-                "    #\"Replaced ServiceDate\" = Table.RenameColumns(",
-                "        #\"Removed original ServiceDate\",",
-                "        {",
-                "            {\"ServiceDate__derived\", \"ServiceDate\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived ServiceType\" = Table.AddColumn(",
-                "        #\"Replaced ServiceDate\",",
-                "        \"ServiceType__derived\",",
-                "        each [ServiceType], type text",
-                "    ),",
-                "    #\"Removed original ServiceType\" = Table.RemoveColumns(",
-                "        #\"Derived ServiceType\",",
-                "        {\"ServiceType\"}",
-                "    ),",
-                "    #\"Replaced ServiceType\" = Table.RenameColumns(",
-                "        #\"Removed original ServiceType\",",
-                "        {",
-                "            {\"ServiceType__derived\", \"ServiceType\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived ServiceCost\" = Table.AddColumn(",
-                "        #\"Replaced ServiceType\",",
-                "        \"ServiceCost__derived\",",
-                "        each [ServiceCost], type text",
-                "    ),",
-                "    #\"Removed original ServiceCost\" = Table.RemoveColumns(",
-                "        #\"Derived ServiceCost\",",
-                "        {\"ServiceCost\"}",
-                "    ),",
-                "    #\"Replaced ServiceCost\" = Table.RenameColumns(",
-                "        #\"Removed original ServiceCost\",",
-                "        {",
-                "            {\"ServiceCost__derived\", \"ServiceCost\"}",
+                "        {\"TransactionID\", type text},",
+                "        {\"TransactionDate\", type date},",
+                "        {\"CustomerID\", type text},",
+                "        {\"CustomerName\", type text},",
+                "        {\"CustomerSegment\", type text},",
+                "        {\"CustomerRegion\", type text},",
+                "        {\"ProductID\", type text},",
+                "        {\"ProductName\", type text},",
+                "        {\"SalesRepID\", type text},",
+                "        {\"SalesRepName\", type text},",
+                "        {\"SalesRepRegion\", type text},",
+                "        {\"SalesRepAnnualQuota\", type text},",
+                "        {\"Revenue\", type number},",
+                "        {\"GrossProfit\", type text},",
+                "        {\"Status\", type text},",
+                "        {\"Channel\", type text},",
+                "        {\"Quantity\", Int64.Type},",
+                "        {\"UnitPrice\", type number},",
+                "        {\"Discount\", Int64.Type},",
+                "        {\"DealTier\", type text},",
+                "        {\"Year\", Int64.Type},",
+                "        {\"Month\", Int64.Type},",
+                "        {\"MonthName\", type text},",
+                "        {\"Quarter\", type text},",
+                "        {\"TransactionType\", type text}",
                 "        }",
                 "    )",
                 "in",
-                "    #\"Replaced ServiceCost\""
+                "    TypedTable"
               ]
             }
           }
         ]
       },
       {
-        "name": "Dealer_Master",
+        "name": "DimProduct",
         "columns": [
           {
-            "name": "DealerID-ServiceID",
+            "name": "ProductID",
             "dataType": "string",
-            "sourceColumn": "DealerID-ServiceID",
+            "sourceColumn": "ProductID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -343,9 +388,9 @@
             ]
           },
           {
-            "name": "DealerName",
+            "name": "Dim_ProductName",
             "dataType": "string",
-            "sourceColumn": "DealerName",
+            "sourceColumn": "Dim_ProductName",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -355,9 +400,9 @@
             ]
           },
           {
-            "name": "City",
+            "name": "Dim_Category",
             "dataType": "string",
-            "sourceColumn": "City",
+            "sourceColumn": "Dim_Category",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -367,9 +412,9 @@
             ]
           },
           {
-            "name": "Phone",
+            "name": "Dim_SubCategory",
             "dataType": "string",
-            "sourceColumn": "Phone",
+            "sourceColumn": "Dim_SubCategory",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -379,9 +424,21 @@
             ]
           },
           {
-            "name": "Email",
+            "name": "Dim_ListPrice",
             "dataType": "string",
-            "sourceColumn": "Email",
+            "sourceColumn": "Dim_ListPrice",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Dim_CategorySortOrder",
+            "dataType": "string",
+            "sourceColumn": "Dim_CategorySortOrder",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -393,114 +450,103 @@
         ],
         "partitions": [
           {
-            "name": "Dealer_Master-Partition",
+            "name": "DimProduct-Partition",
             "mode": "import",
             "source": {
               "type": "m",
               "expression": [
                 "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"dealer_master.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
-                "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File Dealer_Master.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
-                "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
+                "    Source = #table(",
+                "        type table [ProductID = text],",
                 "        {",
-                "        {\"DealerID\", type text},",
-                "        {\"DealerName\", type text},",
-                "        {\"City\", type text},",
-                "        {\"Phone\", type text},",
-                "        {\"Email\", type text}",
-                "        }",
-                "    ),",
-                "    #\"Added DealerID-ServiceID\" = Table.AddColumn(",
-                "        TypedTable,",
-                "        \"DealerID-ServiceID\",",
-                "        each [DealerID], type text",
-                "    ),",
-                "    #\"Derived DealerName\" = Table.AddColumn(",
-                "        #\"Added DealerID-ServiceID\",",
-                "        \"DealerName__derived\",",
-                "        each [DealerName], type text",
-                "    ),",
-                "    #\"Removed original DealerName\" = Table.RemoveColumns(",
-                "        #\"Derived DealerName\",",
-                "        {\"DealerName\"}",
-                "    ),",
-                "    #\"Replaced DealerName\" = Table.RenameColumns(",
-                "        #\"Removed original DealerName\",",
-                "        {",
-                "            {\"DealerName__derived\", \"DealerName\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived City\" = Table.AddColumn(",
-                "        #\"Replaced DealerName\",",
-                "        \"City__derived\",",
-                "        each [City], type text",
-                "    ),",
-                "    #\"Removed original City\" = Table.RemoveColumns(",
-                "        #\"Derived City\",",
-                "        {\"City\"}",
-                "    ),",
-                "    #\"Replaced City\" = Table.RenameColumns(",
-                "        #\"Removed original City\",",
-                "        {",
-                "            {\"City__derived\", \"City\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived Phone\" = Table.AddColumn(",
-                "        #\"Replaced City\",",
-                "        \"Phone__derived\",",
-                "        each [Phone], type text",
-                "    ),",
-                "    #\"Removed original Phone\" = Table.RemoveColumns(",
-                "        #\"Derived Phone\",",
-                "        {\"Phone\"}",
-                "    ),",
-                "    #\"Replaced Phone\" = Table.RenameColumns(",
-                "        #\"Removed original Phone\",",
-                "        {",
-                "            {\"Phone__derived\", \"Phone\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived Email\" = Table.AddColumn(",
-                "        #\"Replaced Phone\",",
-                "        \"Email__derived\",",
-                "        each [Email], type text",
-                "    ),",
-                "    #\"Removed original Email\" = Table.RemoveColumns(",
-                "        #\"Derived Email\",",
-                "        {\"Email\"}",
-                "    ),",
-                "    #\"Replaced Email\" = Table.RenameColumns(",
-                "        #\"Removed original Email\",",
-                "        {",
-                "            {\"Email__derived\", \"Email\"}",
-                "        }",
+                "        {\"1\"},",
+                "        {\"2\"},",
+                "        {\"3\"},",
+                "        {\"4\"},",
+                "        {\"5\"},",
+                "        {\"6\"},",
+                "        {\"7\"},",
+                "        {\"8\"},",
+                "        {\"9\"},",
+                "        {\"10\"},",
+                "        {\"11\"},",
+                "        {\"12\"},",
+                "        {\"13\"},",
+                "        {\"14\"},",
+                "        {\"15\"},",
+                "        {\"16\"},",
+                "        {\"17\"},",
+                "        {\"18\"},",
+                "        {\"19\"},",
+                "        {\"20\"},",
+                "        {\"21\"},",
+                "        {\"22\"},",
+                "        {\"23\"},",
+                "        {\"24\"},",
+                "        {\"25\"},",
+                "        {\"26\"},",
+                "        {\"27\"},",
+                "        {\"28\"},",
+                "        {\"29\"},",
+                "        {\"30\"},",
+                "        {\"31\"},",
+                "        {\"32\"},",
+                "        {\"33\"},",
+                "        {\"34\"},",
+                "        {\"35\"},",
+                "        {\"36\"},",
+                "        {\"37\"},",
+                "        {\"38\"},",
+                "        {\"39\"},",
+                "        {\"40\"},",
+                "        {\"41\"},",
+                "        {\"42\"},",
+                "        {\"43\"},",
+                "        {\"44\"},",
+                "        {\"45\"},",
+                "        {\"46\"},",
+                "        {\"47\"},",
+                "        {\"48\"},",
+                "        {\"49\"},",
+                "        {\"50\"},",
+                "        {\"51\"},",
+                "        {\"52\"},",
+                "        {\"53\"},",
+                "        {\"54\"},",
+                "        {\"55\"},",
+                "        {\"56\"},",
+                "        {\"57\"},",
+                "        {\"58\"},",
+                "        {\"59\"},",
+                "        {\"60\"},",
+                "        {\"61\"},",
+                "        {\"62\"},",
+                "        {\"63\"},",
+                "        {\"64\"},",
+                "        {\"65\"},",
+                "        {\"66\"},",
+                "        {\"67\"},",
+                "        {\"68\"},",
+                "        {\"69\"},",
+                "        {\"70\"},",
+                "        {\"71\"},",
+                "        {\"72\"}",
+                "    }",
                 "    )",
                 "in",
-                "    #\"Replaced Email\""
+                "    Source"
               ]
             }
           }
         ]
       },
       {
-        "name": "Model_Master",
+        "name": "DimCustomer",
         "columns": [
           {
-            "name": "ModelName",
+            "name": "CustomerID",
             "dataType": "string",
-            "sourceColumn": "ModelName",
+            "sourceColumn": "CustomerID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -510,9 +556,45 @@
             ]
           },
           {
-            "name": "Model_Master.ModelID",
+            "name": "Dim_CustomerName",
             "dataType": "string",
-            "sourceColumn": "Model_Master.ModelID",
+            "sourceColumn": "Dim_CustomerName",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Dim_CustomerSegment",
+            "dataType": "string",
+            "sourceColumn": "Dim_CustomerSegment",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Dim_CustomerCountry",
+            "dataType": "string",
+            "sourceColumn": "Dim_CustomerCountry",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Dim_CustomerRegion",
+            "dataType": "string",
+            "sourceColumn": "Dim_CustomerRegion",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -524,66 +606,531 @@
         ],
         "partitions": [
           {
-            "name": "Model_Master-Partition",
+            "name": "DimCustomer-Partition",
             "mode": "import",
             "source": {
               "type": "m",
               "expression": [
                 "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"model_master.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
-                "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File Model_Master.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
-                "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
+                "    Source = #table(",
+                "        type table [CustomerID = text, CustomerName = text, Segment = text, Country = text, Region = text],",
                 "        {",
-                "        {\"ModelID\", type text},",
-                "        {\"ModelName\", type text}",
-                "        }",
-                "    ),",
-                "    #\"Added Model_Master.ModelID\" = Table.AddColumn(",
-                "        TypedTable,",
-                "        \"Model_Master.ModelID\",",
-                "        each [ModelID], type text",
-                "    ),",
-                "    #\"Derived ModelName\" = Table.AddColumn(",
-                "        #\"Added Model_Master.ModelID\",",
-                "        \"ModelName__derived\",",
-                "        each [ModelName], type text",
-                "    ),",
-                "    #\"Removed original ModelName\" = Table.RemoveColumns(",
-                "        #\"Derived ModelName\",",
-                "        {\"ModelName\"}",
-                "    ),",
-                "    #\"Replaced ModelName\" = Table.RenameColumns(",
-                "        #\"Removed original ModelName\",",
-                "        {",
-                "            {\"ModelName__derived\", \"ModelName\"}",
-                "        }",
+                "        {\"1\", \"\"\"Orbit Solutions 408\"\"\", \"Startup\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"2\", \"\"\"Horizon Digital 315\"\"\", \"SMB\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"3\", \"\"\"Luminary Tech 552\"\"\", \"\"\"Public Sector\"\"\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"4\", \"\"\"Meridian Group 774\"\"\", \"\"\"Public Sector\"\"\", \"Spain\", \"Europe\"},",
+                "        {\"5\", \"\"\"Zenith Platforms 443\"\"\", \"Startup\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"6\", \"\"\"Cascade Technologies 925\"\"\", \"SMB\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"7\", \"\"\"GlobalTech 350\"\"\", \"Enterprise\", \"France\", \"Europe\"},",
+                "        {\"8\", \"\"\"Vanguard Systems 744\"\"\", \"\"\"Public Sector\"\"\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"9\", \"\"\"Prism Analytics 509\"\"\", \"\"\"Public Sector\"\"\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"10\", \"\"\"Vertex Systems 897\"\"\", \"Enterprise\", \"France\", \"Europe\"},",
+                "        {\"11\", \"\"\"Synergy Corp 575\"\"\", \"Mid-Market\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"12\", \"\"\"Vertex Systems 567\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"13\", \"\"\"Eclipse Technologies 709\"\"\", \"Startup\", \"Italy\", \"Europe\"},",
+                "        {\"14\", \"\"\"Synergy Corp 536\"\"\", \"Startup\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"15\", \"\"\"Prism Analytics 560\"\"\", \"Mid-Market\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"16\", \"\"\"Synergy Corp 596\"\"\", \"SMB\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"17\", \"\"\"Nexus Solutions 830\"\"\", \"\"\"Public Sector\"\"\", \"UK\", \"Europe\"},",
+                "        {\"18\", \"\"\"Quantum Innovations 427\"\"\", \"SMB\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"19\", \"\"\"Pinnacle Inc 336\"\"\", \"Mid-Market\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"20\", \"\"\"Nexus Solutions 524\"\"\", \"Mid-Market\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"21\", \"\"\"Luminary Tech 525\"\"\", \"Startup\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"22\", \"\"\"Atlas Solutions 888\"\"\", \"\"\"Public Sector\"\"\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"23\", \"\"\"Atlas Solutions 588\"\"\", \"Startup\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"24\", \"\"\"Atlas Solutions 973\"\"\", \"SMB\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"25\", \"\"\"Cascade Technologies 379\"\"\", \"\"\"Public Sector\"\"\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"26\", \"\"\"Atlas Solutions 444\"\"\", \"Enterprise\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"27\", \"\"\"Pinnacle Inc 737\"\"\", \"\"\"Public Sector\"\"\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"28\", \"\"\"Orbit Solutions 677\"\"\", \"\"\"Public Sector\"\"\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"29\", \"\"\"Pinnacle Inc 987\"\"\", \"\"\"Public Sector\"\"\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"30\", \"\"\"Summit Enterprises 488\"\"\", \"Enterprise\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"31\", \"\"\"Quantum Innovations 445\"\"\", \"\"\"Public Sector\"\"\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"32\", \"\"\"Summit Enterprises 954\"\"\", \"\"\"Public Sector\"\"\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"33\", \"\"\"Eclipse Technologies 153\"\"\", \"Enterprise\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"34\", \"\"\"GlobalTech 872\"\"\", \"Enterprise\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"35\", \"\"\"Acme Corp 736\"\"\", \"Mid-Market\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"36\", \"\"\"Prism Analytics 785\"\"\", \"Mid-Market\", \"France\", \"Europe\"},",
+                "        {\"37\", \"\"\"Luminary Tech 816\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"38\", \"\"\"Zenith Platforms 721\"\"\", \"Mid-Market\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"39\", \"\"\"Vertex Systems 692\"\"\", \"SMB\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"40\", \"\"\"Atlas Solutions 506\"\"\", \"Startup\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"41\", \"\"\"Cascade Technologies 204\"\"\", \"Startup\", \"Germany\", \"Europe\"},",
+                "        {\"42\", \"\"\"Vertex Systems 915\"\"\", \"Startup\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"43\", \"\"\"Eclipse Technologies 538\"\"\", \"SMB\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"44\", \"\"\"Quantum Innovations 112\"\"\", \"Startup\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"45\", \"\"\"Vanguard Systems 470\"\"\", \"Enterprise\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"46\", \"\"\"Meridian Group 851\"\"\", \"\"\"Public Sector\"\"\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"47\", \"\"\"Eclipse Technologies 893\"\"\", \"Startup\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"48\", \"\"\"Orbit Solutions 374\"\"\", \"\"\"Public Sector\"\"\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"49\", \"\"\"Summit Enterprises 561\"\"\", \"Enterprise\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"50\", \"\"\"Zenith Platforms 784\"\"\", \"Startup\", \"Italy\", \"Europe\"},",
+                "        {\"51\", \"\"\"Prism Analytics 971\"\"\", \"Enterprise\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"52\", \"\"\"Apex Dynamics 463\"\"\", \"\"\"Public Sector\"\"\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"53\", \"\"\"Zenith Platforms 818\"\"\", \"SMB\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"54\", \"\"\"Synergy Corp 295\"\"\", \"Enterprise\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"55\", \"\"\"Prism Analytics 668\"\"\", \"\"\"Public Sector\"\"\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"56\", \"\"\"Prism Analytics 558\"\"\", \"\"\"Public Sector\"\"\", \"Netherlands\", \"Europe\"},",
+                "        {\"57\", \"\"\"Cascade Technologies 514\"\"\", \"SMB\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"58\", \"\"\"Stellar Networks 584\"\"\", \"Startup\", \"UK\", \"Europe\"},",
+                "        {\"59\", \"\"\"Eclipse Technologies 438\"\"\", \"\"\"Public Sector\"\"\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"60\", \"\"\"Summit Enterprises 413\"\"\", \"\"\"Public Sector\"\"\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"61\", \"\"\"Apex Dynamics 423\"\"\", \"Enterprise\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"62\", \"\"\"Meridian Group 296\"\"\", \"Startup\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"63\", \"\"\"Summit Enterprises 841\"\"\", \"\"\"Public Sector\"\"\", \"Netherlands\", \"Europe\"},",
+                "        {\"64\", \"\"\"Apex Dynamics 403\"\"\", \"Enterprise\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"65\", \"\"\"Horizon Digital 114\"\"\", \"Mid-Market\", \"UK\", \"Europe\"},",
+                "        {\"66\", \"\"\"GlobalTech 155\"\"\", \"SMB\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"67\", \"\"\"Prism Analytics 205\"\"\", \"Mid-Market\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"68\", \"\"\"Prism Analytics 590\"\"\", \"SMB\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"69\", \"\"\"GlobalTech 358\"\"\", \"Mid-Market\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"70\", \"\"\"Atlas Solutions 603\"\"\", \"Enterprise\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"71\", \"\"\"Pinnacle Inc 252\"\"\", \"Enterprise\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"72\", \"\"\"Cascade Technologies 221\"\"\", \"Enterprise\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"73\", \"\"\"Zenith Platforms 909\"\"\", \"Startup\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"74\", \"\"\"Atlas Solutions 561\"\"\", \"Startup\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"75\", \"\"\"Vanguard Systems 412\"\"\", \"Startup\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"76\", \"\"\"Vertex Systems 881\"\"\", \"Startup\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"77\", \"\"\"Summit Enterprises 776\"\"\", \"Mid-Market\", \"Netherlands\", \"Europe\"},",
+                "        {\"78\", \"\"\"Meridian Group 665\"\"\", \"Mid-Market\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"79\", \"\"\"Vanguard Systems 561\"\"\", \"Enterprise\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"80\", \"\"\"GlobalTech 337\"\"\", \"SMB\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"81\", \"\"\"Luminary Tech 172\"\"\", \"SMB\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"82\", \"\"\"Apex Dynamics 535\"\"\", \"Startup\", \"UK\", \"Europe\"},",
+                "        {\"83\", \"\"\"Pinnacle Inc 372\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"84\", \"\"\"Meridian Group 911\"\"\", \"Enterprise\", \"Germany\", \"Europe\"},",
+                "        {\"85\", \"\"\"Horizon Digital 549\"\"\", \"Startup\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"86\", \"\"\"Atlas Solutions 378\"\"\", \"SMB\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"87\", \"\"\"Nexus Solutions 712\"\"\", \"\"\"Public Sector\"\"\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"88\", \"\"\"Zenith Platforms 356\"\"\", \"SMB\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"89\", \"\"\"Orbit Solutions 701\"\"\", \"Mid-Market\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"90\", \"\"\"Orbit Solutions 141\"\"\", \"SMB\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"91\", \"\"\"Luminary Tech 384\"\"\", \"Startup\", \"Italy\", \"Europe\"},",
+                "        {\"92\", \"\"\"Prism Analytics 193\"\"\", \"\"\"Public Sector\"\"\", \"Spain\", \"Europe\"},",
+                "        {\"93\", \"\"\"Quantum Innovations 428\"\"\", \"\"\"Public Sector\"\"\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"94\", \"\"\"Vanguard Systems 810\"\"\", \"SMB\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"95\", \"\"\"Eclipse Technologies 137\"\"\", \"\"\"Public Sector\"\"\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"96\", \"\"\"Summit Enterprises 431\"\"\", \"SMB\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"97\", \"\"\"Acme Corp 773\"\"\", \"Startup\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"98\", \"\"\"GlobalTech 292\"\"\", \"\"\"Public Sector\"\"\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"99\", \"\"\"Prism Analytics 740\"\"\", \"Startup\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"100\", \"\"\"Summit Enterprises 662\"\"\", \"Mid-Market\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"101\", \"\"\"Prism Analytics 224\"\"\", \"\"\"Public Sector\"\"\", \"UK\", \"Europe\"},",
+                "        {\"102\", \"\"\"Cascade Technologies 826\"\"\", \"Startup\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"103\", \"\"\"Acme Corp 665\"\"\", \"Startup\", \"UK\", \"Europe\"},",
+                "        {\"104\", \"\"\"Vertex Systems 572\"\"\", \"Mid-Market\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"105\", \"\"\"Prism Analytics 833\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"106\", \"\"\"Vanguard Systems 954\"\"\", \"SMB\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"107\", \"\"\"Luminary Tech 664\"\"\", \"Mid-Market\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"108\", \"\"\"Zenith Platforms 620\"\"\", \"Mid-Market\", \"Italy\", \"Europe\"},",
+                "        {\"109\", \"\"\"Vanguard Systems 448\"\"\", \"SMB\", \"Germany\", \"Europe\"},",
+                "        {\"110\", \"\"\"Horizon Digital 843\"\"\", \"Enterprise\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"111\", \"\"\"Prism Analytics 986\"\"\", \"Startup\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"112\", \"\"\"Prism Analytics 453\"\"\", \"Startup\", \"Italy\", \"Europe\"},",
+                "        {\"113\", \"\"\"Atlas Solutions 566\"\"\", \"Startup\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"114\", \"\"\"Orbit Solutions 492\"\"\", \"Mid-Market\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"115\", \"\"\"Quantum Innovations 862\"\"\", \"Enterprise\", \"Italy\", \"Europe\"},",
+                "        {\"116\", \"\"\"Pinnacle Inc 607\"\"\", \"\"\"Public Sector\"\"\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"117\", \"\"\"Orbit Solutions 439\"\"\", \"Startup\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"118\", \"\"\"Synergy Corp 567\"\"\", \"Enterprise\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"119\", \"\"\"Vanguard Systems 991\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"120\", \"\"\"Summit Enterprises 446\"\"\", \"\"\"Public Sector\"\"\", \"Germany\", \"Europe\"},",
+                "        {\"121\", \"\"\"Quantum Innovations 972\"\"\", \"Enterprise\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"122\", \"\"\"Prism Analytics 993\"\"\", \"SMB\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"123\", \"\"\"Nexus Solutions 340\"\"\", \"Startup\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"124\", \"\"\"Vanguard Systems 200\"\"\", \"Enterprise\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"125\", \"\"\"Horizon Digital 129\"\"\", \"Mid-Market\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"126\", \"\"\"Horizon Digital 467\"\"\", \"Enterprise\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"127\", \"\"\"Cascade Technologies 643\"\"\", \"Mid-Market\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"128\", \"\"\"Meridian Group 180\"\"\", \"Mid-Market\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"129\", \"\"\"Cascade Technologies 609\"\"\", \"Startup\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"130\", \"\"\"Luminary Tech 753\"\"\", \"Mid-Market\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"131\", \"\"\"Acme Corp 923\"\"\", \"SMB\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"132\", \"\"\"Meridian Group 175\"\"\", \"Startup\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"133\", \"\"\"Horizon Digital 754\"\"\", \"Startup\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"134\", \"\"\"Horizon Digital 303\"\"\", \"\"\"Public Sector\"\"\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"135\", \"\"\"Cascade Technologies 490\"\"\", \"Enterprise\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"136\", \"\"\"Horizon Digital 816\"\"\", \"Startup\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"137\", \"\"\"Summit Enterprises 108\"\"\", \"\"\"Public Sector\"\"\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"138\", \"\"\"Prism Analytics 952\"\"\", \"Startup\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"139\", \"\"\"Stellar Networks 324\"\"\", \"Startup\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"140\", \"\"\"Pinnacle Inc 743\"\"\", \"SMB\", \"Spain\", \"Europe\"},",
+                "        {\"141\", \"\"\"Horizon Digital 907\"\"\", \"Enterprise\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"142\", \"\"\"Stellar Networks 849\"\"\", \"Startup\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"143\", \"\"\"Quantum Innovations 865\"\"\", \"SMB\", \"Germany\", \"Europe\"},",
+                "        {\"144\", \"\"\"Pinnacle Inc 905\"\"\", \"Mid-Market\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"145\", \"\"\"Synergy Corp 379\"\"\", \"Startup\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"146\", \"\"\"Horizon Digital 864\"\"\", \"\"\"Public Sector\"\"\", \"UK\", \"Europe\"},",
+                "        {\"147\", \"\"\"Nexus Solutions 244\"\"\", \"\"\"Public Sector\"\"\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"148\", \"\"\"Eclipse Technologies 474\"\"\", \"\"\"Public Sector\"\"\", \"Netherlands\", \"Europe\"},",
+                "        {\"149\", \"\"\"Summit Enterprises 649\"\"\", \"Enterprise\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"150\", \"\"\"Summit Enterprises 698\"\"\", \"SMB\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"151\", \"\"\"Cascade Technologies 582\"\"\", \"Enterprise\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"152\", \"\"\"Quantum Innovations 724\"\"\", \"Startup\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"153\", \"\"\"Luminary Tech 817\"\"\", \"Enterprise\", \"Netherlands\", \"Europe\"},",
+                "        {\"154\", \"\"\"Vertex Systems 243\"\"\", \"\"\"Public Sector\"\"\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"155\", \"\"\"Prism Analytics 218\"\"\", \"SMB\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"156\", \"\"\"Pinnacle Inc 497\"\"\", \"Startup\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"157\", \"\"\"Vanguard Systems 701\"\"\", \"Startup\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"158\", \"\"\"Prism Analytics 730\"\"\", \"Enterprise\", \"Italy\", \"Europe\"},",
+                "        {\"159\", \"\"\"Stellar Networks 322\"\"\", \"Enterprise\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"160\", \"\"\"Stellar Networks 201\"\"\", \"Mid-Market\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"161\", \"\"\"GlobalTech 507\"\"\", \"SMB\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"162\", \"\"\"Luminary Tech 193\"\"\", \"Enterprise\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"163\", \"\"\"Acme Corp 151\"\"\", \"Startup\", \"Netherlands\", \"Europe\"},",
+                "        {\"164\", \"\"\"Orbit Solutions 310\"\"\", \"Mid-Market\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"165\", \"\"\"Orbit Solutions 321\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"166\", \"\"\"Zenith Platforms 102\"\"\", \"Mid-Market\", \"UK\", \"Europe\"},",
+                "        {\"167\", \"\"\"Eclipse Technologies 356\"\"\", \"Mid-Market\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"168\", \"\"\"Pinnacle Inc 115\"\"\", \"Enterprise\", \"Germany\", \"Europe\"},",
+                "        {\"169\", \"\"\"Quantum Innovations 116\"\"\", \"Startup\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"170\", \"\"\"Pinnacle Inc 859\"\"\", \"Enterprise\", \"UK\", \"Europe\"},",
+                "        {\"171\", \"\"\"Prism Analytics 559\"\"\", \"Enterprise\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"172\", \"\"\"Vertex Systems 562\"\"\", \"Startup\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"173\", \"\"\"GlobalTech 844\"\"\", \"Startup\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"174\", \"\"\"Acme Corp 162\"\"\", \"\"\"Public Sector\"\"\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"175\", \"\"\"Vertex Systems 602\"\"\", \"\"\"Public Sector\"\"\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"176\", \"\"\"Quantum Innovations 722\"\"\", \"Enterprise\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"177\", \"\"\"Summit Enterprises 739\"\"\", \"Mid-Market\", \"Germany\", \"Europe\"},",
+                "        {\"178\", \"\"\"Zenith Platforms 643\"\"\", \"\"\"Public Sector\"\"\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"179\", \"\"\"Zenith Platforms 540\"\"\", \"Startup\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"180\", \"\"\"Eclipse Technologies 838\"\"\", \"Enterprise\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"181\", \"\"\"Cascade Technologies 523\"\"\", \"\"\"Public Sector\"\"\", \"Italy\", \"Europe\"},",
+                "        {\"182\", \"\"\"Vanguard Systems 847\"\"\", \"\"\"Public Sector\"\"\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"183\", \"\"\"Quantum Innovations 781\"\"\", \"\"\"Public Sector\"\"\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"184\", \"\"\"Prism Analytics 168\"\"\", \"Mid-Market\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"185\", \"\"\"Vanguard Systems 198\"\"\", \"Enterprise\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"186\", \"\"\"GlobalTech 700\"\"\", \"Startup\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"187\", \"\"\"Vanguard Systems 462\"\"\", \"Enterprise\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"188\", \"\"\"Zenith Platforms 419\"\"\", \"SMB\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"189\", \"\"\"Synergy Corp 317\"\"\", \"Startup\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"190\", \"\"\"Cascade Technologies 967\"\"\", \"\"\"Public Sector\"\"\", \"Netherlands\", \"Europe\"},",
+                "        {\"191\", \"\"\"Stellar Networks 217\"\"\", \"Startup\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"192\", \"\"\"Vanguard Systems 965\"\"\", \"Mid-Market\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"193\", \"\"\"Summit Enterprises 129\"\"\", \"Startup\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"194\", \"\"\"Quantum Innovations 459\"\"\", \"SMB\", \"UK\", \"Europe\"},",
+                "        {\"195\", \"\"\"Orbit Solutions 773\"\"\", \"Mid-Market\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"196\", \"\"\"Acme Corp 193\"\"\", \"Mid-Market\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"197\", \"\"\"Vanguard Systems 564\"\"\", \"\"\"Public Sector\"\"\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"198\", \"\"\"Horizon Digital 838\"\"\", \"SMB\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"199\", \"\"\"Nexus Solutions 153\"\"\", \"Startup\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"200\", \"\"\"GlobalTech 790\"\"\", \"Startup\", \"France\", \"Europe\"},",
+                "        {\"201\", \"\"\"Vanguard Systems 597\"\"\", \"\"\"Public Sector\"\"\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"202\", \"\"\"Summit Enterprises 320\"\"\", \"\"\"Public Sector\"\"\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"203\", \"\"\"Vanguard Systems 213\"\"\", \"SMB\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"204\", \"\"\"Prism Analytics 639\"\"\", \"Startup\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"205\", \"\"\"Atlas Solutions 713\"\"\", \"Mid-Market\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"206\", \"\"\"Horizon Digital 316\"\"\", \"Mid-Market\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"207\", \"\"\"Quantum Innovations 222\"\"\", \"SMB\", \"UK\", \"Europe\"},",
+                "        {\"208\", \"\"\"Meridian Group 232\"\"\", \"\"\"Public Sector\"\"\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"209\", \"\"\"Eclipse Technologies 953\"\"\", \"Startup\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"210\", \"\"\"GlobalTech 546\"\"\", \"\"\"Public Sector\"\"\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"211\", \"\"\"Quantum Innovations 689\"\"\", \"Enterprise\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"212\", \"\"\"Horizon Digital 217\"\"\", \"\"\"Public Sector\"\"\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"213\", \"\"\"Meridian Group 920\"\"\", \"SMB\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"214\", \"\"\"Nexus Solutions 547\"\"\", \"SMB\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"215\", \"\"\"Orbit Solutions 510\"\"\", \"\"\"Public Sector\"\"\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"216\", \"\"\"Horizon Digital 863\"\"\", \"\"\"Public Sector\"\"\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"217\", \"\"\"Meridian Group 178\"\"\", \"SMB\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"218\", \"\"\"Synergy Corp 298\"\"\", \"Startup\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"219\", \"\"\"Cascade Technologies 205\"\"\", \"Mid-Market\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"220\", \"\"\"Meridian Group 716\"\"\", \"Mid-Market\", \"UK\", \"Europe\"},",
+                "        {\"221\", \"\"\"Meridian Group 891\"\"\", \"Enterprise\", \"Netherlands\", \"Europe\"},",
+                "        {\"222\", \"\"\"Orbit Solutions 559\"\"\", \"Startup\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"223\", \"\"\"Pinnacle Inc 550\"\"\", \"SMB\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"224\", \"\"\"Horizon Digital 915\"\"\", \"\"\"Public Sector\"\"\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"225\", \"\"\"Stellar Networks 619\"\"\", \"Enterprise\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"226\", \"\"\"Luminary Tech 138\"\"\", \"\"\"Public Sector\"\"\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"227\", \"\"\"Nexus Solutions 760\"\"\", \"SMB\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"228\", \"\"\"Synergy Corp 493\"\"\", \"Startup\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"229\", \"\"\"Orbit Solutions 767\"\"\", \"\"\"Public Sector\"\"\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"230\", \"\"\"Prism Analytics 613\"\"\", \"Startup\", \"UK\", \"Europe\"},",
+                "        {\"231\", \"\"\"Vertex Systems 930\"\"\", \"\"\"Public Sector\"\"\", \"Germany\", \"Europe\"},",
+                "        {\"232\", \"\"\"Synergy Corp 761\"\"\", \"Enterprise\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"233\", \"\"\"Luminary Tech 549\"\"\", \"Mid-Market\", \"Germany\", \"Europe\"},",
+                "        {\"234\", \"\"\"Stellar Networks 389\"\"\", \"SMB\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"235\", \"\"\"Zenith Platforms 153\"\"\", \"SMB\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"236\", \"\"\"Vertex Systems 671\"\"\", \"SMB\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"237\", \"\"\"Zenith Platforms 994\"\"\", \"SMB\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"238\", \"\"\"Orbit Solutions 779\"\"\", \"Enterprise\", \"UK\", \"Europe\"},",
+                "        {\"239\", \"\"\"Atlas Solutions 232\"\"\", \"SMB\", \"UK\", \"Europe\"},",
+                "        {\"240\", \"\"\"Eclipse Technologies 485\"\"\", \"SMB\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"241\", \"\"\"Nexus Solutions 761\"\"\", \"Startup\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"242\", \"\"\"Stellar Networks 416\"\"\", \"Enterprise\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"243\", \"\"\"Prism Analytics 296\"\"\", \"SMB\", \"France\", \"Europe\"},",
+                "        {\"244\", \"\"\"Nexus Solutions 402\"\"\", \"Mid-Market\", \"France\", \"Europe\"},",
+                "        {\"245\", \"\"\"Synergy Corp 138\"\"\", \"Startup\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"246\", \"\"\"Zenith Platforms 485\"\"\", \"Mid-Market\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"247\", \"\"\"Zenith Platforms 928\"\"\", \"Mid-Market\", \"France\", \"Europe\"},",
+                "        {\"248\", \"\"\"GlobalTech 520\"\"\", \"\"\"Public Sector\"\"\", \"Netherlands\", \"Europe\"},",
+                "        {\"249\", \"\"\"Luminary Tech 725\"\"\", \"Mid-Market\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"250\", \"\"\"Cascade Technologies 646\"\"\", \"\"\"Public Sector\"\"\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"251\", \"\"\"Apex Dynamics 476\"\"\", \"\"\"Public Sector\"\"\", \"UK\", \"Europe\"},",
+                "        {\"252\", \"\"\"Horizon Digital 896\"\"\", \"\"\"Public Sector\"\"\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"253\", \"\"\"Apex Dynamics 920\"\"\", \"Mid-Market\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"254\", \"\"\"GlobalTech 756\"\"\", \"SMB\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"255\", \"\"\"Vertex Systems 828\"\"\", \"Startup\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"256\", \"\"\"Nexus Solutions 881\"\"\", \"SMB\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"257\", \"\"\"Synergy Corp 250\"\"\", \"\"\"Public Sector\"\"\", \"UK\", \"Europe\"},",
+                "        {\"258\", \"\"\"Luminary Tech 457\"\"\", \"Mid-Market\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"259\", \"\"\"Atlas Solutions 614\"\"\", \"Enterprise\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"260\", \"\"\"Nexus Solutions 483\"\"\", \"\"\"Public Sector\"\"\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"261\", \"\"\"Vertex Systems 959\"\"\", \"SMB\", \"Germany\", \"Europe\"},",
+                "        {\"262\", \"\"\"GlobalTech 393\"\"\", \"Mid-Market\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"263\", \"\"\"Luminary Tech 730\"\"\", \"\"\"Public Sector\"\"\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"264\", \"\"\"Summit Enterprises 320\"\"\", \"Enterprise\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"265\", \"\"\"Synergy Corp 533\"\"\", \"Startup\", \"Spain\", \"Europe\"},",
+                "        {\"266\", \"\"\"Horizon Digital 224\"\"\", \"Mid-Market\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"267\", \"\"\"Zenith Platforms 568\"\"\", \"\"\"Public Sector\"\"\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"268\", \"\"\"Zenith Platforms 648\"\"\", \"\"\"Public Sector\"\"\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"269\", \"\"\"Orbit Solutions 347\"\"\", \"Startup\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"270\", \"\"\"Acme Corp 729\"\"\", \"\"\"Public Sector\"\"\", \"UK\", \"Europe\"},",
+                "        {\"271\", \"\"\"Vanguard Systems 291\"\"\", \"Startup\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"272\", \"\"\"Nexus Solutions 638\"\"\", \"SMB\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"273\", \"\"\"Prism Analytics 144\"\"\", \"\"\"Public Sector\"\"\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"274\", \"\"\"Acme Corp 465\"\"\", \"SMB\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"275\", \"\"\"Vertex Systems 890\"\"\", \"Mid-Market\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"276\", \"\"\"GlobalTech 460\"\"\", \"Mid-Market\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"277\", \"\"\"Luminary Tech 812\"\"\", \"Mid-Market\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"278\", \"\"\"Nexus Solutions 833\"\"\", \"Mid-Market\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"279\", \"\"\"Apex Dynamics 144\"\"\", \"SMB\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"280\", \"\"\"Horizon Digital 627\"\"\", \"SMB\", \"Germany\", \"Europe\"},",
+                "        {\"281\", \"\"\"GlobalTech 871\"\"\", \"SMB\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"282\", \"\"\"GlobalTech 986\"\"\", \"SMB\", \"UK\", \"Europe\"},",
+                "        {\"283\", \"\"\"Stellar Networks 547\"\"\", \"Enterprise\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"284\", \"\"\"Quantum Innovations 291\"\"\", \"\"\"Public Sector\"\"\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"285\", \"\"\"Synergy Corp 373\"\"\", \"SMB\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"286\", \"\"\"Nexus Solutions 540\"\"\", \"\"\"Public Sector\"\"\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"287\", \"\"\"Horizon Digital 428\"\"\", \"Startup\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"288\", \"\"\"Horizon Digital 413\"\"\", \"SMB\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"289\", \"\"\"Luminary Tech 459\"\"\", \"Mid-Market\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"290\", \"\"\"Zenith Platforms 545\"\"\", \"SMB\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"291\", \"\"\"Nexus Solutions 787\"\"\", \"Enterprise\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"292\", \"\"\"Meridian Group 131\"\"\", \"Startup\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"293\", \"\"\"GlobalTech 229\"\"\", \"\"\"Public Sector\"\"\", \"Spain\", \"Europe\"},",
+                "        {\"294\", \"\"\"Stellar Networks 492\"\"\", \"SMB\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"295\", \"\"\"Pinnacle Inc 795\"\"\", \"Startup\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"296\", \"\"\"Luminary Tech 881\"\"\", \"SMB\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"297\", \"\"\"Synergy Corp 475\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"298\", \"\"\"Cascade Technologies 216\"\"\", \"SMB\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"299\", \"\"\"Prism Analytics 630\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"300\", \"\"\"Summit Enterprises 820\"\"\", \"SMB\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"301\", \"\"\"Horizon Digital 810\"\"\", \"Startup\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"302\", \"\"\"Pinnacle Inc 973\"\"\", \"Enterprise\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"303\", \"\"\"Luminary Tech 189\"\"\", \"Mid-Market\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"304\", \"\"\"Nexus Solutions 663\"\"\", \"SMB\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"305\", \"\"\"Meridian Group 828\"\"\", \"SMB\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"306\", \"\"\"Cascade Technologies 224\"\"\", \"Startup\", \"UK\", \"Europe\"},",
+                "        {\"307\", \"\"\"Prism Analytics 126\"\"\", \"Mid-Market\", \"France\", \"Europe\"},",
+                "        {\"308\", \"\"\"Stellar Networks 578\"\"\", \"Startup\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"309\", \"\"\"Nexus Solutions 167\"\"\", \"Startup\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"310\", \"\"\"Synergy Corp 520\"\"\", \"\"\"Public Sector\"\"\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"311\", \"\"\"Quantum Innovations 757\"\"\", \"Mid-Market\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"312\", \"\"\"Synergy Corp 452\"\"\", \"\"\"Public Sector\"\"\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"313\", \"\"\"Meridian Group 886\"\"\", \"Startup\", \"Spain\", \"Europe\"},",
+                "        {\"314\", \"\"\"GlobalTech 951\"\"\", \"Startup\", \"Italy\", \"Europe\"},",
+                "        {\"315\", \"\"\"Horizon Digital 268\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"316\", \"\"\"Stellar Networks 631\"\"\", \"Mid-Market\", \"UK\", \"Europe\"},",
+                "        {\"317\", \"\"\"Apex Dynamics 750\"\"\", \"SMB\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"318\", \"\"\"Horizon Digital 729\"\"\", \"Mid-Market\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"319\", \"\"\"Meridian Group 706\"\"\", \"Startup\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"320\", \"\"\"Zenith Platforms 837\"\"\", \"Mid-Market\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"321\", \"\"\"GlobalTech 945\"\"\", \"Startup\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"322\", \"\"\"Orbit Solutions 371\"\"\", \"Enterprise\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"323\", \"\"\"Zenith Platforms 754\"\"\", \"\"\"Public Sector\"\"\", \"Spain\", \"Europe\"},",
+                "        {\"324\", \"\"\"Horizon Digital 757\"\"\", \"Startup\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"325\", \"\"\"Atlas Solutions 404\"\"\", \"Mid-Market\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"326\", \"\"\"Meridian Group 550\"\"\", \"Enterprise\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"327\", \"\"\"Apex Dynamics 448\"\"\", \"\"\"Public Sector\"\"\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"328\", \"\"\"Quantum Innovations 851\"\"\", \"SMB\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"329\", \"\"\"Stellar Networks 627\"\"\", \"Mid-Market\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"330\", \"\"\"Cascade Technologies 577\"\"\", \"SMB\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"331\", \"\"\"Cascade Technologies 244\"\"\", \"\"\"Public Sector\"\"\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"332\", \"\"\"Atlas Solutions 984\"\"\", \"SMB\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"333\", \"\"\"Meridian Group 933\"\"\", \"Mid-Market\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"334\", \"\"\"Apex Dynamics 881\"\"\", \"SMB\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"335\", \"\"\"Luminary Tech 610\"\"\", \"Startup\", \"Italy\", \"Europe\"},",
+                "        {\"336\", \"\"\"Nexus Solutions 502\"\"\", \"Enterprise\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"337\", \"\"\"Apex Dynamics 697\"\"\", \"Mid-Market\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"338\", \"\"\"Horizon Digital 606\"\"\", \"Enterprise\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"339\", \"\"\"Eclipse Technologies 108\"\"\", \"SMB\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"340\", \"\"\"Summit Enterprises 844\"\"\", \"Mid-Market\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"341\", \"\"\"GlobalTech 510\"\"\", \"SMB\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"342\", \"\"\"Apex Dynamics 471\"\"\", \"Startup\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"343\", \"\"\"Atlas Solutions 616\"\"\", \"Enterprise\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"344\", \"\"\"Zenith Platforms 221\"\"\", \"Startup\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"345\", \"\"\"Stellar Networks 913\"\"\", \"\"\"Public Sector\"\"\", \"Germany\", \"Europe\"},",
+                "        {\"346\", \"\"\"Pinnacle Inc 303\"\"\", \"SMB\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"347\", \"\"\"GlobalTech 146\"\"\", \"Startup\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"348\", \"\"\"Prism Analytics 631\"\"\", \"SMB\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"349\", \"\"\"Synergy Corp 243\"\"\", \"Startup\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"350\", \"\"\"Meridian Group 502\"\"\", \"SMB\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"351\", \"\"\"Quantum Innovations 619\"\"\", \"Startup\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"352\", \"\"\"Horizon Digital 586\"\"\", \"Startup\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"353\", \"\"\"Vertex Systems 526\"\"\", \"SMB\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"354\", \"\"\"Zenith Platforms 585\"\"\", \"Enterprise\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"355\", \"\"\"Orbit Solutions 333\"\"\", \"Startup\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"356\", \"\"\"Meridian Group 636\"\"\", \"\"\"Public Sector\"\"\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"357\", \"\"\"Cascade Technologies 132\"\"\", \"Mid-Market\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"358\", \"\"\"Acme Corp 551\"\"\", \"Mid-Market\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"359\", \"\"\"Vanguard Systems 807\"\"\", \"Mid-Market\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"360\", \"\"\"Zenith Platforms 582\"\"\", \"Startup\", \"Italy\", \"Europe\"},",
+                "        {\"361\", \"\"\"Synergy Corp 312\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"362\", \"\"\"Synergy Corp 485\"\"\", \"\"\"Public Sector\"\"\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"363\", \"\"\"Eclipse Technologies 450\"\"\", \"\"\"Public Sector\"\"\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"364\", \"\"\"Zenith Platforms 595\"\"\", \"SMB\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"365\", \"\"\"Eclipse Technologies 405\"\"\", \"SMB\", \"France\", \"Europe\"},",
+                "        {\"366\", \"\"\"Apex Dynamics 806\"\"\", \"SMB\", \"UK\", \"Europe\"},",
+                "        {\"367\", \"\"\"Stellar Networks 673\"\"\", \"\"\"Public Sector\"\"\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"368\", \"\"\"Orbit Solutions 792\"\"\", \"Enterprise\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"369\", \"\"\"Stellar Networks 891\"\"\", \"\"\"Public Sector\"\"\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"370\", \"\"\"Horizon Digital 831\"\"\", \"Enterprise\", \"UK\", \"Europe\"},",
+                "        {\"371\", \"\"\"Summit Enterprises 865\"\"\", \"\"\"Public Sector\"\"\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"372\", \"\"\"Eclipse Technologies 377\"\"\", \"Mid-Market\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"373\", \"\"\"Vertex Systems 730\"\"\", \"Mid-Market\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"374\", \"\"\"GlobalTech 785\"\"\", \"Mid-Market\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"375\", \"\"\"GlobalTech 202\"\"\", \"Mid-Market\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"376\", \"\"\"Vertex Systems 797\"\"\", \"\"\"Public Sector\"\"\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"377\", \"\"\"Meridian Group 516\"\"\", \"Startup\", \"Germany\", \"Europe\"},",
+                "        {\"378\", \"\"\"Horizon Digital 428\"\"\", \"Mid-Market\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"379\", \"\"\"Nexus Solutions 767\"\"\", \"Enterprise\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"380\", \"\"\"GlobalTech 279\"\"\", \"Startup\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"381\", \"\"\"Atlas Solutions 906\"\"\", \"Enterprise\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"382\", \"\"\"GlobalTech 109\"\"\", \"SMB\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"383\", \"\"\"Vertex Systems 443\"\"\", \"Startup\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"384\", \"\"\"Synergy Corp 605\"\"\", \"Startup\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"385\", \"\"\"Summit Enterprises 297\"\"\", \"\"\"Public Sector\"\"\", \"Spain\", \"Europe\"},",
+                "        {\"386\", \"\"\"Luminary Tech 763\"\"\", \"Mid-Market\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"387\", \"\"\"Acme Corp 854\"\"\", \"Mid-Market\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"388\", \"\"\"Apex Dynamics 279\"\"\", \"Startup\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"389\", \"\"\"Synergy Corp 435\"\"\", \"\"\"Public Sector\"\"\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"390\", \"\"\"Meridian Group 243\"\"\", \"Enterprise\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"391\", \"\"\"Acme Corp 367\"\"\", \"Mid-Market\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"392\", \"\"\"Summit Enterprises 437\"\"\", \"\"\"Public Sector\"\"\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"393\", \"\"\"Acme Corp 367\"\"\", \"Startup\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"394\", \"\"\"GlobalTech 783\"\"\", \"Mid-Market\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"395\", \"\"\"Meridian Group 515\"\"\", \"SMB\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"396\", \"\"\"Horizon Digital 476\"\"\", \"Enterprise\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"397\", \"\"\"Pinnacle Inc 589\"\"\", \"Mid-Market\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"398\", \"\"\"Stellar Networks 525\"\"\", \"Startup\", \"Italy\", \"Europe\"},",
+                "        {\"399\", \"\"\"Apex Dynamics 880\"\"\", \"Startup\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"400\", \"\"\"Nexus Solutions 638\"\"\", \"Startup\", \"Netherlands\", \"Europe\"},",
+                "        {\"401\", \"\"\"Orbit Solutions 214\"\"\", \"Enterprise\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"402\", \"\"\"Apex Dynamics 686\"\"\", \"Startup\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"403\", \"\"\"Quantum Innovations 974\"\"\", \"Mid-Market\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"404\", \"\"\"Apex Dynamics 834\"\"\", \"Enterprise\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"405\", \"\"\"Synergy Corp 556\"\"\", \"Enterprise\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"406\", \"\"\"Synergy Corp 525\"\"\", \"Mid-Market\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"407\", \"\"\"Luminary Tech 788\"\"\", \"Startup\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"408\", \"\"\"Atlas Solutions 360\"\"\", \"Enterprise\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"409\", \"\"\"Orbit Solutions 174\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"410\", \"\"\"Nexus Solutions 654\"\"\", \"SMB\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"411\", \"\"\"GlobalTech 393\"\"\", \"\"\"Public Sector\"\"\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"412\", \"\"\"Vanguard Systems 483\"\"\", \"Mid-Market\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"413\", \"\"\"Atlas Solutions 182\"\"\", \"\"\"Public Sector\"\"\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"414\", \"\"\"Vertex Systems 282\"\"\", \"SMB\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"415\", \"\"\"Pinnacle Inc 845\"\"\", \"Startup\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"416\", \"\"\"Horizon Digital 574\"\"\", \"Enterprise\", \"Germany\", \"Europe\"},",
+                "        {\"417\", \"\"\"Atlas Solutions 943\"\"\", \"Startup\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"418\", \"\"\"Stellar Networks 258\"\"\", \"\"\"Public Sector\"\"\", \"France\", \"Europe\"},",
+                "        {\"419\", \"\"\"GlobalTech 928\"\"\", \"Enterprise\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"420\", \"\"\"Apex Dynamics 168\"\"\", \"Mid-Market\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"421\", \"\"\"Luminary Tech 712\"\"\", \"Enterprise\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"422\", \"\"\"Atlas Solutions 549\"\"\", \"Enterprise\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"423\", \"\"\"GlobalTech 243\"\"\", \"Mid-Market\", \"Spain\", \"Europe\"},",
+                "        {\"424\", \"\"\"Orbit Solutions 426\"\"\", \"Mid-Market\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"425\", \"\"\"Horizon Digital 997\"\"\", \"Mid-Market\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"426\", \"\"\"Cascade Technologies 523\"\"\", \"Startup\", \"Netherlands\", \"Europe\"},",
+                "        {\"427\", \"\"\"Eclipse Technologies 705\"\"\", \"Enterprise\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"428\", \"\"\"Eclipse Technologies 607\"\"\", \"\"\"Public Sector\"\"\", \"Netherlands\", \"Europe\"},",
+                "        {\"429\", \"\"\"Synergy Corp 426\"\"\", \"\"\"Public Sector\"\"\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"430\", \"\"\"Horizon Digital 485\"\"\", \"Mid-Market\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"431\", \"\"\"Cascade Technologies 969\"\"\", \"\"\"Public Sector\"\"\", \"Spain\", \"Europe\"},",
+                "        {\"432\", \"\"\"Luminary Tech 159\"\"\", \"Mid-Market\", \"UK\", \"Europe\"},",
+                "        {\"433\", \"\"\"Eclipse Technologies 642\"\"\", \"\"\"Public Sector\"\"\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"434\", \"\"\"Summit Enterprises 308\"\"\", \"Mid-Market\", \"Italy\", \"Europe\"},",
+                "        {\"435\", \"\"\"Luminary Tech 967\"\"\", \"Enterprise\", \"\"\"South Korea\"\"\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"436\", \"\"\"Apex Dynamics 152\"\"\", \"Startup\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"437\", \"\"\"Zenith Platforms 140\"\"\", \"Startup\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"438\", \"\"\"Eclipse Technologies 322\"\"\", \"Startup\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"439\", \"\"\"Horizon Digital 115\"\"\", \"SMB\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"440\", \"\"\"Prism Analytics 348\"\"\", \"Enterprise\", \"France\", \"Europe\"},",
+                "        {\"441\", \"\"\"Cascade Technologies 665\"\"\", \"\"\"Public Sector\"\"\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"442\", \"\"\"Luminary Tech 646\"\"\", \"\"\"Public Sector\"\"\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"443\", \"\"\"Stellar Networks 625\"\"\", \"SMB\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"444\", \"\"\"Prism Analytics 879\"\"\", \"Enterprise\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"445\", \"\"\"Quantum Innovations 523\"\"\", \"SMB\", \"Australia\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"446\", \"\"\"Pinnacle Inc 116\"\"\", \"Mid-Market\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"447\", \"\"\"Orbit Solutions 837\"\"\", \"Startup\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"448\", \"\"\"Apex Dynamics 437\"\"\", \"Mid-Market\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"449\", \"\"\"Cascade Technologies 611\"\"\", \"Startup\", \"Italy\", \"Europe\"},",
+                "        {\"450\", \"\"\"Prism Analytics 840\"\"\", \"SMB\", \"\"\"South Africa\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"451\", \"\"\"Stellar Networks 273\"\"\", \"Mid-Market\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"452\", \"\"\"Prism Analytics 288\"\"\", \"Startup\", \"Netherlands\", \"Europe\"},",
+                "        {\"453\", \"\"\"GlobalTech 959\"\"\", \"Startup\", \"UAE\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"454\", \"\"\"Acme Corp 522\"\"\", \"Enterprise\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"455\", \"\"\"Nexus Solutions 824\"\"\", \"Mid-Market\", \"Netherlands\", \"Europe\"},",
+                "        {\"456\", \"\"\"Synergy Corp 566\"\"\", \"Mid-Market\", \"Germany\", \"Europe\"},",
+                "        {\"457\", \"\"\"Zenith Platforms 594\"\"\", \"Startup\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"458\", \"\"\"Eclipse Technologies 664\"\"\", \"Enterprise\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"459\", \"\"\"Synergy Corp 839\"\"\", \"Enterprise\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"460\", \"\"\"Acme Corp 614\"\"\", \"SMB\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"461\", \"\"\"Vertex Systems 636\"\"\", \"Enterprise\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"462\", \"\"\"Zenith Platforms 639\"\"\", \"Mid-Market\", \"France\", \"Europe\"},",
+                "        {\"463\", \"\"\"Atlas Solutions 180\"\"\", \"SMB\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"464\", \"\"\"Orbit Solutions 349\"\"\", \"\"\"Public Sector\"\"\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"465\", \"\"\"GlobalTech 195\"\"\", \"Enterprise\", \"UK\", \"Europe\"},",
+                "        {\"466\", \"\"\"Eclipse Technologies 587\"\"\", \"\"\"Public Sector\"\"\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"467\", \"\"\"Meridian Group 184\"\"\", \"Enterprise\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"468\", \"\"\"Orbit Solutions 978\"\"\", \"SMB\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"469\", \"\"\"Cascade Technologies 316\"\"\", \"Enterprise\", \"Mexico\", \"\"\"North America\"\"\"},",
+                "        {\"470\", \"\"\"GlobalTech 176\"\"\", \"SMB\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"471\", \"\"\"GlobalTech 283\"\"\", \"Startup\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"472\", \"\"\"Orbit Solutions 247\"\"\", \"Mid-Market\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"473\", \"\"\"Meridian Group 677\"\"\", \"SMB\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"474\", \"\"\"Eclipse Technologies 439\"\"\", \"\"\"Public Sector\"\"\", \"Spain\", \"Europe\"},",
+                "        {\"475\", \"\"\"Synergy Corp 863\"\"\", \"Enterprise\", \"Argentina\", \"\"\"Latin America\"\"\"},",
+                "        {\"476\", \"\"\"Vanguard Systems 337\"\"\", \"Enterprise\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"477\", \"\"\"Zenith Platforms 709\"\"\", \"Startup\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"478\", \"\"\"Summit Enterprises 902\"\"\", \"Enterprise\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"479\", \"\"\"Stellar Networks 666\"\"\", \"Mid-Market\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"480\", \"\"\"Orbit Solutions 776\"\"\", \"Mid-Market\", \"Colombia\", \"\"\"Latin America\"\"\"},",
+                "        {\"481\", \"\"\"Horizon Digital 917\"\"\", \"Startup\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"482\", \"\"\"Nexus Solutions 374\"\"\", \"Enterprise\", \"Netherlands\", \"Europe\"},",
+                "        {\"483\", \"\"\"Atlas Solutions 424\"\"\", \"Mid-Market\", \"Italy\", \"Europe\"},",
+                "        {\"484\", \"\"\"Acme Corp 415\"\"\", \"Enterprise\", \"Japan\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"485\", \"\"\"Vertex Systems 235\"\"\", \"SMB\", \"Chile\", \"\"\"Latin America\"\"\"},",
+                "        {\"486\", \"\"\"Luminary Tech 670\"\"\", \"\"\"Public Sector\"\"\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"487\", \"\"\"Acme Corp 191\"\"\", \"Enterprise\", \"Nigeria\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"488\", \"\"\"Zenith Platforms 712\"\"\", \"Enterprise\", \"Singapore\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"489\", \"\"\"Horizon Digital 523\"\"\", \"Enterprise\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"490\", \"\"\"Cascade Technologies 685\"\"\", \"Startup\", \"Brazil\", \"\"\"Latin America\"\"\"},",
+                "        {\"491\", \"\"\"Meridian Group 242\"\"\", \"\"\"Public Sector\"\"\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"492\", \"\"\"Prism Analytics 249\"\"\", \"SMB\", \"India\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"493\", \"\"\"Summit Enterprises 531\"\"\", \"\"\"Public Sector\"\"\", \"USA\", \"\"\"North America\"\"\"},",
+                "        {\"494\", \"\"\"Stellar Networks 357\"\"\", \"Enterprise\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"495\", \"\"\"Zenith Platforms 731\"\"\", \"\"\"Public Sector\"\"\", \"Netherlands\", \"Europe\"},",
+                "        {\"496\", \"\"\"Pinnacle Inc 411\"\"\", \"Enterprise\", \"Italy\", \"Europe\"},",
+                "        {\"497\", \"\"\"Zenith Platforms 489\"\"\", \"SMB\", \"Canada\", \"\"\"North America\"\"\"},",
+                "        {\"498\", \"\"\"Vanguard Systems 935\"\"\", \"SMB\", \"China\", \"\"\"Asia Pacific\"\"\"},",
+                "        {\"499\", \"\"\"Quantum Innovations 717\"\"\", \"SMB\", \"\"\"Saudi Arabia\"\"\", \"\"\"Middle East & Africa\"\"\"},",
+                "        {\"500\", \"\"\"Meridian Group 507\"\"\", \"SMB\", \"Italy\", \"Europe\"}",
+                "    }",
                 "    )",
                 "in",
-                "    #\"Replaced ModelName\""
+                "    Source"
               ]
             }
           }
         ]
       },
       {
-        "name": "Service_History",
+        "name": "DimSalesRep",
         "columns": [
           {
-            "name": "ServiceType",
+            "name": "SalesRepID",
             "dataType": "string",
-            "sourceColumn": "ServiceType",
+            "sourceColumn": "SalesRepID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -593,9 +1140,9 @@
             ]
           },
           {
-            "name": "DealerID-ServiceID",
+            "name": "Dim_SalesRepName",
             "dataType": "string",
-            "sourceColumn": "DealerID-ServiceID",
+            "sourceColumn": "Dim_SalesRepName",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -605,9 +1152,9 @@
             ]
           },
           {
-            "name": "VehicleID",
+            "name": "Dim_SalesRepRegion",
             "dataType": "string",
-            "sourceColumn": "VehicleID",
+            "sourceColumn": "Dim_SalesRepRegion",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -617,21 +1164,9 @@
             ]
           },
           {
-            "name": "Service_History.ServiceDate",
+            "name": "Dim_SalesRepQuota",
             "dataType": "string",
-            "sourceColumn": "Service_History.ServiceDate",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "Service_History.ServiceCost",
-            "dataType": "string",
-            "sourceColumn": "Service_History.ServiceCost",
+            "sourceColumn": "Dim_SalesRepQuota",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -643,94 +1178,131 @@
         ],
         "partitions": [
           {
-            "name": "Service_History-Partition",
+            "name": "DimSalesRep-Partition",
             "mode": "import",
             "source": {
               "type": "m",
               "expression": [
                 "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"service_history.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
-                "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File Service_History.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
-                "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
+                "    Source = #table(",
+                "        type table [SalesRepID = text, SalesRepName = text, Region = text, AnnualQuota = text],",
                 "        {",
-                "        {\"ServiceID\", type text},",
-                "        {\"VehicleID\", type text},",
-                "        {\"ServiceDate\", type date},",
-                "        {\"ServiceType\", type text},",
-                "        {\"ServiceCost\", type number}",
-                "        }",
-                "    ),",
-                "    #\"Added DealerID-ServiceID\" = Table.AddColumn(",
-                "        TypedTable,",
-                "        \"DealerID-ServiceID\",",
-                "        each [ServiceID], type text",
-                "    ),",
-                "    #\"Derived VehicleID\" = Table.AddColumn(",
-                "        #\"Added DealerID-ServiceID\",",
-                "        \"VehicleID__derived\",",
-                "        each [VehicleID], type text",
-                "    ),",
-                "    #\"Removed original VehicleID\" = Table.RemoveColumns(",
-                "        #\"Derived VehicleID\",",
-                "        {\"VehicleID\"}",
-                "    ),",
-                "    #\"Replaced VehicleID\" = Table.RenameColumns(",
-                "        #\"Removed original VehicleID\",",
-                "        {",
-                "            {\"VehicleID__derived\", \"VehicleID\"}",
-                "        }",
-                "    ),",
-                "    #\"Added Service_History.ServiceDate\" = Table.AddColumn(",
-                "        #\"Replaced VehicleID\",",
-                "        \"Service_History.ServiceDate\",",
-                "        each [ServiceDate], type text",
-                "    ),",
-                "    #\"Derived ServiceType\" = Table.AddColumn(",
-                "        #\"Added Service_History.ServiceDate\",",
-                "        \"ServiceType__derived\",",
-                "        each [ServiceType], type text",
-                "    ),",
-                "    #\"Removed original ServiceType\" = Table.RemoveColumns(",
-                "        #\"Derived ServiceType\",",
-                "        {\"ServiceType\"}",
-                "    ),",
-                "    #\"Replaced ServiceType\" = Table.RenameColumns(",
-                "        #\"Removed original ServiceType\",",
-                "        {",
-                "            {\"ServiceType__derived\", \"ServiceType\"}",
-                "        }",
-                "    ),",
-                "    #\"Added Service_History.ServiceCost\" = Table.AddColumn(",
-                "        #\"Replaced ServiceType\",",
-                "        \"Service_History.ServiceCost\",",
-                "        each [ServiceCost], type text",
+                "        {\"1\", \"\"\"Daniel Hernandez\"\"\", \"Europe\", \"1483158.00\"},",
+                "        {\"2\", \"\"\"Richard Lee\"\"\", \"\"\"Latin America\"\"\", \"714307.39\"},",
+                "        {\"3\", \"\"\"Robert Davis\"\"\", \"\"\"Middle East & Africa\"\"\", \"1308465.93\"},",
+                "        {\"4\", \"\"\"Lisa Jackson\"\"\", \"\"\"Latin America\"\"\", \"1846734.33\"},",
+                "        {\"5\", \"\"\"Richard Lopez\"\"\", \"Europe\", \"1995988.67\"},",
+                "        {\"6\", \"\"\"Robert Taylor\"\"\", \"\"\"Latin America\"\"\", \"636364.12\"},",
+                "        {\"7\", \"\"\"Mary Brown\"\"\", \"Europe\", \"1441169.06\"},",
+                "        {\"8\", \"\"\"Betty Perez\"\"\", \"\"\"Latin America\"\"\", \"1394613.55\"},",
+                "        {\"9\", \"\"\"Richard Gonzalez\"\"\", \"\"\"Middle East & Africa\"\"\", \"1994182.07\"},",
+                "        {\"10\", \"\"\"Thomas Rodriguez\"\"\", \"\"\"Middle East & Africa\"\"\", \"1791169.55\"},",
+                "        {\"11\", \"\"\"James Perez\"\"\", \"\"\"North America\"\"\", \"1522565.55\"},",
+                "        {\"12\", \"\"\"Sarah Rodriguez\"\"\", \"\"\"Asia Pacific\"\"\", \"667328.26\"},",
+                "        {\"13\", \"\"\"Susan Garcia\"\"\", \"\"\"Latin America\"\"\", \"504867.97\"},",
+                "        {\"14\", \"\"\"Lisa White\"\"\", \"\"\"Asia Pacific\"\"\", \"1957832.15\"},",
+                "        {\"15\", \"\"\"Paul Garcia\"\"\", \"\"\"Middle East & Africa\"\"\", \"1868941.76\"},",
+                "        {\"16\", \"\"\"Chris Martinez\"\"\", \"\"\"Middle East & Africa\"\"\", \"1413455.32\"},",
+                "        {\"17\", \"\"\"Robert Lopez\"\"\", \"Europe\", \"1309068.55\"},",
+                "        {\"18\", \"\"\"Paul Taylor\"\"\", \"\"\"North America\"\"\", \"1398416.88\"},",
+                "        {\"19\", \"\"\"Jessica Smith\"\"\", \"\"\"North America\"\"\", \"1893647.92\"},",
+                "        {\"20\", \"\"\"Betty Martinez\"\"\", \"Europe\", \"586887.75\"},",
+                "        {\"21\", \"\"\"Charles Williams\"\"\", \"\"\"North America\"\"\", \"1597861.39\"},",
+                "        {\"22\", \"\"\"John Moore\"\"\", \"Europe\", \"692587.20\"},",
+                "        {\"23\", \"\"\"Jessica Moore\"\"\", \"Europe\", \"897584.94\"},",
+                "        {\"24\", \"\"\"Karen Wilson\"\"\", \"Europe\", \"1893370.24\"},",
+                "        {\"25\", \"\"\"Paul White\"\"\", \"Europe\", \"1569423.46\"},",
+                "        {\"26\", \"\"\"Richard Perez\"\"\", \"\"\"Asia Pacific\"\"\", \"1157150.13\"},",
+                "        {\"27\", \"\"\"Thomas Anderson\"\"\", \"\"\"North America\"\"\", \"871858.42\"},",
+                "        {\"28\", \"\"\"John Hernandez\"\"\", \"\"\"North America\"\"\", \"1382463.08\"},",
+                "        {\"29\", \"\"\"Linda Jackson\"\"\", \"Europe\", \"510786.26\"},",
+                "        {\"30\", \"\"\"Daniel Lee\"\"\", \"\"\"North America\"\"\", \"843412.68\"},",
+                "        {\"31\", \"\"\"Mary Hernandez\"\"\", \"\"\"North America\"\"\", \"1271234.18\"},",
+                "        {\"32\", \"\"\"William Perez\"\"\", \"\"\"Latin America\"\"\", \"821355.21\"},",
+                "        {\"33\", \"\"\"Robert White\"\"\", \"\"\"Middle East & Africa\"\"\", \"1364317.47\"},",
+                "        {\"34\", \"\"\"Linda Thomas\"\"\", \"\"\"Latin America\"\"\", \"785614.87\"},",
+                "        {\"35\", \"\"\"Patricia Perez\"\"\", \"\"\"Latin America\"\"\", \"1031446.35\"},",
+                "        {\"36\", \"\"\"Susan Anderson\"\"\", \"\"\"North America\"\"\", \"1510046.82\"},",
+                "        {\"37\", \"\"\"Chris Brown\"\"\", \"\"\"North America\"\"\", \"1103931.92\"},",
+                "        {\"38\", \"\"\"David Brown\"\"\", \"Europe\", \"787385.11\"},",
+                "        {\"39\", \"\"\"Sarah Anderson\"\"\", \"Europe\", \"1132822.46\"},",
+                "        {\"40\", \"\"\"William Anderson\"\"\", \"Europe\", \"1811728.93\"},",
+                "        {\"41\", \"\"\"John Anderson\"\"\", \"\"\"Middle East & Africa\"\"\", \"646863.09\"},",
+                "        {\"42\", \"\"\"Chris Moore\"\"\", \"\"\"North America\"\"\", \"1953494.39\"},",
+                "        {\"43\", \"\"\"Paul Davis\"\"\", \"Europe\", \"1109621.09\"},",
+                "        {\"44\", \"\"\"Jessica Miller\"\"\", \"\"\"Latin America\"\"\", \"1853664.30\"},",
+                "        {\"45\", \"\"\"Jennifer Gonzalez\"\"\", \"\"\"North America\"\"\", \"1977963.27\"},",
+                "        {\"46\", \"\"\"William Anderson\"\"\", \"\"\"Asia Pacific\"\"\", \"1134511.23\"},",
+                "        {\"47\", \"\"\"Lisa Moore\"\"\", \"\"\"Latin America\"\"\", \"732195.24\"},",
+                "        {\"48\", \"\"\"Barbara Miller\"\"\", \"\"\"North America\"\"\", \"1368770.44\"},",
+                "        {\"49\", \"\"\"Sarah Johnson\"\"\", \"\"\"Asia Pacific\"\"\", \"585747.91\"},",
+                "        {\"50\", \"\"\"Charles Thomas\"\"\", \"\"\"Middle East & Africa\"\"\", \"1879080.70\"},",
+                "        {\"51\", \"\"\"Thomas Garcia\"\"\", \"\"\"North America\"\"\", \"1941168.35\"},",
+                "        {\"52\", \"\"\"John Garcia\"\"\", \"\"\"North America\"\"\", \"1392552.66\"},",
+                "        {\"53\", \"\"\"Nancy Davis\"\"\", \"\"\"Latin America\"\"\", \"679829.92\"},",
+                "        {\"54\", \"\"\"Charles Davis\"\"\", \"\"\"Middle East & Africa\"\"\", \"1391778.73\"},",
+                "        {\"55\", \"\"\"Karen Williams\"\"\", \"\"\"Latin America\"\"\", \"1486059.75\"},",
+                "        {\"56\", \"\"\"Charles Taylor\"\"\", \"\"\"Asia Pacific\"\"\", \"1902059.39\"},",
+                "        {\"57\", \"\"\"Michael Perez\"\"\", \"\"\"Asia Pacific\"\"\", \"858028.93\"},",
+                "        {\"58\", \"\"\"Richard Jones\"\"\", \"\"\"Asia Pacific\"\"\", \"1185836.86\"},",
+                "        {\"59\", \"\"\"Paul Williams\"\"\", \"\"\"North America\"\"\", \"1187428.28\"},",
+                "        {\"60\", \"\"\"Charles Brown\"\"\", \"\"\"North America\"\"\", \"1306451.61\"},",
+                "        {\"61\", \"\"\"Thomas Rodriguez\"\"\", \"Europe\", \"1899889.07\"},",
+                "        {\"62\", \"\"\"John Davis\"\"\", \"\"\"Asia Pacific\"\"\", \"927481.09\"},",
+                "        {\"63\", \"\"\"Joseph Moore\"\"\", \"\"\"Asia Pacific\"\"\", \"1417516.65\"},",
+                "        {\"64\", \"\"\"Betty Lee\"\"\", \"\"\"Middle East & Africa\"\"\", \"511734.66\"},",
+                "        {\"65\", \"\"\"Sarah Martinez\"\"\", \"\"\"North America\"\"\", \"1908395.01\"},",
+                "        {\"66\", \"\"\"Robert Rodriguez\"\"\", \"\"\"North America\"\"\", \"1834569.06\"},",
+                "        {\"67\", \"\"\"Lisa Moore\"\"\", \"Europe\", \"908522.32\"},",
+                "        {\"68\", \"\"\"Karen Miller\"\"\", \"\"\"Asia Pacific\"\"\", \"805395.97\"},",
+                "        {\"69\", \"\"\"Chris Rodriguez\"\"\", \"\"\"Middle East & Africa\"\"\", \"1232797.78\"},",
+                "        {\"70\", \"\"\"Mary Williams\"\"\", \"\"\"Latin America\"\"\", \"1744022.13\"},",
+                "        {\"71\", \"\"\"Mary Smith\"\"\", \"\"\"Asia Pacific\"\"\", \"1656678.83\"},",
+                "        {\"72\", \"\"\"Chris Rodriguez\"\"\", \"Europe\", \"1611846.36\"},",
+                "        {\"73\", \"\"\"Sarah Thompson\"\"\", \"\"\"Latin America\"\"\", \"1341360.30\"},",
+                "        {\"74\", \"\"\"Patricia Williams\"\"\", \"Europe\", \"1318385.43\"},",
+                "        {\"75\", \"\"\"Elizabeth Jackson\"\"\", \"\"\"Middle East & Africa\"\"\", \"722140.68\"},",
+                "        {\"76\", \"\"\"Robert Johnson\"\"\", \"\"\"Asia Pacific\"\"\", \"1046977.27\"},",
+                "        {\"77\", \"\"\"Betty Johnson\"\"\", \"\"\"Asia Pacific\"\"\", \"815114.81\"},",
+                "        {\"78\", \"\"\"Linda Perez\"\"\", \"\"\"North America\"\"\", \"1030517.95\"},",
+                "        {\"79\", \"\"\"Sarah Wilson\"\"\", \"\"\"Middle East & Africa\"\"\", \"1624216.42\"},",
+                "        {\"80\", \"\"\"Linda Garcia\"\"\", \"Europe\", \"1822124.31\"},",
+                "        {\"81\", \"\"\"James Garcia\"\"\", \"\"\"Asia Pacific\"\"\", \"1673579.74\"},",
+                "        {\"82\", \"\"\"Susan Perez\"\"\", \"Europe\", \"900208.56\"},",
+                "        {\"83\", \"\"\"Betty Thompson\"\"\", \"\"\"North America\"\"\", \"1073812.58\"},",
+                "        {\"84\", \"\"\"Mary Thomas\"\"\", \"Europe\", \"799359.25\"},",
+                "        {\"85\", \"\"\"Joseph Lopez\"\"\", \"\"\"Asia Pacific\"\"\", \"1730804.57\"},",
+                "        {\"86\", \"\"\"Linda Davis\"\"\", \"\"\"North America\"\"\", \"1490049.77\"},",
+                "        {\"87\", \"\"\"Richard Hernandez\"\"\", \"\"\"Asia Pacific\"\"\", \"1796529.41\"},",
+                "        {\"88\", \"\"\"Paul Rodriguez\"\"\", \"\"\"Asia Pacific\"\"\", \"1462222.61\"},",
+                "        {\"89\", \"\"\"Richard Perez\"\"\", \"\"\"Middle East & Africa\"\"\", \"996724.80\"},",
+                "        {\"90\", \"\"\"James Brown\"\"\", \"\"\"Asia Pacific\"\"\", \"767851.72\"},",
+                "        {\"91\", \"\"\"William Johnson\"\"\", \"\"\"North America\"\"\", \"1394856.88\"},",
+                "        {\"92\", \"\"\"Elizabeth White\"\"\", \"\"\"Asia Pacific\"\"\", \"1154590.83\"},",
+                "        {\"93\", \"\"\"Thomas Brown\"\"\", \"\"\"Latin America\"\"\", \"1849257.10\"},",
+                "        {\"94\", \"\"\"Michael Rodriguez\"\"\", \"\"\"North America\"\"\", \"1563177.93\"},",
+                "        {\"95\", \"\"\"James Taylor\"\"\", \"\"\"Middle East & Africa\"\"\", \"1530285.72\"},",
+                "        {\"96\", \"\"\"Lisa White\"\"\", \"Europe\", \"1046332.21\"},",
+                "        {\"97\", \"\"\"John Perez\"\"\", \"\"\"Asia Pacific\"\"\", \"1434733.11\"},",
+                "        {\"98\", \"\"\"Nancy Brown\"\"\", \"\"\"Asia Pacific\"\"\", \"1260683.76\"},",
+                "        {\"99\", \"\"\"Nancy Wilson\"\"\", \"\"\"Asia Pacific\"\"\", \"1103600.58\"},",
+                "        {\"100\", \"\"\"Barbara Moore\"\"\", \"Europe\", \"787760.14\"}",
+                "    }",
                 "    )",
                 "in",
-                "    #\"Added Service_History.ServiceCost\""
+                "    Source"
               ]
             }
           }
         ]
       },
       {
-        "name": "Variant_Master",
+        "name": "MonthlyRepSummary",
         "columns": [
           {
-            "name": "VariantName",
+            "name": "MRS_SalesRepID",
             "dataType": "string",
-            "sourceColumn": "VariantName",
+            "sourceColumn": "MRS_SalesRepID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -740,9 +1312,9 @@
             ]
           },
           {
-            "name": "VariantID",
+            "name": "MRS_SalesRepName",
             "dataType": "string",
-            "sourceColumn": "VariantID",
+            "sourceColumn": "MRS_SalesRepName",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -752,9 +1324,129 @@
             ]
           },
           {
-            "name": "Variant_Master.ModelID",
+            "name": "MRS_SalesRepRegion",
             "dataType": "string",
-            "sourceColumn": "Variant_Master.ModelID",
+            "sourceColumn": "MRS_SalesRepRegion",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "MRS_Year",
+            "dataType": "string",
+            "sourceColumn": "MRS_Year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "MRS_Month",
+            "dataType": "string",
+            "sourceColumn": "MRS_Month",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "MRS_Quarter",
+            "dataType": "string",
+            "sourceColumn": "MRS_Quarter",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "MRS_MonthlyRevenue",
+            "dataType": "double",
+            "sourceColumn": "MRS_MonthlyRevenue",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "MRS_MonthlyGrossProfit",
+            "dataType": "double",
+            "sourceColumn": "MRS_MonthlyGrossProfit",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "MRS_MonthlyTransactionCount",
+            "dataType": "double",
+            "sourceColumn": "MRS_MonthlyTransactionCount",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "MRS_MonthlyWonRevenue",
+            "dataType": "double",
+            "sourceColumn": "MRS_MonthlyWonRevenue",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "MRS_MonthlySalesOrders",
+            "dataType": "double",
+            "sourceColumn": "MRS_MonthlySalesOrders",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "MRS_MonthlyServiceTickets",
+            "dataType": "double",
+            "sourceColumn": "MRS_MonthlyServiceTickets",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "MRS_MonthlyRenewals",
+            "dataType": "double",
+            "sourceColumn": "MRS_MonthlyRenewals",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -766,82 +1458,76 @@
         ],
         "partitions": [
           {
-            "name": "Variant_Master-Partition",
+            "name": "MonthlyRepSummary-Partition",
             "mode": "import",
             "source": {
               "type": "m",
               "expression": [
                 "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"variant_master.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
+                "    FactTransactions = FactTransactions,",
+                "    Selected = Table.SelectColumns(FactTransactions,",
+                "        {\"SalesRepID\", \"SalesRepName\", \"SalesRepRegion\", \"Quarter\", \"Revenue\", \"GrossProfit\", \"TransactionID\", \"Status\", \"TransactionType\"}",
                 "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File Variant_Master.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
                 "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
+                "        Selected,",
                 "        {",
-                "        {\"VariantID\", type text},",
-                "        {\"ModelID\", type text},",
-                "        {\"VariantName\", type text}",
+                "        {\"MRS_SalesRepID\", type text},",
+                "        {\"MRS_SalesRepName\", type text},",
+                "        {\"MRS_SalesRepRegion\", type text},",
+                "        {\"MRS_Year\", Int64.Type},",
+                "        {\"MRS_Month\", Int64.Type},",
+                "        {\"MRS_Quarter\", type text}",
                 "        }",
                 "    ),",
-                "    #\"Derived VariantID\" = Table.AddColumn(",
+                "    #\"Added MRS_SalesRepID\" = Table.AddColumn(",
                 "        TypedTable,",
-                "        \"VariantID__derived\",",
-                "        each [VariantID], type text",
+                "        \"MRS_SalesRepID\",",
+                "        each [SalesRepID], type text",
                 "    ),",
-                "    #\"Removed original VariantID\" = Table.RemoveColumns(",
-                "        #\"Derived VariantID\",",
-                "        {\"VariantID\"}",
+                "    #\"Added MRS_SalesRepName\" = Table.AddColumn(",
+                "        #\"Added MRS_SalesRepID\",",
+                "        \"MRS_SalesRepName\",",
+                "        each [SalesRepName], type text",
                 "    ),",
-                "    #\"Replaced VariantID\" = Table.RenameColumns(",
-                "        #\"Removed original VariantID\",",
-                "        {",
-                "            {\"VariantID__derived\", \"VariantID\"}",
-                "        }",
+                "    #\"Added MRS_SalesRepRegion\" = Table.AddColumn(",
+                "        #\"Added MRS_SalesRepName\",",
+                "        \"MRS_SalesRepRegion\",",
+                "        each [SalesRepRegion], type text",
                 "    ),",
-                "    #\"Added Variant_Master.ModelID\" = Table.AddColumn(",
-                "        #\"Replaced VariantID\",",
-                "        \"Variant_Master.ModelID\",",
-                "        each [ModelID], type text",
+                "    #\"Added MRS_Year\" = Table.AddColumn(",
+                "        #\"Added MRS_SalesRepRegion\",",
+                "        \"MRS_Year\",",
+                "        each [Year], type text",
                 "    ),",
-                "    #\"Derived VariantName\" = Table.AddColumn(",
-                "        #\"Added Variant_Master.ModelID\",",
-                "        \"VariantName__derived\",",
-                "        each [VariantName], type text",
+                "    #\"Added MRS_Month\" = Table.AddColumn(",
+                "        #\"Added MRS_Year\",",
+                "        \"MRS_Month\",",
+                "        each [Month], type text",
                 "    ),",
-                "    #\"Removed original VariantName\" = Table.RemoveColumns(",
-                "        #\"Derived VariantName\",",
-                "        {\"VariantName\"}",
+                "    #\"Added MRS_Quarter\" = Table.AddColumn(",
+                "        #\"Added MRS_Month\",",
+                "        \"MRS_Quarter\",",
+                "        each [Quarter], type text",
                 "    ),",
-                "    #\"Replaced VariantName\" = Table.RenameColumns(",
-                "        #\"Removed original VariantName\",",
-                "        {",
-                "            {\"VariantName__derived\", \"VariantName\"}",
-                "        }",
+                "    #\"Grouped Rows\" = Table.Group(",
+                "        #\"Added MRS_Quarter\",",
+                "        {\"MRS_SalesRepID\", \"MRS_SalesRepName\", \"MRS_SalesRepRegion\", \"MRS_Year\", \"MRS_Month\", \"MRS_Quarter\"},",
+                "        {{\"MRS_MonthlyRevenue\", each List.Sum([Revenue]), type number}, {\"MRS_MonthlyGrossProfit\", each List.Sum([GrossProfit]), type number}, {\"MRS_MonthlyTransactionCount\", each List.Count([TransactionID]), type number}, {\"MRS_MonthlyWonRevenue\", each List.Sum([If(Status = 'Won', Revenue, 0]), type number}, {\"MRS_MonthlySalesOrders\", each List.Count([If(TransactionType = 'SalesOrder', 1]), type number}, {\"MRS_MonthlyServiceTickets\", each List.Count([If(TransactionType = 'ServiceTicket', 1]), type number}, {\"MRS_MonthlyRenewals\", each List.Count([If(TransactionType = 'Renewal', 1]), type number}}",
                 "    )",
                 "in",
-                "    #\"Replaced VariantName\""
+                "    #\"Grouped Rows\""
               ]
             }
           }
         ]
       },
       {
-        "name": "VIN_Details",
+        "name": "QuotaAttainment",
         "columns": [
           {
-            "name": "VIN",
+            "name": "QA_SalesRepID",
             "dataType": "string",
-            "sourceColumn": "VIN",
+            "sourceColumn": "QA_SalesRepID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -851,9 +1537,9 @@
             ]
           },
           {
-            "name": "EngineNumber",
+            "name": "QA_SalesRepName",
             "dataType": "string",
-            "sourceColumn": "EngineNumber",
+            "sourceColumn": "QA_SalesRepName",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -863,9 +1549,9 @@
             ]
           },
           {
-            "name": "ChassisNumber",
+            "name": "QA_SalesRepRegion",
             "dataType": "string",
-            "sourceColumn": "ChassisNumber",
+            "sourceColumn": "QA_SalesRepRegion",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -875,9 +1561,9 @@
             ]
           },
           {
-            "name": "ProductionPlant",
+            "name": "QA_Year",
             "dataType": "string",
-            "sourceColumn": "ProductionPlant",
+            "sourceColumn": "QA_Year",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -887,9 +1573,69 @@
             ]
           },
           {
-            "name": "ProductionDate",
+            "name": "QA_Quarter",
             "dataType": "string",
-            "sourceColumn": "ProductionDate",
+            "sourceColumn": "QA_Quarter",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "QA_QuarterlyQuota",
+            "dataType": "string",
+            "sourceColumn": "QA_QuarterlyQuota",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "QA_QuarterlyRevenue",
+            "dataType": "double",
+            "sourceColumn": "QA_QuarterlyRevenue",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "QA_QuarterlyWonRevenue",
+            "dataType": "double",
+            "sourceColumn": "QA_QuarterlyWonRevenue",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "QA_QuarterlyTransactions",
+            "dataType": "double",
+            "sourceColumn": "QA_QuarterlyTransactions",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "QA_QuotaAttainmentPct",
+            "dataType": "double",
+            "sourceColumn": "QA_QuotaAttainmentPct",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -901,112 +1647,211 @@
         ],
         "partitions": [
           {
-            "name": "VIN_Details-Partition",
+            "name": "QuotaAttainment-Partition",
             "mode": "import",
             "source": {
               "type": "m",
               "expression": [
                 "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"vin_details.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
+                "    MonthlyRepSummary = MonthlyRepSummary,",
+                "    Selected = Table.SelectColumns(MonthlyRepSummary,",
+                "        {\"MRS_SalesRepID\", \"MRS_SalesRepName\", \"MRS_SalesRepRegion\", \"MRS_Year\", \"MRS_Quarter\", \"MRS_MonthlyRevenue\", \"MRS_MonthlyWonRevenue\", \"MRS_MonthlyTransactionCount\"}",
                 "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File VIN_Details.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
                 "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
+                "        Selected,",
                 "        {",
-                "        {\"VIN\", type text},",
-                "        {\"EngineNumber\", type text},",
-                "        {\"ChassisNumber\", type text},",
-                "        {\"ProductionPlant\", type text},",
-                "        {\"ProductionDate\", type date}",
+                "        {\"QA_SalesRepID\", type text},",
+                "        {\"QA_SalesRepName\", type text},",
+                "        {\"QA_SalesRepRegion\", type text},",
+                "        {\"QA_Year\", Int64.Type},",
+                "        {\"QA_Quarter\", type text}",
                 "        }",
                 "    ),",
-                "    #\"Derived VIN\" = Table.AddColumn(",
+                "    #\"Added QA_SalesRepID\" = Table.AddColumn(",
                 "        TypedTable,",
-                "        \"VIN__derived\",",
-                "        each [VIN], type text",
+                "        \"QA_SalesRepID\",",
+                "        each [MRS_SalesRepID], type text",
                 "    ),",
-                "    #\"Removed original VIN\" = Table.RemoveColumns(",
-                "        #\"Derived VIN\",",
-                "        {\"VIN\"}",
+                "    #\"Added QA_SalesRepName\" = Table.AddColumn(",
+                "        #\"Added QA_SalesRepID\",",
+                "        \"QA_SalesRepName\",",
+                "        each [MRS_SalesRepName], type text",
                 "    ),",
-                "    #\"Replaced VIN\" = Table.RenameColumns(",
-                "        #\"Removed original VIN\",",
-                "        {",
-                "            {\"VIN__derived\", \"VIN\"}",
-                "        }",
+                "    #\"Added QA_SalesRepRegion\" = Table.AddColumn(",
+                "        #\"Added QA_SalesRepName\",",
+                "        \"QA_SalesRepRegion\",",
+                "        each [MRS_SalesRepRegion], type text",
                 "    ),",
-                "    #\"Derived EngineNumber\" = Table.AddColumn(",
-                "        #\"Replaced VIN\",",
-                "        \"EngineNumber__derived\",",
-                "        each [EngineNumber], type text",
+                "    #\"Added QA_Year\" = Table.AddColumn(",
+                "        #\"Added QA_SalesRepRegion\",",
+                "        \"QA_Year\",",
+                "        each [MRS_Year], type text",
                 "    ),",
-                "    #\"Removed original EngineNumber\" = Table.RemoveColumns(",
-                "        #\"Derived EngineNumber\",",
-                "        {\"EngineNumber\"}",
+                "    #\"Added QA_Quarter\" = Table.AddColumn(",
+                "        #\"Added QA_Year\",",
+                "        \"QA_Quarter\",",
+                "        each [MRS_Quarter], type text",
                 "    ),",
-                "    #\"Replaced EngineNumber\" = Table.RenameColumns(",
-                "        #\"Removed original EngineNumber\",",
-                "        {",
-                "            {\"EngineNumber__derived\", \"EngineNumber\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived ChassisNumber\" = Table.AddColumn(",
-                "        #\"Replaced EngineNumber\",",
-                "        \"ChassisNumber__derived\",",
-                "        each [ChassisNumber], type text",
-                "    ),",
-                "    #\"Removed original ChassisNumber\" = Table.RemoveColumns(",
-                "        #\"Derived ChassisNumber\",",
-                "        {\"ChassisNumber\"}",
-                "    ),",
-                "    #\"Replaced ChassisNumber\" = Table.RenameColumns(",
-                "        #\"Removed original ChassisNumber\",",
-                "        {",
-                "            {\"ChassisNumber__derived\", \"ChassisNumber\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived ProductionPlant\" = Table.AddColumn(",
-                "        #\"Replaced ChassisNumber\",",
-                "        \"ProductionPlant__derived\",",
-                "        each [ProductionPlant], type text",
-                "    ),",
-                "    #\"Removed original ProductionPlant\" = Table.RemoveColumns(",
-                "        #\"Derived ProductionPlant\",",
-                "        {\"ProductionPlant\"}",
-                "    ),",
-                "    #\"Replaced ProductionPlant\" = Table.RenameColumns(",
-                "        #\"Removed original ProductionPlant\",",
-                "        {",
-                "            {\"ProductionPlant__derived\", \"ProductionPlant\"}",
-                "        }",
-                "    ),",
-                "    #\"Derived ProductionDate\" = Table.AddColumn(",
-                "        #\"Replaced ProductionPlant\",",
-                "        \"ProductionDate__derived\",",
-                "        each [ProductionDate], type text",
-                "    ),",
-                "    #\"Removed original ProductionDate\" = Table.RemoveColumns(",
-                "        #\"Derived ProductionDate\",",
-                "        {\"ProductionDate\"}",
-                "    ),",
-                "    #\"Replaced ProductionDate\" = Table.RenameColumns(",
-                "        #\"Removed original ProductionDate\",",
-                "        {",
-                "            {\"ProductionDate__derived\", \"ProductionDate\"}",
-                "        }",
+                "    #\"Grouped Rows\" = Table.Group(",
+                "        #\"Added QA_Quarter\",",
+                "        {\"QA_SalesRepID\", \"QA_SalesRepName\", \"QA_SalesRepRegion\", \"QA_Year\", \"QA_Quarter\", \"QA_QuarterlyQuota\"},",
+                "        {{\"QA_QuarterlyRevenue\", each List.Sum([MRS_MonthlyRevenue]), type number}, {\"QA_QuarterlyWonRevenue\", each List.Sum([MRS_MonthlyWonRevenue]), type number}, {\"QA_QuarterlyTransactions\", each List.Sum([MRS_MonthlyTransactionCount]), type number}, {\"QA_QuotaAttainmentPct\", each List.Sum([MRS_MonthlyWonRevenue]), type number}}",
                 "    )",
                 "in",
-                "    #\"Replaced ProductionDate\""
+                "    #\"Grouped Rows\""
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "RegionalRollup",
+        "columns": [
+          {
+            "name": "RR_RollupDimension",
+            "dataType": "string",
+            "sourceColumn": "RR_RollupDimension",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "RR_RollupLevel",
+            "dataType": "string",
+            "sourceColumn": "RR_RollupLevel",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "RR_Year",
+            "dataType": "string",
+            "sourceColumn": "RR_Year",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "RR_Quarter",
+            "dataType": "string",
+            "sourceColumn": "RR_Quarter",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "RR_Revenue",
+            "dataType": "double",
+            "sourceColumn": "RR_Revenue",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "RR_GrossProfit",
+            "dataType": "double",
+            "sourceColumn": "RR_GrossProfit",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "RR_UniqueCustomers",
+            "dataType": "double",
+            "sourceColumn": "RR_UniqueCustomers",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "RR_TotalTransactions",
+            "dataType": "double",
+            "sourceColumn": "RR_TotalTransactions",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "RegionalRollup-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    FactTransactions = FactTransactions,",
+                "    Selected = Table.SelectColumns(FactTransactions,",
+                "        {\"CustomerRegion\", \"Quarter\", \"Revenue\", \"GrossProfit\", \"Distinct\", \"CustomerID\", \"TransactionID\"}",
+                "    ),",
+                "    TypedTable = Table.TransformColumnTypes(",
+                "        Selected,",
+                "        {",
+                "        {\"RR_RollupDimension\", type text},",
+                "        {\"RR_RollupLevel\", type text},",
+                "        {\"RR_Year\", Int64.Type},",
+                "        {\"RR_Quarter\", type text}",
+                "        }",
+                "    ),",
+                "    #\"Added RR_RollupDimension\" = Table.AddColumn(",
+                "        TypedTable,",
+                "        \"RR_RollupDimension\",",
+                "        each [CustomerRegion], type text",
+                "    ),",
+                "    #\"Added RR_RollupLevel\" = Table.AddColumn(",
+                "        #\"Added RR_RollupDimension\",",
+                "        \"RR_RollupLevel\",",
+                "        each \"Region\", type text",
+                "    ),",
+                "    #\"Added RR_Year\" = Table.AddColumn(",
+                "        #\"Added RR_RollupLevel\",",
+                "        \"RR_Year\",",
+                "        each [Year], type text",
+                "    ),",
+                "    #\"Added RR_Quarter\" = Table.AddColumn(",
+                "        #\"Added RR_Year\",",
+                "        \"RR_Quarter\",",
+                "        each [Quarter], type text",
+                "    ),",
+                "    #\"Grouped Rows\" = Table.Group(",
+                "        #\"Added RR_Quarter\",",
+                "        {\"RR_RollupDimension\", \"RR_RollupLevel\", \"RR_Year\", \"RR_Quarter\"},",
+                "        {{\"RR_Revenue\", each List.Sum([Revenue]), type number}, {\"RR_GrossProfit\", each List.Sum([GrossProfit]), type number}, {\"RR_UniqueCustomers\", each List.Count([Distinct CustomerID]), type number}, {\"RR_TotalTransactions\", each List.Count([TransactionID]), type number}}",
+                "    )",
+                "in",
+                "    #\"Grouped Rows\""
               ]
             }
           }
@@ -1015,36 +1860,34 @@
     ],
     "relationships": [
       {
-        "name": "Service_History_VehicleID_VIN_Details_VIN",
-        "fromTable": "Service_History",
-        "fromColumn": "VehicleID",
-        "toTable": "VIN_Details",
-        "toColumn": "VIN",
-        "crossFilteringBehavior": "oneDirection"
+        "name": "FactTransactions_CustomerID_DimCustomer_CustomerID",
+        "fromTable": "FactTransactions",
+        "fromColumn": "CustomerID",
+        "toTable": "DimCustomer",
+        "toColumn": "CustomerID",
+        "crossFilteringBehavior": "oneDirection",
+        "fromCardinality": "many",
+        "toCardinality": "one"
       },
       {
-        "name": "Vehicle_Fact_MASTER_VIN_VIN_Details_VIN",
-        "fromTable": "Vehicle_Fact_MASTER",
-        "fromColumn": "VIN",
-        "toTable": "VIN_Details",
-        "toColumn": "VIN",
-        "crossFilteringBehavior": "oneDirection"
+        "name": "FactTransactions_ProductID_DimProduct_ProductID",
+        "fromTable": "FactTransactions",
+        "fromColumn": "ProductID",
+        "toTable": "DimProduct",
+        "toColumn": "ProductID",
+        "crossFilteringBehavior": "oneDirection",
+        "fromCardinality": "many",
+        "toCardinality": "one"
       },
       {
-        "name": "Vehicle_Fact_MASTER_ModelName_Model_Master_ModelName",
-        "fromTable": "Vehicle_Fact_MASTER",
-        "fromColumn": "ModelName",
-        "toTable": "Model_Master",
-        "toColumn": "ModelName",
-        "crossFilteringBehavior": "oneDirection"
-      },
-      {
-        "name": "Vehicle_Fact_MASTER_VariantName_Variant_Master_VariantName",
-        "fromTable": "Vehicle_Fact_MASTER",
-        "fromColumn": "VariantName",
-        "toTable": "Variant_Master",
-        "toColumn": "VariantName",
-        "crossFilteringBehavior": "oneDirection"
+        "name": "FactTransactions_SalesRepID_DimSalesRep_SalesRepID",
+        "fromTable": "FactTransactions",
+        "fromColumn": "SalesRepID",
+        "toTable": "DimSalesRep",
+        "toColumn": "SalesRepID",
+        "crossFilteringBehavior": "oneDirection",
+        "fromCardinality": "many",
+        "toCardinality": "one"
       }
     ],
     "expressions": [

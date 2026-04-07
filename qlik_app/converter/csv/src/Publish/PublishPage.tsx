@@ -999,8 +999,8 @@ export default function PublishPage() {
         }
       }
 
-      // const res = await fetch("http://localhost:8000/api/migration/publish-semantic-model", {
-      const res = await fetch("https://qlikai-app-ltmrv.ondigitalocean.app/api/migration/publish-semantic-model", {
+      const apiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const res = await fetch(`${apiBase}/api/migration/publish-semantic-model`, {
         method: "POST",
         body: form,
       });

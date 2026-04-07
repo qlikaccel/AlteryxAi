@@ -33,6 +33,10 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+
+def _sanitize_bim_name(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_]", "_", str(value or ""))
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Public entry point
 # ─────────────────────────────────────────────────────────────────────────────
@@ -796,10 +800,16 @@ class _Publisher:
                     table_name, len(resolved_cols),
                     [c["name"] for c in resolved_cols[:8]]
                 )
+                seen_cols: set[str] = set()
                 for c in resolved_cols:
-                    col_name = (c.get("name") or "").strip()
+                    raw_col_name = (c.get("name") or "").strip()
+                    col_name = _strip_qlik_qualifier(raw_col_name)
                     if not col_name or col_name == "*":
                         continue
+                    key = col_name.lower()
+                    if key in seen_cols:
+                        continue
+                    seen_cols.add(key)
                     # FIX A: force 'string' for file-based sources to avoid
                     # VT_BSTR->VT_DATE / VT_BSTR->VT_I8 type mismatch on refresh
                     bim_type = "string" if is_file else c.get("dataType", "string")
@@ -837,6 +847,7 @@ class _Publisher:
             # ── Step 2: Fallback — field list (filter wildcards) ──────────────
             if not columns:
                 raw_fields = t.get("fields", [])
+                seen_cols: set[str] = set()
                 for f in raw_fields:
                     raw_name = (f.get("alias") or f.get("name") or "").strip()
                     if not raw_name or raw_name == "*":
@@ -844,6 +855,10 @@ class _Publisher:
                     plain = _strip_qlik_qualifier(raw_name)
                     if not plain or plain == "*":
                         continue
+                    key = plain.lower()
+                    if key in seen_cols:
+                        continue
+                    seen_cols.add(key)
                     # FIX A: always string for file sources
                     bim_type = "string" if is_file else _tabular_type(f.get("type", "string"))
                     columns.append({
@@ -979,11 +994,16 @@ class _Publisher:
 
         # ── Build column name lookup for validation ────────────────────────────
         columns_by_table: Dict[str, set] = {}
+        sanitized_columns_by_table: Dict[str, Dict[str, str]] = {}
         for tbl in tmd_tables:
             tbl_name = tbl.get("name", "")
             if tbl_name:
                 col_names = {c.get("name", "") for c in tbl.get("columns", []) if c.get("name")}
                 columns_by_table[tbl_name] = col_names
+                sanitized_columns_by_table[tbl_name] = {
+                    _sanitize_bim_name(col_name): col_name
+                    for col_name in col_names
+                }
                 logger.debug(
                     "[BIM] Table '%s' has columns: %s",
                     tbl_name, sorted(col_names)
@@ -997,8 +1017,6 @@ class _Publisher:
             if r.get("is_active") is False:
                 continue
             cardinality = r.get("cardinality") or r.get("fromCardinality", "")
-            if cardinality == "manyToMany":
-                continue
             ft = r.get("fromTable") or r.get("from_table", "")
             fc = r.get("fromColumn") or r.get("from_column", "")
             tt = r.get("toTable")   or r.get("to_table", "")
@@ -1009,9 +1027,14 @@ class _Publisher:
                 # ✅ FIX: Validate columns exist in both tables before creating relationship
                 from_cols = columns_by_table.get(ft, set())
                 to_cols = columns_by_table.get(tt, set())
+                from_sanitized = sanitized_columns_by_table.get(ft, {})
+                to_sanitized = sanitized_columns_by_table.get(tt, {})
+
+                actual_fc = fc if fc in from_cols else from_sanitized.get(_sanitize_bim_name(fc), "")
+                actual_tc = tc if tc in to_cols else to_sanitized.get(_sanitize_bim_name(tc), "")
                 
-                from_col_exists = fc in from_cols
-                to_col_exists = tc in to_cols
+                from_col_exists = bool(actual_fc)
+                to_col_exists = bool(actual_tc)
                 
                 if not from_col_exists:
                     logger.warning(
@@ -1030,9 +1053,22 @@ class _Publisher:
                     )
                     skipped_rels += 1
                     continue
+                fc = actual_fc
+                tc = actual_tc
                 
                 cf = r.get("crossFilteringBehavior") or r.get("cross_filter_direction", "")
                 cf_bim = "bothDirections" if cf in ("Both", "bothDirections", "both") else "oneDirection"
+                cardinality_norm = str(cardinality or "ManyToOne")
+                if cardinality_norm == "OneToMany":
+                    from_cardinality, to_cardinality = "one", "many"
+                elif cardinality_norm == "OneToOne":
+                    from_cardinality, to_cardinality = "one", "one"
+                    cf_bim = "bothDirections"
+                elif cardinality_norm in ("ManyToMany", "manyToMany"):
+                    from_cardinality, to_cardinality = "many", "many"
+                    cf_bim = "bothDirections"
+                else:
+                    from_cardinality, to_cardinality = "many", "one"
                 tmd_rels.append({
                     "name":                  f"{ft}_{fc}_{tt}_{tc}",
                     "fromTable":             ft,
@@ -1040,6 +1076,8 @@ class _Publisher:
                     "toTable":               tt,
                     "toColumn":              tc,
                     "crossFilteringBehavior": cf_bim,
+                    "fromCardinality":       from_cardinality,
+                    "toCardinality":         to_cardinality,
                 })
         
         if skipped_rels:
@@ -1152,6 +1190,11 @@ class _Publisher:
                 if resp.status_code == 202:
                     op_url    = resp.headers.get("Location")
                     polled_id = self._poll(op_url, headers) if op_url else ""
+                    if polled_id == "FAILED":
+                        return {
+                            "success": False,
+                            "error": "Fabric semantic model import failed during polling. Check backend logs for the Analysis Services error.",
+                        }
                     if polled_id == "SUCCEEDED_NO_ID":
                         dataset_id = ""
                     else:
@@ -1236,11 +1279,11 @@ class _Publisher:
                         return "SUCCEEDED_NO_ID"
                     if status in ("Failed", "Cancelled"):
                         logger.warning("[Fabric API] Op %s: %s", status, body)
-                        return ""
+                        return "FAILED"
             except Exception as ex:
                 logger.warning("[Fabric API] Poll error: %s", ex)
         logger.warning("[Fabric API] Polling timed out after %ds", max_wait)
-        return ""
+        return "FAILED"
 
     def _find_dataset_id(self, dataset_name: str, headers: Dict) -> str:
         try:

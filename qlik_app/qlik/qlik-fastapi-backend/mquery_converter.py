@@ -93,6 +93,7 @@ _DEFAULT_M_TYPE_FOR_TABLE = "text"
 _NAME_TO_M_TYPE: List[tuple] = [
     (re.compile(r"_date$|^date$|_dt$|_timestamp$", re.I),                       "type date"),
     (re.compile(r"_datetime$|_created_at$|_updated_at$|_modified_at$", re.I),   "type datetime"),
+    (re.compile(r"^hours_|_hours$|^hrs_|_hrs$|hoursworked|^avghours$|^totalhours$|^avghrs$|^totalhrs$", re.I), "type number"),
     (re.compile(r"_cost$|_fee$|_bill$|_price$|_rate$|_salary$", re.I),         "type number"),
     (re.compile(r"_covered$|_expense$|_revenue$|_income$|_tax$|_discount$", re.I), "type number"),
     (re.compile(r"_amount$", re.I),                                             "type number"),
@@ -259,6 +260,16 @@ def _field_output_name(field: Dict[str, Any]) -> str:
     if re.match(r'^\[.*\]$', name):
         name = name[1:-1]
     return _strip_qlik_qualifier(name)
+
+
+def _normalize_passthrough_reference(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1].strip()
+    text = re.sub(r'^DISTINCT\s+', '', text, flags=re.IGNORECASE)
+    return _strip_qlik_qualifier(text)
 
 
 def _build_replace_existing_column_steps(
@@ -704,7 +715,10 @@ class MQueryConverter:
             qlik_cols = opts.get("qlik_columns", [])
 
         if qlik_cols:
-            output_cols = [{"name": c, "dataType": "string"} for c in qlik_cols]
+            output_cols = [
+                {"name": c, "dataType": _m_type_to_bim_datatype(_m_type("string", c))}
+                for c in qlik_cols
+            ]
             logger.info(
                 "[resolve_output_columns] Table '%s': Resolved %d columns from qlik_fields_map: %s",
                 table_name, len(output_cols), qlik_cols
@@ -1161,7 +1175,7 @@ class MQueryConverter:
             cols = table_def.get("options", {}).get("qlik_columns", [])
 
         if cols:
-            pairs = ",\n        ".join(f'{{"{c}", type text}}' for c in cols)
+            pairs = ",\n        ".join(f'{{"{c}", {_m_type("string", c)}}}' for c in cols)
             transform = (
                 f",\n"
                 f"    TypedTable = Table.TransformColumnTypes(\n"
@@ -1214,6 +1228,15 @@ class MQueryConverter:
 
     def _apply_types_as_is(self, fields: List[Dict], previous_step: str):
         pairs = []
+        seen_cols = set()
+
+        def _add_pair(col_name: str, m_type: str):
+            key = (col_name or "").strip().lower()
+            if not key or key in seen_cols:
+                return
+            seen_cols.add(key)
+            pairs.append(f'{{"{col_name}", {m_type}}}')
+
         for f in fields:
             expr = f.get("expression", "")
             if not expr or expr == "*":
@@ -1230,7 +1253,17 @@ class MQueryConverter:
                 continue
             qlik_type = f.get("type", "string")
             m_type = _m_type(qlik_type, col_name)
-            pairs.append(f'{{"{col_name}", {m_type}}}')
+            _add_pair(col_name, m_type)
+
+        for f in fields:
+            expr = (f.get("expression", "") or "").strip()
+            if not expr or expr == "*":
+                continue
+            for ref in _extract_expression_column_references(expr):
+                ref_m_type = _infer_type_from_name(ref)
+                if ref_m_type != "type text":
+                    _add_pair(ref, ref_m_type)
+
         if not pairs:
             return "", previous_step
         pairs_str = ",\n        ".join(pairs)
@@ -1261,6 +1294,15 @@ class MQueryConverter:
             return "", previous_step
         
         pairs = []
+        seen_cols = set()
+
+        def _add_pair(col_name: str, m_type: str):
+            key = (col_name or "").strip().lower()
+            if not key or key in seen_cols:
+                return
+            seen_cols.add(key)
+            pairs.append(f'{{"{col_name}", {m_type}}}')
+
         for f in typed:
             expr = f.get("expression", "") or f.get("name", "")
             alias = f.get("alias", f.get("name", ""))
@@ -1268,7 +1310,7 @@ class MQueryConverter:
             if is_null_pattern:
                 col_name = _strip_qlik_qualifier(alias)
                 m_type = _m_type(f.get("type", "number"), col_name)
-                pairs.append(f'{{"{col_name}", {m_type}}}')
+                _add_pair(col_name, m_type)
                 continue
             if (
                 "(" in expr
@@ -1280,7 +1322,17 @@ class MQueryConverter:
             raw_name = f.get("alias") or f["name"]
             col_name = _strip_qlik_qualifier(raw_name)
             m_type = _m_type(f.get("type", "string"), raw_name)
-            pairs.append(f'{{"{col_name}", {m_type}}}')
+            _add_pair(col_name, m_type)
+
+        for f in typed:
+            expr = (f.get("expression", "") or f.get("name", "") or "").strip()
+            if not expr or expr == "*":
+                continue
+            for ref in _extract_expression_column_references(expr):
+                ref_m_type = _infer_type_from_name(ref)
+                if ref_m_type != "type text":
+                    _add_pair(ref, ref_m_type)
+
         if not pairs:
             return "", previous_step
         pairs_str = ",\n        ".join(pairs)
@@ -1470,7 +1522,7 @@ class MQueryConverter:
             current_step = "#\"Filtered Rows\""
         for idx, f in enumerate(if_fields):
             expr = f.get("expression", "")
-            alias = f.get("alias", f["name"])
+            alias = _strip_qlik_qualifier(f.get("alias", f["name"]))
             field_type = f.get("type", "string")
             converted_if = _convert_if_expression_to_m(expr)
             if converted_if:
@@ -1969,11 +2021,15 @@ class MQueryConverter:
 
         for f in fields:
             name = f.get("name", "")
-            alias = (f.get("alias") or name).strip()
+            alias = _strip_qlik_qualifier((f.get("alias") or name).strip())
             expr = f.get("expression", "").strip()
+            normalized_name = _normalize_passthrough_reference(name)
+            normalized_expr = _normalize_passthrough_reference(expr)
 
             # Skip: no expression, passthrough, wildcard
             if not expr or expr == name or expr == "*" or not alias:
+                continue
+            if normalized_expr and normalized_expr in {normalized_name, alias}:
                 continue
 
             expr_upper = expr.upper()
@@ -2014,13 +2070,13 @@ class MQueryConverter:
 
             safe_alias = _escape_m_string(alias)
             referenced_columns = {
-                ref.strip().lower()
+                _strip_qlik_qualifier(ref).strip().lower()
                 for ref in _extract_expression_column_references(expr)
                 if ref.strip()
             }
             if (
-                alias.lower() == name.lower()
-                and name.lower() in referenced_columns
+                alias.lower() == normalized_name.lower()
+                and normalized_name.lower() in referenced_columns
                 and _current_step_exposes_column(current_step, current_available_columns, alias)
             ):
                 replacement_steps, replacement_final = _build_replace_existing_column_steps(
@@ -2747,7 +2803,10 @@ class MQueryConverter:
             # No explicit columns in transforms — resolve from qlik_fields_map or parser metadata
             resolved_cols = self.resolve_output_columns(table)
             if resolved_cols:
-                col_list = ", ".join([f'{{"{c["name"]}", type text}}' for c in resolved_cols])
+                col_list = ", ".join([
+                    f'{{"{c["name"]}", {_bim_datatype_to_m_type(c.get("dataType", "string"), c["name"])}}}'
+                    for c in resolved_cols
+                ])
                 schema_step = (
                     f",\n    TypedTable = Table.TransformColumnTypes(\n"
                     f"        {final},\n"
@@ -2811,7 +2870,10 @@ class MQueryConverter:
             # No explicit columns in transforms — resolve from qlik_fields_map or parser metadata
             resolved_cols = self.resolve_output_columns(table)
             if resolved_cols:
-                col_list = ", ".join([f'{{"{c["name"]}", type text}}' for c in resolved_cols])
+                col_list = ", ".join([
+                    f'{{"{c["name"]}", {_bim_datatype_to_m_type(c.get("dataType", "string"), c["name"])}}}'
+                    for c in resolved_cols
+                ])
                 schema_step = (
                     f",\n    TypedTable = Table.TransformColumnTypes(\n"
                     f"        {final},\n"
@@ -2900,6 +2962,19 @@ def _m_type_to_bim_datatype(m_type: str) -> str:
         "type any":      "string",
     }
     return mapping.get(m_type, "string")
+
+
+def _bim_datatype_to_m_type(data_type: str, col_name: str = "") -> str:
+    mapping = {
+        "string": "type text",
+        "double": "type number",
+        "int64": "Int64.Type",
+        "dateTime": "type datetime",
+        "boolean": "type logical",
+    }
+    if data_type in mapping:
+        return mapping[data_type]
+    return _infer_type_from_name(col_name)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

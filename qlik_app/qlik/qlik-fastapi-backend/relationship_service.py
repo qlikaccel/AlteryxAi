@@ -230,6 +230,23 @@ def _is_identifier_like(canonical_field: str) -> bool:
     )
 
 
+def _is_measure_like(canonical_field: str) -> bool:
+    if not canonical_field:
+        return False
+    tokens = (
+        "amount", "price", "cost", "revenue", "income", "expense", "tax",
+        "discount", "fee", "salary", "score", "total", "avg", "average",
+        "date", "time", "timestamp", "year", "month", "day", "qty", "quantity"
+    )
+    return any(token in canonical_field for token in tokens)
+
+
+def _is_safe_non_identifier_join_field(canonical_field: str) -> bool:
+    if not canonical_field or _is_identifier_like(canonical_field) or _is_measure_like(canonical_field):
+        return False
+    return True
+
+
 def _source_priority(source: str) -> int:
     priorities = {
         "direct": 0,
@@ -503,7 +520,13 @@ def _infer_relationships_any_field_match_fallback(tables_m: List[Dict[str, Any]]
             candidates = specific_shared if specific_shared else shared_fields
 
             identifier_candidates = [f for f in candidates if _is_identifier_like(f)]
-            best_field = identifier_candidates[0] if identifier_candidates else candidates[0]
+            safe_non_identifier_candidates = [f for f in candidates if _is_safe_non_identifier_join_field(f)]
+            if identifier_candidates:
+                best_field = identifier_candidates[0]
+            elif safe_non_identifier_candidates:
+                best_field = safe_non_identifier_candidates[0]
+            else:
+                continue
 
             seen_pairs.add(pair_key)
 

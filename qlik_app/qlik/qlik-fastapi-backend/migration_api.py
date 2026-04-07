@@ -19,6 +19,7 @@ CHANGES FROM ORIGINAL
 import logging
 import os
 import re
+from collections import Counter
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Form, HTTPException, Query
@@ -740,6 +741,175 @@ def _build_qlik_fields_map(app_id: str) -> Dict[str, List[str]]:
         return {}
 
 
+def _strip_qlik_qualifier(value: str) -> str:
+    text = str(value or "").strip().strip("[]")
+    if not text:
+        return ""
+    if "." in text and "-" not in text:
+        text = text.split(".", 1)[-1]
+    return text
+
+
+def _normalize_tables_m_fields(
+    tables_m: List[Dict[str, Any]],
+    qlik_fields_map: Dict[str, List[str]],
+) -> List[Dict[str, Any]]:
+    normalized_tables: List[Dict[str, Any]] = []
+
+    for table in tables_m:
+        table_copy = dict(table)
+        table_name = str(table_copy.get("name", "") or "")
+        existing_fields = table_copy.get("fields") or []
+        map_fields = qlik_fields_map.get(table_name, []) or next(
+            (v for k, v in qlik_fields_map.items() if k.lower() == table_name.lower()),
+            [],
+        )
+        canonical_by_lower = {str(col).strip().lower(): str(col).strip() for col in map_fields if str(col).strip()}
+
+        normalized_fields: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+
+        for field in existing_fields:
+            if not isinstance(field, dict):
+                continue
+            raw_name = str(field.get("name") or "").strip()
+            raw_alias = str(field.get("alias") or raw_name).strip()
+            raw_expr = str(field.get("expression") or raw_name).strip()
+
+            plain_name = _strip_qlik_qualifier(raw_name)
+            plain_alias = _strip_qlik_qualifier(raw_alias)
+            plain_expr = _strip_qlik_qualifier(raw_expr)
+            canonical_name = canonical_by_lower.get(plain_alias.lower()) or canonical_by_lower.get(plain_name.lower()) or plain_alias or plain_name
+
+            if not canonical_name or canonical_name == "*":
+                continue
+
+            normalized_field = dict(field)
+            normalized_field["name"] = canonical_name
+            normalized_field["alias"] = canonical_name
+
+            expr_is_passthrough = plain_expr.lower() in {
+                raw_name.lower().strip("[]"),
+                raw_alias.lower().strip("[]"),
+                plain_name.lower(),
+                plain_alias.lower(),
+                canonical_name.lower(),
+            }
+            if expr_is_passthrough:
+                normalized_field["expression"] = canonical_name
+
+            key = canonical_name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized_fields.append(normalized_field)
+
+        for map_field in map_fields:
+            canonical_name = str(map_field).strip()
+            if not canonical_name:
+                continue
+            key = canonical_name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized_fields.append({
+                "name": canonical_name,
+                "alias": canonical_name,
+                "expression": canonical_name,
+                "type": "string",
+                "extracted_from": "qlik_fields_map",
+            })
+
+        table_copy["fields"] = normalized_fields
+        normalized_tables.append(table_copy)
+
+    return normalized_tables
+
+
+def _fetch_table_rows_for_cardinality(app_id: str, table_name: str, limit: int = 5000) -> List[Dict[str, Any]]:
+    if not app_id or not table_name:
+        return []
+    try:
+        from qlik_websocket_client import QlikWebSocketClient
+
+        client = QlikWebSocketClient()
+        result = client.get_table_data(app_id, table_name, limit=limit)
+        rows = result.get("rows", []) if isinstance(result, dict) else []
+        return rows if isinstance(rows, list) else []
+    except Exception as exc:
+        logger.warning("[_fetch_table_rows_for_cardinality] Failed for %s.%s: %s", app_id, table_name, exc)
+        return []
+
+
+def _column_is_unique(rows: List[Dict[str, Any]], column_name: str) -> Optional[bool]:
+    if not rows or not column_name:
+        return None
+
+    values = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if column_name not in row:
+            continue
+        value = row.get(column_name)
+        if value in (None, "", "-"):
+            continue
+        values.append(str(value))
+
+    if not values:
+        return None
+    counts = Counter(values)
+    return max(counts.values(), default=0) <= 1
+
+
+def _apply_row_aware_cardinality(
+    relationships: List[Dict[str, Any]],
+    app_id: str,
+) -> List[Dict[str, Any]]:
+    if not relationships or not app_id:
+        return relationships
+
+    table_rows_cache: Dict[str, List[Dict[str, Any]]] = {}
+    adjusted: List[Dict[str, Any]] = []
+
+    for rel in relationships:
+        rel_out = dict(rel)
+        from_table = str(rel_out.get("fromTable", "") or "")
+        to_table = str(rel_out.get("toTable", "") or "")
+        from_col = str(rel_out.get("fromColumn", "") or "")
+        to_col = str(rel_out.get("toColumn", "") or "")
+
+        if not all([from_table, to_table, from_col, to_col]):
+            adjusted.append(rel_out)
+            continue
+
+        if from_table not in table_rows_cache:
+            table_rows_cache[from_table] = _fetch_table_rows_for_cardinality(app_id, from_table)
+        if to_table not in table_rows_cache:
+            table_rows_cache[to_table] = _fetch_table_rows_for_cardinality(app_id, to_table)
+
+        from_unique = _column_is_unique(table_rows_cache[from_table], from_col)
+        to_unique = _column_is_unique(table_rows_cache[to_table], to_col)
+
+        if from_unique is True and to_unique is False:
+            rel_out["fromTable"] = to_table
+            rel_out["fromColumn"] = to_col
+            rel_out["toTable"] = from_table
+            rel_out["toColumn"] = from_col
+            rel_out["cardinality"] = "ManyToOne"
+        elif from_unique is False and to_unique is True:
+            rel_out["cardinality"] = "ManyToOne"
+        elif from_unique is True and to_unique is True:
+            rel_out["cardinality"] = "OneToOne"
+        elif from_unique is False and to_unique is False:
+            rel_out["cardinality"] = "ManyToMany"
+            rel_out["crossFilteringBehavior"] = "Both"
+
+        adjusted.append(rel_out)
+
+    return adjusted
+
+
 # ===========================================================================
 # PUBLISH M QUERY -> POWER BI
 # ===========================================================================
@@ -977,9 +1147,12 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
                     added_count,
                 )
 
+    tables_m = _normalize_tables_m_fields(tables_m, qlik_fields_map)
+
     try:
         col_name_map_by_table = build_col_name_map_for_tables_m(tables_m)
         relationships = resolve_relationships_unified(tables_m, col_name_map_by_table)
+        relationships = _apply_row_aware_cardinality(relationships, request.app_id)
         logger.info(
             "[publish_mquery] Unified inferred %d relationship(s) from %d tables "
             "(fields populated: %d)",

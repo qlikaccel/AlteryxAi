@@ -1,6 +1,7 @@
 from loadscript_parser import LoadScriptParser
 from mquery_converter import MQueryConverter
 from relationship_service import resolve_relationships_unified
+from powerbi_publisher import _Publisher
 
 
 def test_dates_derived_columns_generate_valid_m():
@@ -67,10 +68,195 @@ def test_resident_arithmetic_column_added_before_typing():
 
     m_expression = converter.convert_one(table, base_path="https://example.sharepoint.com")
 
+    assert '{"hours_worked", type number}' in m_expression
     assert '"productivity_score",\n        each [hours_worked] * 10' in m_expression
-    assert 'Table.TransformColumnTypes(\n        Activity' not in m_expression
     assert 'Removed original productivity_score' not in m_expression
     assert 'Replaced productivity_score' not in m_expression
+
+
+def test_resident_groupby_types_numeric_source_columns_before_aggregation():
+    script = r'''
+Final_Activity:
+LOAD employee_id, activity_id, hours_worked
+FROM [lib://DataFiles/fact.csv]
+(txt, utf8, embedded labels, delimiter is ',');
+
+Employee_Summary:
+LOAD employee_id,
+     Sum(hours_worked) as total_hours,
+     Count(activity_id) as total_days,
+     Avg(hours_worked) as avg_hours
+RESIDENT Final_Activity
+GROUP BY employee_id;
+'''
+
+    parser = LoadScriptParser(script)
+    parsed = parser.parse(
+        qlik_fields_map={
+            "Final_Activity": ["employee_id", "activity_id", "hours_worked"],
+            "Employee_Summary": ["employee_id", "total_hours", "total_days", "avg_hours"],
+        }
+    )
+    table = next(table for table in parsed["details"]["tables"] if table["name"] == "Employee_Summary")
+
+    converter = MQueryConverter()
+    m_expression = converter.convert_one(
+        table,
+        base_path="https://example.sharepoint.com",
+        all_tables_list=parsed["details"]["tables"],
+        qlik_fields_map={
+            "Final_Activity": ["employee_id", "activity_id", "hours_worked"],
+            "Employee_Summary": ["employee_id", "total_hours", "total_days", "avg_hours"],
+        },
+    )
+
+    assert '{"hours_worked", type number}' in m_expression
+    assert m_expression.index('{"hours_worked", type number}') < m_expression.index('List.Sum([hours_worked])')
+
+
+def test_csv_if_conditions_type_numeric_source_columns_before_derived_fields():
+    converter = MQueryConverter()
+    table = {
+        "name": "Final_Activity",
+        "source_type": "csv",
+        "source_path": "fact.csv",
+        "fields": [
+            {"name": "*", "alias": "*", "expression": "*", "type": "wildcard"},
+            {"name": "hours_worked", "alias": "work_type", "expression": "If(hours_worked > 8, 'Overtime', 'Normal')", "type": "string"},
+            {"name": "hours_worked", "alias": "productivity_flag", "expression": "If(hours_worked >= 8, 1, 0)", "type": "number"},
+            {"name": "hours_worked", "alias": "productivity_score", "expression": "hours_worked * 10", "type": "number"},
+        ],
+        "options": {},
+    }
+
+    m_expression = converter.convert_one(table, base_path="https://example.sharepoint.com")
+
+    assert '{"hours_worked", type number}' in m_expression
+    assert m_expression.index('{"hours_worked", type number}') < m_expression.index('"work_type"')
+    assert m_expression.index('{"hours_worked", type number}') < m_expression.index('"productivity_score"')
+
+
+def test_qualified_passthrough_aliases_do_not_generate_dotted_columns_or_fake_derived_steps():
+    converter = MQueryConverter()
+    table = {
+        "name": "Model_Master",
+        "source_type": "csv",
+        "source_path": "model_master.csv",
+        "fields": [
+            {"name": "ModelID", "alias": "Model_Master.ModelID", "expression": "ModelID", "type": "string"},
+            {"name": "ModelName", "alias": "ModelName", "expression": "[ModelName]", "type": "string"},
+        ],
+        "options": {},
+    }
+
+    m_expression = converter.convert_one(table, base_path="https://example.sharepoint.com")
+
+    assert '{"ModelID", type text}' in m_expression
+    assert 'Model_Master.ModelID' not in m_expression
+    assert 'ModelName__derived' not in m_expression
+    assert 'Removed original ModelName' not in m_expression
+
+
+def test_bim_one_to_one_relationship_uses_both_directions():
+    publisher = _Publisher(workspace_id="workspace", access_token="token")
+    tables_m = [
+        {
+            "name": "Vehicle_Fact_MASTER",
+            "source_type": "csv",
+            "m_expression": "let Source = #table(type table [VIN = text], {}) in Source",
+            "fields": [{"name": "VIN", "alias": "VIN", "type": "string"}],
+        },
+        {
+            "name": "VIN_Details",
+            "source_type": "csv",
+            "m_expression": "let Source = #table(type table [VIN = text], {}) in Source",
+            "fields": [{"name": "VIN", "alias": "VIN", "type": "string"}],
+        },
+    ]
+    relationships = [
+        {
+            "fromTable": "Vehicle_Fact_MASTER",
+            "fromColumn": "VIN",
+            "toTable": "VIN_Details",
+            "toColumn": "VIN",
+            "cardinality": "OneToOne",
+            "crossFilteringBehavior": "Single",
+        }
+    ]
+
+    bim_json = publisher._build_bim("Demo", tables_m, relationships, "")
+
+    assert '"fromCardinality": "one"' in bim_json
+    assert '"toCardinality": "one"' in bim_json
+    assert '"crossFilteringBehavior": "bothDirections"' in bim_json
+
+
+def test_bim_relationship_maps_sanitized_keys_back_to_hyphenated_columns():
+    publisher = _Publisher(workspace_id="workspace", access_token="token")
+    tables_m = [
+        {
+            "name": "Dealer_Master",
+            "source_type": "csv",
+            "m_expression": 'let Source = #table(type table [#"DealerID-ServiceID" = text], {}) in Source',
+            "fields": [{"name": "DealerID-ServiceID", "alias": "DealerID-ServiceID", "type": "string"}],
+        },
+        {
+            "name": "Service_History",
+            "source_type": "csv",
+            "m_expression": 'let Source = #table(type table [#"DealerID-ServiceID" = text], {}) in Source',
+            "fields": [{"name": "DealerID-ServiceID", "alias": "DealerID-ServiceID", "type": "string"}],
+        },
+    ]
+    relationships = [
+        {
+            "fromTable": "Service_History",
+            "fromColumn": "DealerID_ServiceID",
+            "toTable": "Dealer_Master",
+            "toColumn": "DealerID_ServiceID",
+            "cardinality": "ManyToOne",
+            "crossFilteringBehavior": "Single",
+        }
+    ]
+
+    bim_json = publisher._build_bim("Demo", tables_m, relationships, "")
+
+    assert '"name": "Service_History_DealerID-ServiceID_Dealer_Master_DealerID-ServiceID"' in bim_json
+    assert '"fromColumn": "DealerID-ServiceID"' in bim_json
+    assert '"toColumn": "DealerID-ServiceID"' in bim_json
+
+
+def test_relationship_fallback_avoids_measure_fields_like_service_cost():
+    tables_m = [
+        {
+            "name": "Vehicle_Fact_MASTER",
+            "fields": [
+                {"name": "VIN", "alias": "VIN"},
+                {"name": "ServiceDate", "alias": "ServiceDate"},
+                {"name": "ServiceType", "alias": "ServiceType"},
+                {"name": "ServiceCost", "alias": "ServiceCost"},
+            ],
+        },
+        {
+            "name": "Service_History",
+            "fields": [
+                {"name": "VehicleID", "alias": "VehicleID"},
+                {"name": "ServiceDate", "alias": "ServiceDate"},
+                {"name": "ServiceType", "alias": "ServiceType"},
+                {"name": "ServiceCost", "alias": "ServiceCost"},
+            ],
+        },
+    ]
+
+    relationships = resolve_relationships_unified(tables_m)
+
+    rel = next(
+        (r for r in relationships if {r["fromTable"], r["toTable"]} == {"Vehicle_Fact_MASTER", "Service_History"}),
+        None,
+    )
+
+    assert rel is not None
+    assert "ServiceCost" not in {rel["fromColumn"], rel["toColumn"]}
+    assert "ServiceDate" not in {rel["fromColumn"], rel["toColumn"]}
 
 
 def test_resident_groupby_keeps_expression_source_columns():
@@ -113,6 +299,56 @@ GROUP BY employee_id;
     assert '{"employee_id", "hours_worked", "activity_id"}' in m_expression
     assert 'List.Sum([hours_worked])' in m_expression
     assert 'List.Count([activity_id])' in m_expression
+
+
+def test_explicit_schema_step_infers_numeric_hour_columns_from_qlik_fields_map():
+    converter = MQueryConverter()
+    converter.all_tables_list = {
+        "Employee_Summary": {
+            "options": {
+                "qlik_columns": ["employee_id", "total_hours", "avg_hours", "total_days"]
+            }
+        }
+    }
+    converter.qlik_fields_map = {
+        "Employee_Summary": ["employee_id", "total_hours", "avg_hours", "total_days"]
+    }
+
+    schema_step, final_step = converter._build_explicit_schema_step("Employee_Summary", "Headers")
+
+    assert '{"employee_id", type text}' in schema_step
+    assert '{"total_hours", type number}' in schema_step
+    assert '{"avg_hours", type number}' in schema_step
+    assert '{"total_days", Int64.Type}' in schema_step
+    assert final_step == "TypedTable"
+
+
+def test_resident_schema_injection_preserves_numeric_types_for_hour_fields():
+    converter = MQueryConverter()
+    table = {
+        "name": "Employee_Summary",
+        "source_type": "resident",
+        "source_path": "Final_Activity",
+        "fields": [
+            {"name": "*", "alias": "*", "expression": "*", "type": "wildcard"},
+        ],
+        "options": {
+            "qlik_columns": ["employee_id", "total_hours", "avg_hours", "total_days"]
+        },
+    }
+
+    m_expression = converter.convert_one(
+        table,
+        base_path="https://example.sharepoint.com",
+        all_tables_list=[table],
+        qlik_fields_map={
+            "Employee_Summary": ["employee_id", "total_hours", "avg_hours", "total_days"]
+        },
+    )
+
+    assert '{"total_hours", type number}' in m_expression
+    assert '{"avg_hours", type number}' in m_expression
+    assert '{"total_days", Int64.Type}' in m_expression
 
 
 def test_alias_preserving_transform_is_emitted():
