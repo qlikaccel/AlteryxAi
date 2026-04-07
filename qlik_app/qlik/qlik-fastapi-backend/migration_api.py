@@ -1130,6 +1130,38 @@ def _to_m_text_literal(value: Any) -> str:
     )
 
 
+def _build_inline_text_m_expression(headers: List[str], rows: List[Dict[str, Any]]) -> str:
+    type_pairs = ", ".join('{{"{}", type text}}'.format(h) for h in headers)
+
+    if rows:
+        record_rows = []
+        for row in rows:
+            pairs = ", ".join(
+                '{} = "{}"'.format(h, _to_m_text_literal(row.get(h, "")))
+                for h in headers
+            )
+            record_rows.append(f"        [{pairs}]")
+        record_rows_str = ",\n".join(record_rows)
+        return (
+            f"let\n"
+            f"    Source = Table.FromRecords({{\n"
+            f"{record_rows_str}\n"
+            f"    }}),\n"
+            f"    TypedTable = Table.TransformColumnTypes(Source, {{{type_pairs}}})\n"
+            f"in\n"
+            f"    TypedTable"
+        )
+
+    header_list = ", ".join(f'"{h}"' for h in headers)
+    return (
+        f"let\n"
+        f"    Source = Table.FromRows({{}}, {{{header_list}}}),\n"
+        f"    TypedTable = Table.TransformColumnTypes(Source, {{{type_pairs}}})\n"
+        f"in\n"
+        f"    TypedTable"
+    )
+
+
 class PublishTablesRequest(_BaseModel):
     dataset_name: str  = "Qlik_Migrated_Dataset"
     tables:       list = []
@@ -1140,7 +1172,7 @@ class PublishTablesRequest(_BaseModel):
 async def publish_tables_endpoint(request: PublishTablesRequest):
     logger.info("[publish_tables] Received %d tables", len(request.tables))
 
-    from powerbi_publisher import publish_semantic_model, _infer_type_from_name
+    from powerbi_publisher import publish_semantic_model
 
     workspace_id = os.getenv("POWERBI_WORKSPACE_ID", "")
     if not workspace_id:
@@ -1171,37 +1203,11 @@ async def publish_tables_endpoint(request: PublishTablesRequest):
             logger.info("[publish_tables] Table '%s': capping %d rows to %d", name, total_rows, MAX_INLINE_ROWS)
             normalized_rows = normalized_rows[:MAX_INLINE_ROWS]
 
-        fields = [{"name": h, "type": _infer_type_from_name(h)} for h in safe_headers]
-
-        if normalized_rows:
-            record_rows = []
-            for row in normalized_rows:
-                pairs = ", ".join(
-                    '{} = "{}"'.format(s, _to_m_text_literal(row.get(s, "")))
-                    for s in safe_headers
-                )
-                record_rows.append(f"        [{pairs}]")
-            record_rows_str = ",\n".join(record_rows)
-
-            m_expr = (
-                f"let\n"
-                f"    Source = Table.FromRecords({{\n"
-                f"{record_rows_str}\n"
-                f"    }})\n"
-                f"in\n"
-                f"    Source"
-            )
-        else:
-            header_list = ", ".join(f'"{h}"' for h in safe_headers)
-            m_expr = (
-                f"let\n"
-                f"    Source = Table.FromRows({{}}, {{{header_list}}})\n"
-                f"in\n"
-                f"    Source"
-            )
+        fields = [{"name": h, "type": "string"} for h in safe_headers]
+        m_expr = _build_inline_text_m_expression(safe_headers, normalized_rows)
 
         tables_m.append({
-            "name": name, "source_type": "inline",
+            "name": name, "source_type": "inline_csv",
             "m_expression": m_expr, "fields": fields,
         })
 

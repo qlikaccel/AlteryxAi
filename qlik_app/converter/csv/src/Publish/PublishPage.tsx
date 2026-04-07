@@ -80,6 +80,19 @@ export default function PublishPage() {
 
   // Selected tables to publish: prefer `state.selectedTables` (in-memory), fallback to lightweight metadata
   const selectedTablesToPublish = state?.selectedTables || (() => {
+    if (Array.isArray(state?.batchTables) && state.batchTables.length > 0) {
+      return state.batchTables.map((table: any) => ({
+        name: table.name || "",
+        data: {
+          name: table.name || "",
+          rows: table.rows || [],
+          columns:
+            table.columns ||
+            (table.rows && table.rows.length > 0 ? Object.keys(table.rows[0]) : []),
+        },
+        actualRowCount: table.rows?.length || 0,
+      }));
+    }
     try {
       const metaJson = sessionStorage.getItem("migration_selected_tables_meta") || sessionStorage.getItem("migration_selected_tables");
       if (!metaJson) return [];
@@ -96,7 +109,9 @@ export default function PublishPage() {
   })();
 
   // Extract single vs multi-select variables from state for info display
-  const isMultiSelect = state?.selectedTables && state?.selectedTables.length > 0;
+  const isMultiSelect =
+    (state?.selectedTables && state.selectedTables.length > 0) ||
+    (state?.batchTables && state.batchTables.length > 0);
   let selectedTable = state?.selectedTable || sessionStorage.getItem("selectedTable");
   let rows = state?.rows || [];
 
@@ -506,73 +521,87 @@ export default function PublishPage() {
         }
 
         setResult({ published_tables: publishedResults });*/
-        if (isSeparateMode && isMultiTableMode && selectedTablesToPublish.length > 0) {
-        // Publish all tables as a single dataset with relationships
+        const hasBatchTables = Array.isArray(state?.batchTables) && state.batchTables.length > 0;
+        if (hasBatchTables || (isMultiTableMode && selectedTablesToPublish.length > 0)) {
         const batchTables: any[] = [];
 
-        for (let i = 0; i < tableCount; i++) {
-          const csvText = state?.csvPayloads?.[`migration_csv_${i}`] || sessionStorage.getItem(`migration_csv_${i}`) || "";
-          const tName = selectedTablesToPublish[i]?.name || `Table_${i + 1}`;
-          const selectedTableRows = selectedTablesToPublish[i]?.data?.rows || [];
-          const selectedTableColumns = selectedTablesToPublish[i]?.data?.columns || [];
+        if (hasBatchTables) {
+          batchTables.push(
+            ...state.batchTables.map((table: any) => ({
+              name: table.name,
+              rows: table.rows || [],
+              columns:
+                table.columns ||
+                (table.rows && table.rows.length > 0 ? Object.keys(table.rows[0]) : []),
+            }))
+          );
+          console.log(`📦 Using batchTables from navigation state: ${batchTables.length} tables`);
+        } else {
+          for (let i = 0; i < tableCount; i++) {
+            const csvText = state?.csvPayloads?.[`migration_csv_${i}`] || sessionStorage.getItem(`migration_csv_${i}`) || "";
+            const tName = selectedTablesToPublish[i]?.name || `Table_${i + 1}`;
+            const selectedTableRows = selectedTablesToPublish[i]?.data?.rows || [];
+            const selectedTableColumns = selectedTablesToPublish[i]?.data?.columns || [];
 
-          // Parse CSV payload when present; otherwise fallback to selected table in-memory payload.
-          let rows: any[] = [];
-          let headers: string[] = [];
+            let rows: any[] = [];
+            let headers: string[] = [];
 
-          if (csvText) {
-            const lines = csvText.trim().split('\n').filter((l: string) => l.trim());
-            if (lines.length > 0) {
-              const parseCSVLine = (line: string): string[] => {
-                const result: string[] = [];
-                let current = '';
-                let inQuotes = false;
-                for (let i = 0; i < line.length; i++) {
-                  const ch = line[i];
-                  if (ch === '"') {
-                    if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-                    else inQuotes = !inQuotes;
-                  } else if (ch === ',' && !inQuotes) {
-                    result.push(current.trim());
-                    current = '';
-                  } else {
-                    current += ch;
-                  }
-                }
-                result.push(current.trim());
-                return result;
-              };
-
-              headers = parseCSVLine(lines[0]);
-              rows = lines.slice(1).map((line: string) => {
-                const vals = parseCSVLine(line);
-                const row: any = {};
-                headers.forEach((h: string, idx: number) => {
-                  row[h] = vals[idx] ?? null;
-                });
-                return row;
-              });
-            }
-          }
-
-          if (!headers.length) {
             if (selectedTableRows.length > 0) {
               headers = Object.keys(selectedTableRows[0] || {});
               rows = selectedTableRows;
+            } else if (csvText) {
+              const lines = csvText.trim().split('\n').filter((line: string) => line.trim());
+              if (lines.length > 0) {
+                const parseCSVLine = (line: string): string[] => {
+                  const result: string[] = [];
+                  let current = "";
+                  let inQuotes = false;
+                  for (let index = 0; index < line.length; index++) {
+                    const ch = line[index];
+                    if (ch === '"') {
+                      if (inQuotes && line[index + 1] === '"') {
+                        current += '"';
+                        index++;
+                      } else {
+                        inQuotes = !inQuotes;
+                      }
+                    } else if (ch === ',' && !inQuotes) {
+                      result.push(current.trim());
+                      current = "";
+                    } else {
+                      current += ch;
+                    }
+                  }
+                  result.push(current.trim());
+                  return result;
+                };
+
+                headers = parseCSVLine(lines[0]);
+                rows = lines.slice(1).map((line: string) => {
+                  const vals = parseCSVLine(line);
+                  const row: any = {};
+                  headers.forEach((header: string, idx: number) => {
+                    row[header] = vals[idx] ?? null;
+                  });
+                  return row;
+                });
+              }
             } else if (selectedTableColumns.length > 0) {
               headers = selectedTableColumns;
-              rows = [];
             }
+
+            if (!headers.length) {
+              console.warn(`⚠️ Skipping table with no headers: ${tName}`);
+              continue;
+            }
+
+            batchTables.push({ name: tName, rows, columns: headers });
+            console.log(`📦 Prepared table ${i + 1}/${tableCount}: ${tName} (${rows.length} rows)`);
           }
-
-          if (!headers.length) continue;
-
-          batchTables.push({ name: tName, rows, columns: headers });
-          console.log(`📦 Prepared table ${i + 1}/${tableCount}: ${tName} (${rows.length} rows)`);
         }
 
         if (batchTables.length === 0) throw new Error("No table data available to publish");
-        console.log(`📤 Publishing ${batchTables.length} tables as single dataset with relationships...`);
+        console.log(`📤 Publishing ${batchTables.length} tables as semantic model with relationships...`);
 
         const batchApiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
         const batchRes = await fetch(`${batchApiBase}/api/migration/publish-tables`, {
@@ -586,7 +615,7 @@ export default function PublishPage() {
         const batchData = await batchRes.json();
         if (!batchRes.ok) throw new Error(batchData?.detail || "Batch publish failed");
 
-        console.log("✅ Batch publish successful:", batchData);
+        console.log("✅ Multi-table semantic publish successful:", batchData);
         try {
           sessionStorage.setItem("last_publish_response", JSON.stringify(batchData, null, 2));
         } catch {}
@@ -595,6 +624,7 @@ export default function PublishPage() {
         setResult({
           published_tables: batchTables.map((t: any) => ({ tableName: t.name, rowCount: t.rows.length, url: batchData.workspace_url })),
           batchResult: batchData,
+          relationshipsApplied: batchData.relationships_applied || [],
         });
       } else {
         // Combined mode or single table - use updated logic (prefer navigation state payloads)

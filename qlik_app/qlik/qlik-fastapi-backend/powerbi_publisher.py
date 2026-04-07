@@ -245,7 +245,7 @@ def _is_file_based_source(source_type: str, expr_str: str) -> bool:
     Power BI reads CSV/SharePoint data as text (VT_BSTR).
     Declaring any other type causes refresh errors like VT_BSTR->VT_DATE.
     """
-    file_source_types = {"csv", "qvd", "excel", "json", "xml", "parquet", "file"}
+    file_source_types = {"csv", "qvd", "excel", "json", "xml", "parquet", "file", "inline_csv"}
     if source_type.lower() in file_source_types:
         return True
     # Also check M expression — resident tables inlined from CSV are file-based
