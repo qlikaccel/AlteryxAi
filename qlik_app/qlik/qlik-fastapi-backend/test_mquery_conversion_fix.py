@@ -1,5 +1,6 @@
 from loadscript_parser import LoadScriptParser
 from mquery_converter import MQueryConverter
+from migration_api import _apply_row_aware_cardinality_from_rows
 from relationship_service import resolve_relationships_unified
 from powerbi_publisher import _Publisher
 
@@ -257,6 +258,39 @@ def test_relationship_fallback_avoids_measure_fields_like_service_cost():
     assert rel is not None
     assert "ServiceCost" not in {rel["fromColumn"], rel["toColumn"]}
     assert "ServiceDate" not in {rel["fromColumn"], rel["toColumn"]}
+
+
+def test_inline_csv_row_aware_cardinality_marks_duplicate_variant_name_as_many_to_many():
+    relationships = [
+        {
+            "fromTable": "Vehicle_Fact_MASTER",
+            "fromColumn": "VariantName",
+            "toTable": "Variant_Master",
+            "toColumn": "VariantName",
+            "cardinality": "ManyToOne",
+            "crossFilteringBehavior": "Single",
+        }
+    ]
+
+    adjusted = _apply_row_aware_cardinality_from_rows(
+        relationships,
+        {
+            "Vehicle_Fact_MASTER": [
+                {"VariantName": "XLT"},
+                {"VariantName": "XLT"},
+                {"VariantName": "Lariat"},
+            ],
+            "Variant_Master": [
+                {"VariantName": "XLT", "VariantID": "2"},
+                {"VariantName": "XLT", "VariantID": "11"},
+                {"VariantName": "Lariat", "VariantID": "3"},
+                {"VariantName": "Lariat", "VariantID": "29"},
+            ],
+        },
+    )
+
+    assert adjusted[0]["cardinality"] == "ManyToMany"
+    assert adjusted[0]["crossFilteringBehavior"] == "Both"
 
 
 def test_resident_groupby_keeps_expression_source_columns():

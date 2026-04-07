@@ -862,14 +862,13 @@ def _column_is_unique(rows: List[Dict[str, Any]], column_name: str) -> Optional[
     return max(counts.values(), default=0) <= 1
 
 
-def _apply_row_aware_cardinality(
+def _apply_row_aware_cardinality_from_rows(
     relationships: List[Dict[str, Any]],
-    app_id: str,
+    table_rows_cache: Dict[str, List[Dict[str, Any]]],
 ) -> List[Dict[str, Any]]:
-    if not relationships or not app_id:
+    if not relationships:
         return relationships
 
-    table_rows_cache: Dict[str, List[Dict[str, Any]]] = {}
     adjusted: List[Dict[str, Any]] = []
 
     for rel in relationships:
@@ -883,13 +882,8 @@ def _apply_row_aware_cardinality(
             adjusted.append(rel_out)
             continue
 
-        if from_table not in table_rows_cache:
-            table_rows_cache[from_table] = _fetch_table_rows_for_cardinality(app_id, from_table)
-        if to_table not in table_rows_cache:
-            table_rows_cache[to_table] = _fetch_table_rows_for_cardinality(app_id, to_table)
-
-        from_unique = _column_is_unique(table_rows_cache[from_table], from_col)
-        to_unique = _column_is_unique(table_rows_cache[to_table], to_col)
+        from_unique = _column_is_unique(table_rows_cache.get(from_table, []), from_col)
+        to_unique = _column_is_unique(table_rows_cache.get(to_table, []), to_col)
 
         if from_unique is True and to_unique is False:
             rel_out["fromTable"] = to_table
@@ -908,6 +902,27 @@ def _apply_row_aware_cardinality(
         adjusted.append(rel_out)
 
     return adjusted
+
+
+def _apply_row_aware_cardinality(
+    relationships: List[Dict[str, Any]],
+    app_id: str,
+) -> List[Dict[str, Any]]:
+    if not relationships or not app_id:
+        return relationships
+
+    table_rows_cache: Dict[str, List[Dict[str, Any]]] = {}
+
+    for rel in relationships:
+        from_table = str(rel.get("fromTable", "") or "")
+        to_table = str(rel.get("toTable", "") or "")
+
+        if from_table and from_table not in table_rows_cache:
+            table_rows_cache[from_table] = _fetch_table_rows_for_cardinality(app_id, from_table)
+        if to_table and to_table not in table_rows_cache:
+            table_rows_cache[to_table] = _fetch_table_rows_for_cardinality(app_id, to_table)
+
+    return _apply_row_aware_cardinality_from_rows(relationships, table_rows_cache)
 
 
 # ===========================================================================
@@ -1353,6 +1368,7 @@ async def publish_tables_endpoint(request: PublishTablesRequest):
 
     tables_m = []
     col_name_map_by_table: Dict[str, Dict[str, str]] = {}
+    normalized_rows_by_table: Dict[str, List[Dict[str, Any]]] = {}
     for t in request.tables:
         name = t.get("name", "Table")
         rows = t.get("rows", [])
@@ -1370,11 +1386,13 @@ async def publish_tables_endpoint(request: PublishTablesRequest):
 
         safe_headers = [table_col_map[h] for h in orig_headers]
         col_name_map_by_table[name] = dict(table_col_map)
+        normalized_rows_by_table[name] = normalized_rows
 
         total_rows = len(normalized_rows)
         if MAX_INLINE_ROWS > 0 and total_rows > MAX_INLINE_ROWS:
             logger.info("[publish_tables] Table '%s': capping %d rows to %d", name, total_rows, MAX_INLINE_ROWS)
             normalized_rows = normalized_rows[:MAX_INLINE_ROWS]
+            normalized_rows_by_table[name] = normalized_rows
 
         fields = [{"name": h, "type": "string"} for h in safe_headers]
         m_expr = _build_inline_text_m_expression(safe_headers, normalized_rows)
@@ -1396,6 +1414,7 @@ async def publish_tables_endpoint(request: PublishTablesRequest):
     relationship_source = "relationship_service_unified"
     try:
         relationships = resolve_relationships_unified(tables_m, col_name_map_by_table)
+        relationships = _apply_row_aware_cardinality_from_rows(relationships, normalized_rows_by_table)
         logger.info("[publish_tables] Unified inferred %d relationship(s)", len(relationships))
     except Exception as e:
         logger.warning("[publish_tables] Unified relationship inference failed: %s", e)
