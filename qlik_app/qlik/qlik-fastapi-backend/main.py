@@ -68,7 +68,7 @@ import numpy as np
 from pydantic import BaseModel
 
 # Project imports
-from login_validation import router as login_router
+from login_validation import LoginPayload, router as login_router, validate_login as validate_login_handler
 from migration_api import router as migration_router
 from mquery_converter import validate_sharepoint_url_strict
 from qlik_websocket_client import QlikWebSocketClient
@@ -85,6 +85,15 @@ from relationship_service import (
     sanitize_rel_columns,
     normalize_table_rows,
     resolve_relationships_unified,
+)
+from brd_generator import (
+    build_brd_prompt,
+    build_default_document,
+    build_download_filename,
+    build_prompt_context,
+    extract_json_object,
+    merge_defaults,
+    render_brd_html,
 )
 
 # Optional: new publisher (from powerbi_dataset_publisher.py)
@@ -1030,6 +1039,301 @@ async def get_app_script(app_id: str, ws_client: QlikWebSocketClient = Depends(g
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get script: {str(e)}")
 
+
+def _normalize_app_record(app: Dict[str, Any]) -> Dict[str, Any]:
+    attributes = app.get("attributes", {}) if isinstance(app, dict) else {}
+    return {
+        "app_id": attributes.get("id") or app.get("id") or app.get("qDocId") or "",
+        "name": attributes.get("name") or app.get("name") or app.get("title") or "Unnamed App",
+        "last_modified": attributes.get("modifiedDate") or attributes.get("lastReloadTime") or app.get("modifiedDate") or app.get("lastReloadTime") or "",
+    }
+
+
+def _build_prefixed_relationship_input(app_name: str, tables: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    relationship_input = []
+    for table in tables:
+        field_defs = []
+        for field in table.get("fields", []) or []:
+            field_name = field.get("name")
+            if not field_name:
+                continue
+            field_defs.append({"name": field_name, "alias": field_name})
+        if field_defs:
+            relationship_input.append({"name": f"{app_name}::{table.get('name', 'Unknown')}", "fields": field_defs})
+    return relationship_input
+
+
+@app.post("/project/brd/download")
+async def download_project_brd(
+    client: QlikClient = Depends(get_qlik_client),
+    ws_client: QlikWebSocketClient = Depends(get_qlik_websocket_client),
+):
+    raw_apps = client.get_applications()
+    normalized_apps = []
+    for raw_app in raw_apps:
+        normalized = _normalize_app_record(raw_app)
+        if normalized["app_id"] and normalized["name"]:
+            normalized_apps.append(normalized)
+
+    if not normalized_apps:
+        raise HTTPException(status_code=404, detail="No applications were available for project BRD generation")
+
+    application_inventory: List[Dict[str, Any]] = []
+    all_tables: List[Dict[str, Any]] = []
+    all_fields: List[Dict[str, Any]] = []
+    all_sheets: List[Dict[str, Any]] = []
+    all_relationships: List[Dict[str, Any]] = []
+    table_samples: List[Dict[str, Any]] = []
+    combined_scripts: List[str] = []
+    failed_apps: List[str] = []
+    total_script_tables = 0
+
+    for app_meta in normalized_apps:
+        app_id = app_meta["app_id"]
+        app_name = app_meta["name"]
+        app_snapshot = ws_client.get_app_tables_simple(app_id)
+        if not app_snapshot.get("success", False):
+            failed_apps.append(app_name)
+            logger.warning("Project BRD skipped app %s: %s", app_name, app_snapshot.get("error", "unknown error"))
+            continue
+
+        tables = app_snapshot.get("tables", []) or []
+        fields = app_snapshot.get("all_fields", []) or []
+        sheets = app_snapshot.get("sheets", []) or []
+        script = app_snapshot.get("script", "") or ""
+        summary = app_snapshot.get("summary", {}) or {}
+
+        for table in tables:
+            prefixed_table = dict(table)
+            prefixed_table["name"] = f"{app_name}::{table.get('name', 'Unknown')}"
+            all_tables.append(prefixed_table)
+
+        all_fields.extend(
+            [{**field, "name": f"{app_name}::{field.get('name', '')}", "app_name": app_name} for field in fields if field.get("name")]
+        )
+        all_sheets.extend(
+            [{**sheet, "name": f"{app_name} / {sheet.get('name', 'Unnamed Sheet')}", "app_name": app_name} for sheet in sheets]
+        )
+
+        prefixed_relationship_input = _build_prefixed_relationship_input(app_name, tables)
+        if prefixed_relationship_input:
+            all_relationships.extend(resolve_relationships_unified(prefixed_relationship_input))
+
+        if script.strip():
+            combined_scripts.append(f"// Application: {app_name}\n{script.strip()}")
+
+        total_script_tables += summary.get("script_table_count", 0)
+        application_inventory.append(
+            {
+                "name": app_name,
+                "app_id": app_id,
+                "table_count": summary.get("table_count", len(tables)),
+                "field_count": summary.get("total_fields", len(fields)),
+                "sheet_count": summary.get("sheet_count", len(sheets)),
+                "has_script": bool(script.strip()),
+                "last_modified": app_meta.get("last_modified", ""),
+            }
+        )
+
+        ranked_tables = sorted(
+            tables,
+            key=lambda item: item.get("no_of_rows") or item.get("row_count") or 0,
+            reverse=True,
+        )
+        for table in ranked_tables[:1]:
+            if len(table_samples) >= 6:
+                break
+            table_name = table.get("name")
+            if not table_name:
+                continue
+            try:
+                sample_result = ws_client.get_table_data(app_id, table_name, limit=5)
+                if sample_result.get("success"):
+                    table_samples.append(
+                        {
+                            "table": f"{app_name}::{table_name}",
+                            "columns": sample_result.get("columns", [])[:8],
+                            "rows": (sample_result.get("rows", []) or [])[:3],
+                        }
+                    )
+            except Exception as sample_exc:
+                logger.warning("Project BRD sample fetch failed for %s/%s: %s", app_name, table_name, sample_exc)
+
+    if not application_inventory:
+        raise HTTPException(status_code=500, detail="Unable to inspect any applications for consolidated BRD generation")
+
+    project_title = "QlikAI End-to-End Project"
+    project_id = "PROJECT_PORTFOLIO"
+    project_summary = {
+        "application_count": len(application_inventory),
+        "failed_app_count": len(failed_apps),
+        "failed_apps": failed_apps,
+        "table_count": len(all_tables),
+        "total_fields": len(all_fields),
+        "sheet_count": len(all_sheets),
+        "has_script": bool(combined_scripts),
+        "script_table_count": total_script_tables,
+    }
+    combined_script_text = "\n\n".join(combined_scripts)
+
+    defaults = build_default_document(
+        app_title=project_title,
+        app_id=project_id,
+        summary=project_summary,
+        tables=all_tables,
+        fields=all_fields,
+        sheets=all_sheets,
+        script=combined_script_text,
+        relationships=all_relationships,
+        table_samples=table_samples,
+        project_scope="project",
+        application_inventory=application_inventory,
+    )
+
+    llm_sections: Dict[str, Any] = {}
+    try:
+        context_json = build_prompt_context(
+            app_title=project_title,
+            app_id=project_id,
+            summary=project_summary,
+            tables=all_tables,
+            fields=all_fields,
+            sheets=all_sheets,
+            script=combined_script_text,
+            relationships=all_relationships,
+            table_samples=table_samples,
+            project_scope="project",
+            application_inventory=application_inventory,
+        )
+        llm_raw = call_hf_model_with_options(
+            build_brd_prompt(context_json, project_scope="project"),
+            system_prompt="You are a senior enterprise business analyst producing structured project-level BRD content from consolidated analytics metadata.",
+            max_tokens=2600,
+            temperature=0.2,
+        )
+        llm_sections = extract_json_object(llm_raw)
+    except Exception as llm_exc:
+        logger.warning("Project BRD LLM generation failed: %s", llm_exc)
+
+    document = merge_defaults(defaults, llm_sections)
+    html_content = render_brd_html(document)
+    filename = build_download_filename(project_title)
+
+    return StreamingResponse(
+        io.BytesIO(html_content.encode("utf-8")),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/applications/{app_id}/brd/download")
+async def download_business_specific_doc(
+    app_id: str,
+    client: QlikClient = Depends(get_qlik_client),
+    ws_client: QlikWebSocketClient = Depends(get_qlik_websocket_client),
+):
+    try:
+        app_details = client.get_application_details(app_id)
+    except Exception:
+        app_details = {}
+
+    app_snapshot = ws_client.get_app_tables_simple(app_id)
+    if not app_snapshot.get("success", False):
+        raise HTTPException(status_code=500, detail=app_snapshot.get("error", "Failed to inspect application"))
+
+    app_title = (
+        app_snapshot.get("app_title")
+        or app_details.get("attributes", {}).get("name")
+        or app_details.get("name")
+        or "Qlik Application"
+    )
+    tables = app_snapshot.get("tables", []) or []
+    fields = app_snapshot.get("all_fields", []) or []
+    sheets = app_snapshot.get("sheets", []) or []
+    script = app_snapshot.get("script", "") or ""
+    summary = app_snapshot.get("summary", {}) or {}
+
+    relationship_input = []
+    for table in tables:
+        field_defs = []
+        for field in table.get("fields", []) or []:
+            field_name = field.get("name")
+            if not field_name:
+                continue
+            field_defs.append({"name": field_name, "alias": field_name})
+        if field_defs:
+            relationship_input.append({"name": table.get("name", "Unknown"), "fields": field_defs})
+
+    relationships = resolve_relationships_unified(relationship_input) if relationship_input else []
+
+    table_samples: List[Dict[str, Any]] = []
+    ranked_tables = sorted(
+        tables,
+        key=lambda item: item.get("no_of_rows") or item.get("row_count") or 0,
+        reverse=True,
+    )
+    for table in ranked_tables[:4]:
+        table_name = table.get("name")
+        if not table_name:
+            continue
+        try:
+            sample_result = ws_client.get_table_data(app_id, table_name, limit=5)
+            if sample_result.get("success"):
+                table_samples.append(
+                    {
+                        "table": table_name,
+                        "columns": sample_result.get("columns", [])[:8],
+                        "rows": (sample_result.get("rows", []) or [])[:3],
+                    }
+                )
+        except Exception as sample_exc:
+            logger.warning("BRD sample fetch failed for %s: %s", table_name, sample_exc)
+
+    defaults = build_default_document(
+        app_title=app_title,
+        app_id=app_id,
+        summary=summary,
+        tables=tables,
+        fields=fields,
+        sheets=sheets,
+        script=script,
+        relationships=relationships,
+        table_samples=table_samples,
+    )
+
+    llm_sections: Dict[str, Any] = {}
+    try:
+        context_json = build_prompt_context(
+            app_title=app_title,
+            app_id=app_id,
+            summary=summary,
+            tables=tables,
+            fields=fields,
+            sheets=sheets,
+            script=script,
+            relationships=relationships,
+            table_samples=table_samples,
+        )
+        llm_raw = call_hf_model_with_options(
+            build_brd_prompt(context_json),
+            system_prompt="You are a senior enterprise business analyst producing structured BRD content from analytics metadata.",
+            max_tokens=2200,
+            temperature=0.2,
+        )
+        llm_sections = extract_json_object(llm_raw)
+    except Exception as llm_exc:
+        logger.warning("BRD LLM generation failed for %s: %s", app_title, llm_exc)
+
+    document = merge_defaults(defaults, llm_sections)
+    html_content = render_brd_html(document)
+    filename = build_download_filename(app_title)
+
+    return StreamingResponse(
+        io.BytesIO(html_content.encode("utf-8")),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 @app.get("/applications/{app_id}/fields")
 async def get_app_fields(
     app_id: str,
@@ -1085,8 +1389,8 @@ async def get_field_values(
 
 @app.post("/validate-login")
 async def validate_login_alias(payload: dict = Body(...)):
-    # Alias kept for frontend compatibility
-    return await validate_tenant(payload)
+    # Keep the endpoint aligned with the frontend Connect page payload.
+    return validate_login_handler(LoginPayload(**payload))
 
 @app.get("/applications/{app_id}/table/{table_name}/data")
 async def get_table_data(
@@ -1967,9 +2271,9 @@ async def check_data_quality(request: TableDataRequest):
 
 # ==================== HUGGING FACE CHAT ENDPOINTS ====================
 
-HF_URL = "https://router.huggingface.co/v1/chat/completions"
-HF_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
-HF_MODEL_FALLBACK = "mistralai/Mistral-7B-Instruct-v0.3"
+HF_URL = os.getenv("HF_API_URL", "https://router.huggingface.co/v1/chat/completions")
+HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+HF_MODEL_FALLBACK = os.getenv("HF_MODEL_FALLBACK", "mistralai/Mistral-7B-Instruct-v0.3")
 
 # def call_hf_model(prompt: str):
 
@@ -2013,7 +2317,12 @@ HF_MODEL_FALLBACK = "mistralai/Mistral-7B-Instruct-v0.3"
 #         return raw["choices"][0]["message"]["content"]
 #     except Exception:
 #         return str(raw)
-def call_hf_model(prompt: str):
+def call_hf_model_with_options(
+    prompt: str,
+    system_prompt: str = "You are a senior business data analyst who provides concise executive insights.",
+    max_tokens: int = 250,
+    temperature: float = 0.3,
+):
 
     hf_token = os.getenv("HF_TOKEN")
 
@@ -2026,20 +2335,19 @@ def call_hf_model(prompt: str):
     }
 
     payload = {
-    #    "model": "meta-llama/Llama-3.1-8B-Instruct",
         "model": HF_MODEL,
         "messages": [
             {
                 "role": "system",
-                "content": "You are a senior business data analyst who provides concise executive insights."
+                "content": system_prompt
             },
             {
                 "role": "user",
                 "content": prompt
             }
         ],
-        "max_tokens": 250,
-        "temperature": 0.3
+        "max_tokens": max_tokens,
+        "temperature": temperature
     }
 
     for model in [HF_MODEL, HF_MODEL_FALLBACK]:
@@ -2066,6 +2374,10 @@ def call_hf_model(prompt: str):
         status_code=503,
         detail="LLM summary service temporarily unavailable. Please try again in a few minutes."
     )
+
+
+def call_hf_model(prompt: str):
+    return call_hf_model_with_options(prompt)
 # ================= EXECUTIVE SUMMARY =================
 
 def compute_metrics(df):

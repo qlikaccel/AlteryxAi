@@ -207,6 +207,32 @@
   margin-top: 15px;
 }
 
+.business-doc-btn {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(26, 92, 90, 0.22);
+  background: linear-gradient(135deg, #f5ede1 0%, #e7f3f1 100%);
+  color: #184f4d;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  margin-top: 14px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.business-doc-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(26, 92, 90, 0.12);
+  border-color: rgba(26, 92, 90, 0.36);
+}
+
+.business-doc-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .sort-btn {
   padding: 6px 8px;
   border-radius: 6px;

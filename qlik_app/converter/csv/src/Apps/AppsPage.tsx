@@ -3,7 +3,7 @@
 
 import "./AppsPage.css";
 import { useEffect, useState } from "react";
-import { fetchApps, fetchTables } from "../api/qlikApi";
+import { downloadBusinessSpecificDoc, fetchApps, fetchTables } from "../api/qlikApi";
 import { useNavigate } from "react-router-dom";
 import { useWizard } from "../context/WizardContext";
 import LoadingOverlay from "../components/LoadingOverlay/LoadingOverlay";
@@ -21,6 +21,7 @@ export default function AppsPage() {
   const [appsError, setAppsError] = useState<string | null>(null);
   const [favourites, setFavourites] = useState<string[]>([]);
   const [pageLoadTime, setPageLoadTime] = useState<string | null>(null);
+  const [generatingBrd, setGeneratingBrd] = useState(false);
 
   const [query, setQuery] = useState("");
   const [sortNewestFirst] = useState(true);
@@ -118,6 +119,29 @@ export default function AppsPage() {
   return `Updated ${diffDay} day${diffDay > 1 ? "s" : ""} ago`;
 };
 
+  const filteredApps = apps
+    .filter((a) => a.name.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => {
+      if (sortNewestFirst) {
+        const da = a.lastModifiedDate ? new Date(a.lastModifiedDate).getTime() : 0;
+        const db = b.lastModifiedDate ? new Date(b.lastModifiedDate).getTime() : 0;
+        return db - da;
+      }
+
+      return a.name.localeCompare(b.name);
+    });
+
+  const handleBusinessDocDownload = async () => {
+    try {
+      setGeneratingBrd(true);
+      await downloadBusinessSpecificDoc();
+    } catch (error: any) {
+      alert(`Failed to generate the consolidated Business Specific Doc: ${error?.message || "Unknown error"}`);
+    } finally {
+      setGeneratingBrd(false);
+    }
+  };
+
   return (
     <div className="wrap">
       {/* HEADER */}
@@ -135,6 +159,16 @@ export default function AppsPage() {
               onChange={(e) => setQuery(e.target.value)}
               className="apps-search"
             />
+
+            <button
+              type="button"
+              className="business-doc-btn"
+              onClick={handleBusinessDocDownload}
+              disabled={generatingBrd || apps.length === 0}
+              title="Generate and download the consolidated Business Requirements Document for the entire project"
+            >
+              {generatingBrd ? "Generating BRD..." : "Business Requirement Document"}
+            </button>
 
             {/* <buttonz
               className="sort-btn"
@@ -163,17 +197,7 @@ export default function AppsPage() {
       {/* APP CARDS */}
       <div className="card-container">
         {(
-          apps
-            .filter((a) => a.name.toLowerCase().includes(query.toLowerCase()))
-            .sort((a, b) => {
-              if (sortNewestFirst) {
-                const da = a.lastModifiedDate ? new Date(a.lastModifiedDate).getTime() : 0;
-                const db = b.lastModifiedDate ? new Date(b.lastModifiedDate).getTime() : 0;
-                return db - da;
-              }
-
-              return a.name.localeCompare(b.name);
-            })
+          filteredApps
             .map((app) => {
               const count = tableCount[app.id] ?? 0;
               const isDisabled = count === 0;

@@ -347,6 +347,35 @@ export const downloadCSVFile = (
   document.body.removeChild(link);
 };
 
+export const downloadBusinessSpecificDoc = async () => {
+  const res = await axios.post(
+    `${BASE_URL}/project/brd/download`,
+    {},
+    {
+      responseType: "blob",
+      headers: getAuthHeaders(),
+    }
+  );
+
+  const disposition = res.headers["content-disposition"] || "";
+  const fileNameMatch = disposition.match(/filename="?([^";]+)"?/i);
+  const downloadName =
+    fileNameMatch?.[1] || "QlikAI_End_to_End_Project_BRD.html";
+
+  const blob = new Blob([res.data], { type: "text/html;charset=utf-8" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+
+  link.href = url;
+  link.download = downloadName;
+  link.style.visibility = "hidden";
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 // ✅ DOWNLOAD M QUERY - Convert Qlik to PowerBI M Query
 export const downloadMQuery = async (appId: string, tableName?: string) => {
   try {
