@@ -261,6 +261,7 @@ export default function PublishPage() {
           
           setPublishedTableName(datasetName);
           setDatasetURL(workspaceUrl);
+          const deployedTableCount = result.tables_deployed || state.tableCount || 1;
           setResult({
             dataset: {
               workspace_id: workspaceUrl.split('/groups/')[1] || "",
@@ -269,8 +270,8 @@ export default function PublishPage() {
             },
             mquery: true,
             publishResult: result,
-            // Store metrics from initial state for display
-            tableCount: state.tableCount || result.tables_deployed || 1,
+            // Prefer the backend-reported deployed table count for M Query publishes.
+            tableCount: deployedTableCount,
             rowCount: state.rowCount || state.totalRows || 0,
           });
           setStatusBoxes({ columns: true, powerbi: true, finished: true });
@@ -284,7 +285,7 @@ export default function PublishPage() {
           sessionStorage.setItem("migration_publishing_method", "M_QUERY");
           sessionStorage.setItem("migration_dataset_name", datasetName);
           sessionStorage.setItem("migration_dataset_id", result.dataset_id || "");
-          sessionStorage.setItem("migration_tables_deployed", String(result.tables_deployed || state.tableCount || 1));
+          sessionStorage.setItem("migration_tables_deployed", String(deployedTableCount));
           sessionStorage.setItem("migration_row_count", String(state.rowCount || state.totalRows || 0));
         } catch (error: any) {
           console.error("M Query publishing failed:", error);
@@ -322,7 +323,9 @@ export default function PublishPage() {
           name: datasetName,
         },
         mquery: true, // Flag that this is M Query
-        publishResult: publishResult
+        publishResult: publishResult,
+        tableCount: publishResult.tables_deployed || state.tableCount || 1,
+        rowCount: state.rowCount || state.totalRows || 0,
       });
       setStatusBoxes({ columns: true, powerbi: true, finished: true });
       setCurrentStep(5);
@@ -1427,7 +1430,9 @@ export default function PublishPage() {
             <div className="info-box">
               <div className="info-box-label">Tables Exported</div>
               <div className="info-box-value" style={{ fontSize: "18px", fontWeight: "bold", color: "#0078d4" }}>
-                {result?.mquery ? (result.tableCount || 1) : (tableCount > 0 ? tableCount : (isMultiTableMode ? tableCount : 1))}
+                {result?.mquery
+                  ? (result.tableCount || result.publishResult?.tables_deployed || Number(sessionStorage.getItem("migration_tables_deployed") || "0") || 1)
+                  : (tableCount > 0 ? tableCount : (isMultiTableMode ? tableCount : 1))}
               </div>
             </div>
             <div className="info-box">

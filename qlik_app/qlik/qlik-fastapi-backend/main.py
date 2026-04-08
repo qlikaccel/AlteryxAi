@@ -2271,9 +2271,9 @@ async def check_data_quality(request: TableDataRequest):
 
 # ==================== HUGGING FACE CHAT ENDPOINTS ====================
 
-HF_URL = os.getenv("HF_API_URL", "https://router.huggingface.co/v1/chat/completions")
-HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
-HF_MODEL_FALLBACK = os.getenv("HF_MODEL_FALLBACK", "mistralai/Mistral-7B-Instruct-v0.3")
+HF_URL = "https://router.huggingface.co/v1/chat/completions"
+HF_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+HF_MODEL_FALLBACK = "mistralai/Mistral-7B-Instruct-v0.3"
 
 # def call_hf_model(prompt: str):
 

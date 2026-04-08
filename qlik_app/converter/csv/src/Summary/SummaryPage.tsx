@@ -600,7 +600,7 @@ export default function SummaryPage() {
       navigate("/publish", {
         state: {
           appId, selectedTable, publishMethod: "M_QUERY", showWorkflow: true,
-          tableCount: relatedTablesCount, totalRows: totalRowsAllTables, rowCount: totalRowsAllTables,
+          tableCount: tables.length > 0 ? tables.length : relatedTablesCount, totalRows: totalRowsAllTables, rowCount: totalRowsAllTables,
           columns: rows && rows.length > 0 ? Object.keys(rows[0]) : [],
           mqueryData: { dataset_name: selectedTable || "Qlik_Dataset", combined_mquery: mquery || "", raw_script: loadscript || "", data_source_path: dataSourcePath?.trim() || "", app_id: appId },
         },

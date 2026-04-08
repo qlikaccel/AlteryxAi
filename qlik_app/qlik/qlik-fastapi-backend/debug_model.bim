@@ -1,5 +1,5 @@
 {
-  "name": "Employees",
+  "name": "Vehicle_Fact_MASTER",
   "compatibilityLevel": 1550,
   "model": {
     "culture": "en-US",
@@ -11,12 +11,12 @@
     "sourceQueryCulture": "en-US",
     "tables": [
       {
-        "name": "Employees",
+        "name": "Vehicle_Fact_MASTER",
         "columns": [
           {
-            "name": "location_id",
+            "name": "ModelName",
             "dataType": "string",
-            "sourceColumn": "location_id",
+            "sourceColumn": "ModelName",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -26,9 +26,9 @@
             ]
           },
           {
-            "name": "role_id",
+            "name": "VIN",
             "dataType": "string",
-            "sourceColumn": "role_id",
+            "sourceColumn": "VIN",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -38,9 +38,9 @@
             ]
           },
           {
-            "name": "salary_band_id",
+            "name": "ServiceType",
             "dataType": "string",
-            "sourceColumn": "salary_band_id",
+            "sourceColumn": "ServiceType",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -50,9 +50,9 @@
             ]
           },
           {
-            "name": "department_id",
+            "name": "VariantName",
             "dataType": "string",
-            "sourceColumn": "department_id",
+            "sourceColumn": "VariantName",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -62,9 +62,9 @@
             ]
           },
           {
-            "name": "employee_id",
+            "name": "FuelType",
             "dataType": "string",
-            "sourceColumn": "employee_id",
+            "sourceColumn": "FuelType",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -74,9 +74,9 @@
             ]
           },
           {
-            "name": "employee_name",
+            "name": "VehicleChannel",
             "dataType": "string",
-            "sourceColumn": "employee_name",
+            "sourceColumn": "VehicleChannel",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -86,9 +86,9 @@
             ]
           },
           {
-            "name": "emp_department_name",
+            "name": "ManufactureYear",
             "dataType": "string",
-            "sourceColumn": "emp_department_name",
+            "sourceColumn": "ManufactureYear",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -98,9 +98,9 @@
             ]
           },
           {
-            "name": "total_hours",
+            "name": "SalePrice",
             "dataType": "string",
-            "sourceColumn": "total_hours",
+            "sourceColumn": "SalePrice",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -110,9 +110,9 @@
             ]
           },
           {
-            "name": "total_days",
+            "name": "ServiceDate",
             "dataType": "string",
-            "sourceColumn": "total_days",
+            "sourceColumn": "ServiceDate",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -122,21 +122,9 @@
             ]
           },
           {
-            "name": "avg_hours",
+            "name": "ServiceCost",
             "dataType": "string",
-            "sourceColumn": "avg_hours",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "performance_category",
-            "dataType": "string",
-            "sourceColumn": "performance_category",
+            "sourceColumn": "ServiceCost",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -148,7 +136,7 @@
         ],
         "partitions": [
           {
-            "name": "Employees-Partition",
+            "name": "Vehicle_Fact_MASTER-Partition",
             "mode": "import",
             "source": {
               "type": "m",
@@ -159,148 +147,150 @@
                 "    Filtered = Table.SelectRows(",
                 "        Source,",
                 "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"dim_employee.csv\") and",
+                "            Text.EndsWith(Text.Lower([Name]), \"vehicle_fact_master.csv\") and",
                 "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
                 "    ),",
                 "    File = if Table.RowCount(Filtered) > 0",
                 "        then Filtered{0}[Content]",
-                "        else error \"File dim_employee.csv not found in SharePoint\",",
+                "        else error \"File Vehicle_Fact_MASTER.csv not found in SharePoint\",",
                 "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
                 "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
                 "    TypedTable = Table.TransformColumnTypes(",
                 "        Headers,",
                 "        {",
-                "        {\"employee_id\", type text},",
-                "        {\"department_id\", type text},",
-                "        {\"role_id\", type text},",
-                "        {\"location_id\", type text},",
-                "        {\"salary_band_id\", type text}",
+                "        {\"VIN\", type text},",
+                "        {\"ModelName\", type text},",
+                "        {\"VariantName\", type text},",
+                "        {\"FuelType\", type text},",
+                "        {\"VehicleChannel\", type text},",
+                "        {\"ManufactureYear\", Int64.Type},",
+                "        {\"SalePrice\", type number},",
+                "        {\"ServiceDate\", type date},",
+                "        {\"ServiceType\", type text},",
+                "        {\"ServiceCost\", type number}",
+                "        }",
+                "    )",
+                "in",
+                "    TypedTable"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "Dealer_Master",
+        "columns": [
+          {
+            "name": "DealerID-ServiceID",
+            "dataType": "string",
+            "sourceColumn": "DealerID-ServiceID",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "DealerName",
+            "dataType": "string",
+            "sourceColumn": "DealerName",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "City",
+            "dataType": "string",
+            "sourceColumn": "City",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Phone",
+            "dataType": "string",
+            "sourceColumn": "Phone",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Email",
+            "dataType": "string",
+            "sourceColumn": "Email",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "Dealer_Master-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
+                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
+                "    Filtered = Table.SelectRows(",
+                "        Source,",
+                "        each",
+                "            Text.EndsWith(Text.Lower([Name]), \"dealer_master.csv\") and",
+                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
+                "    ),",
+                "    File = if Table.RowCount(Filtered) > 0",
+                "        then Filtered{0}[Content]",
+                "        else error \"File Dealer_Master.csv not found in SharePoint\",",
+                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
+                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
+                "    TypedTable = Table.TransformColumnTypes(",
+                "        Headers,",
+                "        {",
+                "        {\"DealerID\", type text},",
+                "        {\"DealerName\", type text},",
+                "        {\"City\", type text},",
+                "        {\"Phone\", type text},",
+                "        {\"Email\", type text}",
                 "        }",
                 "    ),",
-                "    #\"Derived employee_name\" = Table.AddColumn(",
+                "    #\"Added DealerID-ServiceID\" = Table.AddColumn(",
                 "        TypedTable,",
-                "        \"employee_name__derived\",",
-                "        each Text.Upper(Text.Trim([employee_name])), type text",
-                "    ),",
-                "    #\"Removed original employee_name\" = Table.RemoveColumns(",
-                "        #\"Derived employee_name\",",
-                "        {\"employee_name\"}",
-                "    ),",
-                "    #\"Replaced employee_name\" = Table.RenameColumns(",
-                "        #\"Removed original employee_name\",",
-                "        {",
-                "            {\"employee_name__derived\", \"employee_name\"}",
-                "        }",
-                "    ),",
-                "    MergedDepartments = Table.NestedJoin(",
-                "        #\"Replaced employee_name\",",
-                "        {\"department_id\"},",
-                "        Departments,",
-                "        {\"department_id\"},",
-                "        \"Departments\",",
-                "        JoinKind.LeftOuter",
-                "    ),",
-                "    ExpandedDepartments = Table.ExpandTableColumn(",
-                "        MergedDepartments,",
-                "        \"Departments\",",
-                "        {\"department_name\"},",
-                "        {\"emp_department_name\"}",
-                "    ),",
-                "    Filledemp_department_name = Table.ReplaceValue(",
-                "        ExpandedDepartments,",
-                "        null,",
-                "        \"Unknown\",",
-                "        Replacer.ReplaceValue,",
-                "        {\"emp_department_name\"}",
-                "    ),",
-                "    HelperSource_Employee_Summary =",
-                "        let",
-                "            Final_Activity = Final_Activity,",
-                "            Selected = Table.SelectColumns(Final_Activity,",
-                "                {\"employee_id\", \"hours_worked\", \"activity_id\"}",
-                "            ),",
-                "            TypedTable = Table.TransformColumnTypes(",
-                "                Selected,",
-                "                {",
-                "                {\"employee_id\", type text},",
-                "                {\"hours_worked\", type number}",
-                "                }",
-                "            ),",
-                "            #\"Grouped Rows\" = Table.Group(",
-                "                TypedTable,",
-                "                {\"employee_id\"},",
-                "                {{\"total_hours\", each List.Sum([hours_worked]), type number}, {\"total_days\", each List.Count([activity_id]), type number}, {\"avg_hours\", each List.Average([hours_worked]), type number}}",
-                "            )",
-                "        in",
-                "            #\"Grouped Rows\",",
-                "    JoinSource_Employees_1 =",
-                "        let",
-                "            Employee_Summary = HelperSource_Employee_Summary,",
-                "            Selected = Table.SelectColumns(HelperSource_Employee_Summary,",
-                "                {\"employee_id\", \"total_hours\", \"total_days\", \"avg_hours\"}",
-                "            ),",
-                "            TypedTable = Table.TransformColumnTypes(",
-                "                Selected,",
-                "                {",
-                "                {\"employee_id\", type text},",
-                "                {\"total_hours\", type number},",
-                "                {\"total_days\", Int64.Type},",
-                "                {\"avg_hours\", type number}",
-                "                }",
-                "            ),",
-                "            #\"Added performance_category\" = Table.AddColumn(",
-                "                TypedTable,",
-                "                \"performance_category\",",
-                "                each if [total_hours] > 100 then \"High Performer\" else if [total_hours] > 50 then \"Medium\" else \"Low\", type text",
-                "            )",
-                "        in",
-                "            #\"Added performance_category\",",
-                "    #\"Joined Helper 1\" = Table.NestedJoin(",
-                "        Filledemp_department_name,",
-                "        {\"employee_id\"},",
-                "        JoinSource_Employees_1,",
-                "        {\"employee_id\"},",
-                "        \"JoinSource_Employees_1\",",
-                "        JoinKind.LeftOuter",
-                "    ),",
-                "    #\"Expanded Helper 1\" = Table.ExpandTableColumn(",
-                "        #\"Joined Helper 1\",",
-                "        \"JoinSource_Employees_1\",",
-                "        {\"total_hours\", \"total_days\", \"avg_hours\", \"performance_category\"},",
-                "        {\"total_hours\", \"total_days\", \"avg_hours\", \"performance_category\"}",
-                "    ),",
-                "    KeepSource_Employees_1 =",
-                "        let",
-                "            Final_Activity = Final_Activity,",
-                "            Selected = Table.SelectColumns(Final_Activity,",
-                "                {\"employee_id\"}",
-                "            ),",
-                "            TypedTable = Table.TransformColumnTypes(",
-                "                Selected,",
-                "                {",
-                "                {\"employee_id\", type text}",
-                "                }",
-                "            )",
-                "        in",
-                "            TypedTable,",
-                "    #\"Applied KEEP 1\" = Table.SelectRows(",
-                "        #\"Expanded Helper 1\",",
-                "        each List.Contains(Table.Column(KeepSource_Employees_1, \"employee_id\"), [employee_id])",
+                "        \"DealerID-ServiceID\",",
+                "        each [DealerID], type text",
                 "    )",
                 "in",
-                "    #\"Applied KEEP 1\""
+                "    #\"Added DealerID-ServiceID\""
               ]
             }
           }
         ]
       },
       {
-        "name": "Departments",
+        "name": "Model_Master",
         "columns": [
           {
-            "name": "department_id",
+            "name": "ModelName",
             "dataType": "string",
-            "sourceColumn": "department_id",
+            "sourceColumn": "ModelName",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -310,9 +300,9 @@
             ]
           },
           {
-            "name": "department_name",
+            "name": "ModelID",
             "dataType": "string",
-            "sourceColumn": "department_name",
+            "sourceColumn": "ModelID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -324,7 +314,7 @@
         ],
         "partitions": [
           {
-            "name": "Departments-Partition",
+            "name": "Model_Master-Partition",
             "mode": "import",
             "source": {
               "type": "m",
@@ -335,19 +325,19 @@
                 "    Filtered = Table.SelectRows(",
                 "        Source,",
                 "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"dim_department.csv\") and",
+                "            Text.EndsWith(Text.Lower([Name]), \"model_master.csv\") and",
                 "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
                 "    ),",
                 "    File = if Table.RowCount(Filtered) > 0",
                 "        then Filtered{0}[Content]",
-                "        else error \"File dim_department.csv not found in SharePoint\",",
+                "        else error \"File Model_Master.csv not found in SharePoint\",",
                 "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
                 "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
                 "    TypedTable = Table.TransformColumnTypes(",
                 "        Headers,",
                 "        {",
-                "        {\"department_id\", type text},",
-                "        {\"department_name\", type text}",
+                "        {\"ModelID\", type text},",
+                "        {\"ModelName\", type text}",
                 "        }",
                 "    )",
                 "in",
@@ -358,12 +348,12 @@
         ]
       },
       {
-        "name": "Locations",
+        "name": "Service_History",
         "columns": [
           {
-            "name": "location_id",
+            "name": "ServiceType",
             "dataType": "string",
-            "sourceColumn": "location_id",
+            "sourceColumn": "ServiceType",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -373,9 +363,9 @@
             ]
           },
           {
-            "name": "city",
+            "name": "DealerID-ServiceID",
             "dataType": "string",
-            "sourceColumn": "city",
+            "sourceColumn": "DealerID-ServiceID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -385,9 +375,33 @@
             ]
           },
           {
-            "name": "country",
+            "name": "VehicleID",
             "dataType": "string",
-            "sourceColumn": "country",
+            "sourceColumn": "VehicleID",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "ServiceDate",
+            "dataType": "string",
+            "sourceColumn": "ServiceDate",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "ServiceCost",
+            "dataType": "string",
+            "sourceColumn": "ServiceCost",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -399,7 +413,7 @@
         ],
         "partitions": [
           {
-            "name": "Locations-Partition",
+            "name": "Service_History-Partition",
             "mode": "import",
             "source": {
               "type": "m",
@@ -410,601 +424,43 @@
                 "    Filtered = Table.SelectRows(",
                 "        Source,",
                 "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"dim_location.csv\") and",
+                "            Text.EndsWith(Text.Lower([Name]), \"service_history.csv\") and",
                 "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
                 "    ),",
                 "    File = if Table.RowCount(Filtered) > 0",
                 "        then Filtered{0}[Content]",
-                "        else error \"File dim_location.csv not found in SharePoint\",",
+                "        else error \"File Service_History.csv not found in SharePoint\",",
                 "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
                 "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
                 "    TypedTable = Table.TransformColumnTypes(",
                 "        Headers,",
                 "        {",
-                "        {\"location_id\", type text},",
-                "        {\"city\", type text},",
-                "        {\"country\", type text}",
-                "        }",
-                "    )",
-                "in",
-                "    TypedTable"
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "name": "Projects",
-        "columns": [
-          {
-            "name": "project_id",
-            "dataType": "string",
-            "sourceColumn": "project_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "client_id",
-            "dataType": "string",
-            "sourceColumn": "client_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "project_name",
-            "dataType": "string",
-            "sourceColumn": "project_name",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "start_date",
-            "dataType": "string",
-            "sourceColumn": "start_date",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "end_date",
-            "dataType": "string",
-            "sourceColumn": "end_date",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
-        "partitions": [
-          {
-            "name": "Projects-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"dim_project.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
-                "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File dim_project.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
-                "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
-                "        {",
-                "        {\"project_id\", type text},",
-                "        {\"client_id\", type text},",
-                "        {\"project_name\", type text},",
-                "        {\"start_date\", type date},",
-                "        {\"end_date\", type date}",
-                "        }",
-                "    )",
-                "in",
-                "    TypedTable"
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "name": "Clients",
-        "columns": [
-          {
-            "name": "client_id",
-            "dataType": "string",
-            "sourceColumn": "client_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "client_name",
-            "dataType": "string",
-            "sourceColumn": "client_name",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "industry",
-            "dataType": "string",
-            "sourceColumn": "industry",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
-        "partitions": [
-          {
-            "name": "Clients-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"dim_client.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
-                "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File dim_client.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
-                "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
-                "        {",
-                "        {\"client_id\", type text},",
-                "        {\"client_name\", type text},",
-                "        {\"industry\", type text}",
-                "        }",
-                "    )",
-                "in",
-                "    TypedTable"
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "name": "Roles",
-        "columns": [
-          {
-            "name": "role_id",
-            "dataType": "string",
-            "sourceColumn": "role_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "role_name",
-            "dataType": "string",
-            "sourceColumn": "role_name",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
-        "partitions": [
-          {
-            "name": "Roles-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"dim_role.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
-                "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File dim_role.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
-                "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
-                "        {",
-                "        {\"role_id\", type text},",
-                "        {\"role_name\", type text}",
-                "        }",
-                "    )",
-                "in",
-                "    TypedTable"
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "name": "Salary",
-        "columns": [
-          {
-            "name": "salary_band_id",
-            "dataType": "string",
-            "sourceColumn": "salary_band_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "salary_range",
-            "dataType": "string",
-            "sourceColumn": "salary_range",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
-        "partitions": [
-          {
-            "name": "Salary-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"dim_salary_band.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
-                "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File dim_salary_band.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
-                "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
-                "        {",
-                "        {\"salary_band_id\", type text},",
-                "        {\"salary_range\", type text}",
-                "        }",
-                "    )",
-                "in",
-                "    TypedTable"
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "name": "Performance",
-        "columns": [
-          {
-            "name": "performance_id",
-            "dataType": "string",
-            "sourceColumn": "performance_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "rating",
-            "dataType": "string",
-            "sourceColumn": "rating",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
-        "partitions": [
-          {
-            "name": "Performance-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"dim_performance.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
-                "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File dim_performance.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
-                "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
-                "        {",
-                "        {\"performance_id\", type text},",
-                "        {\"rating\", type text}",
-                "        }",
-                "    )",
-                "in",
-                "    TypedTable"
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "name": "Shift",
-        "columns": [
-          {
-            "name": "shift_id",
-            "dataType": "string",
-            "sourceColumn": "shift_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "shift_type",
-            "dataType": "string",
-            "sourceColumn": "shift_type",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
-        "partitions": [
-          {
-            "name": "Shift-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"dim_shift.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
-                "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File dim_shift.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
-                "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
-                "        {",
-                "        {\"shift_id\", type text},",
-                "        {\"shift_type\", type text}",
-                "        }",
-                "    )",
-                "in",
-                "    TypedTable"
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "name": "Dates",
-        "columns": [
-          {
-            "name": "date_id",
-            "dataType": "string",
-            "sourceColumn": "date_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "full_date",
-            "dataType": "string",
-            "sourceColumn": "full_date",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "year",
-            "dataType": "string",
-            "sourceColumn": "year",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "month",
-            "dataType": "string",
-            "sourceColumn": "month",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "day",
-            "dataType": "string",
-            "sourceColumn": "day",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "quarter",
-            "dataType": "string",
-            "sourceColumn": "quarter",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
-        "partitions": [
-          {
-            "name": "Dates-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
-                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
-                "    Filtered = Table.SelectRows(",
-                "        Source,",
-                "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"dim_date.csv\") and",
-                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
-                "    ),",
-                "    File = if Table.RowCount(Filtered) > 0",
-                "        then Filtered{0}[Content]",
-                "        else error \"File dim_date.csv not found in SharePoint\",",
-                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
-                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
-                "    TypedTable = Table.TransformColumnTypes(",
-                "        Headers,",
-                "        {",
-                "        {\"date_id\", type text}",
+                "        {\"ServiceID\", type text},",
+                "        {\"VehicleID\", type text},",
+                "        {\"ServiceDate\", type date},",
+                "        {\"ServiceType\", type text},",
+                "        {\"ServiceCost\", type number}",
                 "        }",
                 "    ),",
-                "    #\"Added full_date\" = Table.AddColumn(",
+                "    #\"Added DealerID-ServiceID\" = Table.AddColumn(",
                 "        TypedTable,",
-                "        \"full_date\",",
-                "        each Date.From(Date.FromText([date_id], [Format = \"yyyyMMdd\"])), type date",
-                "    ),",
-                "    #\"Added year\" = Table.AddColumn(",
-                "        #\"Added full_date\",",
-                "        \"year\",",
-                "        each Date.Year(Date.FromText([date_id], [Format = \"yyyyMMdd\"])), type number",
-                "    ),",
-                "    #\"Added month\" = Table.AddColumn(",
-                "        #\"Added year\",",
-                "        \"month\",",
-                "        each Date.Month(Date.FromText([date_id], [Format = \"yyyyMMdd\"])), type number",
-                "    ),",
-                "    #\"Added day\" = Table.AddColumn(",
-                "        #\"Added month\",",
-                "        \"day\",",
-                "        each Date.Day(Date.FromText([date_id], [Format = \"yyyyMMdd\"])), type number",
-                "    ),",
-                "    #\"Added quarter\" = Table.AddColumn(",
-                "        #\"Added day\",",
-                "        \"quarter\",",
-                "        each \"Q\" & Text.From(Number.RoundUp(Date.Month(Date.FromText([date_id], [Format = \"yyyyMMdd\"]))/3)), type text",
+                "        \"DealerID-ServiceID\",",
+                "        each [ServiceID], type text",
                 "    )",
                 "in",
-                "    #\"Added quarter\""
+                "    #\"Added DealerID-ServiceID\""
               ]
             }
           }
         ]
       },
       {
-        "name": "Final_Activity",
+        "name": "Variant_Master",
         "columns": [
           {
-            "name": "employee_id",
+            "name": "VariantName",
             "dataType": "string",
-            "sourceColumn": "employee_id",
+            "sourceColumn": "VariantName",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -1014,9 +470,9 @@
             ]
           },
           {
-            "name": "date_id",
+            "name": "VariantID",
             "dataType": "string",
-            "sourceColumn": "date_id",
+            "sourceColumn": "VariantID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -1026,93 +482,9 @@
             ]
           },
           {
-            "name": "project_id",
+            "name": "ModelID",
             "dataType": "string",
-            "sourceColumn": "project_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "shift_id",
-            "dataType": "string",
-            "sourceColumn": "shift_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "performance_id",
-            "dataType": "string",
-            "sourceColumn": "performance_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "activity_id",
-            "dataType": "string",
-            "sourceColumn": "activity_id",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "hours_worked",
-            "dataType": "string",
-            "sourceColumn": "hours_worked",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "work_type",
-            "dataType": "string",
-            "sourceColumn": "work_type",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "productivity_flag",
-            "dataType": "string",
-            "sourceColumn": "productivity_flag",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "productivity_score",
-            "dataType": "string",
-            "sourceColumn": "productivity_score",
+            "sourceColumn": "ModelID",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -1124,7 +496,7 @@
         ],
         "partitions": [
           {
-            "name": "Final_Activity-Partition",
+            "name": "Variant_Master-Partition",
             "mode": "import",
             "source": {
               "type": "m",
@@ -1135,49 +507,36 @@
                 "    Filtered = Table.SelectRows(",
                 "        Source,",
                 "        each",
-                "            Text.EndsWith(Text.Lower([Name]), \"fact_employee_activity_1m.csv\") and",
+                "            Text.EndsWith(Text.Lower([Name]), \"variant_master.csv\") and",
                 "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
                 "    ),",
                 "    File = if Table.RowCount(Filtered) > 0",
                 "        then Filtered{0}[Content]",
-                "        else error \"File fact_employee_activity_1M.csv not found in SharePoint\",",
+                "        else error \"File Variant_Master.csv not found in SharePoint\",",
                 "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
                 "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
                 "    TypedTable = Table.TransformColumnTypes(",
                 "        Headers,",
                 "        {",
-                "        {\"hours_worked\", type number}",
+                "        {\"VariantID\", type text},",
+                "        {\"ModelID\", type text},",
+                "        {\"VariantName\", type text}",
                 "        }",
-                "    ),",
-                "    #\"Added work_type\" = Table.AddColumn(",
-                "        TypedTable,",
-                "        \"work_type\",",
-                "        each if [hours_worked] > 8 then \"Overtime\" else \"Normal\", type text",
-                "    ),",
-                "    #\"Added productivity_flag\" = Table.AddColumn(",
-                "        #\"Added work_type\",",
-                "        \"productivity_flag\",",
-                "        each if [hours_worked] >= 8 then 1 else 0, type number",
-                "    ),",
-                "    #\"Added productivity_score\" = Table.AddColumn(",
-                "        #\"Added productivity_flag\",",
-                "        \"productivity_score\",",
-                "        each [hours_worked] * 10, type number",
                 "    )",
                 "in",
-                "    #\"Added productivity_score\""
+                "    TypedTable"
               ]
             }
           }
         ]
       },
       {
-        "name": "Employee_Summary",
+        "name": "VIN_Details",
         "columns": [
           {
-            "name": "employee_id",
+            "name": "VIN",
             "dataType": "string",
-            "sourceColumn": "employee_id",
+            "sourceColumn": "VIN",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -1187,9 +546,9 @@
             ]
           },
           {
-            "name": "total_hours",
-            "dataType": "double",
-            "sourceColumn": "total_hours",
+            "name": "EngineNumber",
+            "dataType": "string",
+            "sourceColumn": "EngineNumber",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -1199,9 +558,9 @@
             ]
           },
           {
-            "name": "total_days",
-            "dataType": "double",
-            "sourceColumn": "total_days",
+            "name": "ChassisNumber",
+            "dataType": "string",
+            "sourceColumn": "ChassisNumber",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -1211,9 +570,21 @@
             ]
           },
           {
-            "name": "avg_hours",
-            "dataType": "double",
-            "sourceColumn": "avg_hours",
+            "name": "ProductionPlant",
+            "dataType": "string",
+            "sourceColumn": "ProductionPlant",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "ProductionDate",
+            "dataType": "string",
+            "sourceColumn": "ProductionDate",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -1225,30 +596,37 @@
         ],
         "partitions": [
           {
-            "name": "Employee_Summary-Partition",
+            "name": "VIN_Details-Partition",
             "mode": "import",
             "source": {
               "type": "m",
               "expression": [
                 "let",
-                "    Final_Activity = Final_Activity,",
-                "    Selected = Table.SelectColumns(Final_Activity,",
-                "        {\"employee_id\", \"hours_worked\", \"activity_id\"}",
+                "    SiteUrl = \"https://sorimtechnologies.sharepoint.com\",",
+                "    Source = SharePoint.Files(SiteUrl, [ApiVersion = 15]),",
+                "    Filtered = Table.SelectRows(",
+                "        Source,",
+                "        each",
+                "            Text.EndsWith(Text.Lower([Name]), \"vin_details.csv\") and",
+                "            Text.Contains(Text.Lower([Folder Path]), \"shared documents\")",
                 "    ),",
+                "    File = if Table.RowCount(Filtered) > 0",
+                "        then Filtered{0}[Content]",
+                "        else error \"File VIN_Details.csv not found in SharePoint\",",
+                "    Csv = Csv.Document(File, [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
+                "    Headers = Table.PromoteHeaders(Csv, [PromoteAllScalars=true]),",
                 "    TypedTable = Table.TransformColumnTypes(",
-                "        Selected,",
+                "        Headers,",
                 "        {",
-                "        {\"employee_id\", type text},",
-                "        {\"hours_worked\", type number}",
+                "        {\"VIN\", type text},",
+                "        {\"EngineNumber\", type text},",
+                "        {\"ChassisNumber\", type text},",
+                "        {\"ProductionPlant\", type text},",
+                "        {\"ProductionDate\", type date}",
                 "        }",
-                "    ),",
-                "    #\"Grouped Rows\" = Table.Group(",
-                "        TypedTable,",
-                "        {\"employee_id\"},",
-                "        {{\"total_hours\", each List.Sum([hours_worked]), type number}, {\"total_days\", each List.Count([activity_id]), type number}, {\"avg_hours\", each List.Average([hours_worked]), type number}}",
                 "    )",
                 "in",
-                "    #\"Grouped Rows\""
+                "    TypedTable"
               ]
             }
           }
@@ -1257,114 +635,54 @@
     ],
     "relationships": [
       {
-        "name": "Employee_Summary_employee_id_Employees_employee_id",
-        "fromTable": "Employee_Summary",
-        "fromColumn": "employee_id",
-        "toTable": "Employees",
-        "toColumn": "employee_id",
+        "name": "Service_History_DealerID-ServiceID_Dealer_Master_DealerID-ServiceID",
+        "fromTable": "Service_History",
+        "fromColumn": "DealerID-ServiceID",
+        "toTable": "Dealer_Master",
+        "toColumn": "DealerID-ServiceID",
         "crossFilteringBehavior": "oneDirection",
         "fromCardinality": "many",
         "toCardinality": "one"
       },
       {
-        "name": "Employees_department_id_Departments_department_id",
-        "fromTable": "Employees",
-        "fromColumn": "department_id",
-        "toTable": "Departments",
-        "toColumn": "department_id",
+        "name": "Vehicle_Fact_MASTER_VIN_VIN_Details_VIN",
+        "fromTable": "Vehicle_Fact_MASTER",
+        "fromColumn": "VIN",
+        "toTable": "VIN_Details",
+        "toColumn": "VIN",
+        "crossFilteringBehavior": "bothDirections",
+        "fromCardinality": "one",
+        "toCardinality": "one"
+      },
+      {
+        "name": "Vehicle_Fact_MASTER_VariantName_Variant_Master_VariantName",
+        "fromTable": "Vehicle_Fact_MASTER",
+        "fromColumn": "VariantName",
+        "toTable": "Variant_Master",
+        "toColumn": "VariantName",
+        "crossFilteringBehavior": "bothDirections",
+        "fromCardinality": "many",
+        "toCardinality": "many"
+      },
+      {
+        "name": "Variant_Master_ModelID_Model_Master_ModelID",
+        "fromTable": "Variant_Master",
+        "fromColumn": "ModelID",
+        "toTable": "Model_Master",
+        "toColumn": "ModelID",
         "crossFilteringBehavior": "oneDirection",
         "fromCardinality": "many",
         "toCardinality": "one"
       },
       {
-        "name": "Employees_location_id_Locations_location_id",
-        "fromTable": "Employees",
-        "fromColumn": "location_id",
-        "toTable": "Locations",
-        "toColumn": "location_id",
-        "crossFilteringBehavior": "oneDirection",
+        "name": "Service_History_ServiceType_Vehicle_Fact_MASTER_ServiceType",
+        "fromTable": "Service_History",
+        "fromColumn": "ServiceType",
+        "toTable": "Vehicle_Fact_MASTER",
+        "toColumn": "ServiceType",
+        "crossFilteringBehavior": "bothDirections",
         "fromCardinality": "many",
-        "toCardinality": "one"
-      },
-      {
-        "name": "Final_Activity_employee_id_Employees_employee_id",
-        "fromTable": "Final_Activity",
-        "fromColumn": "employee_id",
-        "toTable": "Employees",
-        "toColumn": "employee_id",
-        "crossFilteringBehavior": "oneDirection",
-        "fromCardinality": "many",
-        "toCardinality": "one"
-      },
-      {
-        "name": "Final_Activity_project_id_Projects_project_id",
-        "fromTable": "Final_Activity",
-        "fromColumn": "project_id",
-        "toTable": "Projects",
-        "toColumn": "project_id",
-        "crossFilteringBehavior": "oneDirection",
-        "fromCardinality": "many",
-        "toCardinality": "one"
-      },
-      {
-        "name": "Final_Activity_performance_id_Performance_performance_id",
-        "fromTable": "Final_Activity",
-        "fromColumn": "performance_id",
-        "toTable": "Performance",
-        "toColumn": "performance_id",
-        "crossFilteringBehavior": "oneDirection",
-        "fromCardinality": "many",
-        "toCardinality": "one"
-      },
-      {
-        "name": "Final_Activity_shift_id_Shift_shift_id",
-        "fromTable": "Final_Activity",
-        "fromColumn": "shift_id",
-        "toTable": "Shift",
-        "toColumn": "shift_id",
-        "crossFilteringBehavior": "oneDirection",
-        "fromCardinality": "many",
-        "toCardinality": "one"
-      },
-      {
-        "name": "Final_Activity_date_id_Dates_date_id",
-        "fromTable": "Final_Activity",
-        "fromColumn": "date_id",
-        "toTable": "Dates",
-        "toColumn": "date_id",
-        "crossFilteringBehavior": "oneDirection",
-        "fromCardinality": "many",
-        "toCardinality": "one"
-      },
-      {
-        "name": "Projects_client_id_Clients_client_id",
-        "fromTable": "Projects",
-        "fromColumn": "client_id",
-        "toTable": "Clients",
-        "toColumn": "client_id",
-        "crossFilteringBehavior": "oneDirection",
-        "fromCardinality": "many",
-        "toCardinality": "one"
-      },
-      {
-        "name": "Employees_role_id_Roles_role_id",
-        "fromTable": "Employees",
-        "fromColumn": "role_id",
-        "toTable": "Roles",
-        "toColumn": "role_id",
-        "crossFilteringBehavior": "oneDirection",
-        "fromCardinality": "many",
-        "toCardinality": "one"
-      },
-      {
-        "name": "Employees_salary_band_id_Salary_salary_band_id",
-        "fromTable": "Employees",
-        "fromColumn": "salary_band_id",
-        "toTable": "Salary",
-        "toColumn": "salary_band_id",
-        "crossFilteringBehavior": "oneDirection",
-        "fromCardinality": "many",
-        "toCardinality": "one"
+        "toCardinality": "many"
       }
     ],
     "expressions": [
