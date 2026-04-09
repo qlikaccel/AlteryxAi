@@ -176,9 +176,15 @@
   font-size: 16px;
 }
 
+.qlik-header-left-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-right: auto;
+}
+
 /* Title left side */
 .qlik-header-left {
-  margin-right: auto;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 20px;
   color: indigo;
@@ -201,36 +207,58 @@
 }
 
 .apps-search {
-  padding: 12px 8px;
+  padding: 12px 75px 12px 12px;
   border-radius: 6px;
   border: 1px solid #ddd;
   margin-top: 15px;
 }
 
-.business-doc-btn {
-  padding: 12px 14px;
-  border-radius: 8px;
-  border: 1px solid rgba(26, 92, 90, 0.22);
-  background: linear-gradient(135deg, #f5ede1 0%, #e7f3f1 100%);
-  color: #184f4d;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+.business-doc-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  background: linear-gradient(145deg, #eff6ff 0%, #dbeafe 100%);
+  color: #2563eb;
   cursor: pointer;
-  margin-top: 14px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
 }
 
-.business-doc-btn:hover:not(:disabled) {
+.business-doc-icon-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(26, 92, 90, 0.12);
-  border-color: rgba(26, 92, 90, 0.36);
+  border-color: rgba(37, 99, 235, 0.38);
 }
 
-.business-doc-btn:disabled {
+.business-doc-icon-btn:disabled {
   cursor: wait;
-  opacity: 0.7;
+  opacity: 0.72;
+}
+
+.business-doc-icon {
+  width: 25px;
+  height: 25px;
+  display: block;
+}
+
+.business-doc-spinner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(37, 99, 235, 0.18);
+  border-top-color: #1d4ed8;
+  border-radius: 50%;
+  animation: business-doc-spin 0.7s linear infinite;
+}
+
+@keyframes business-doc-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .sort-btn {

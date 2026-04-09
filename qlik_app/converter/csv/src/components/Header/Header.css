@@ -8,7 +8,7 @@
   padding: 12px 32px;
   gap: 24px;
 }
-
+ 
 .header-left {
   display: flex;
   align-items: center;
@@ -16,50 +16,50 @@
   flex: 1;
   min-width: 0;
 }
-
+ 
 .logo-section {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
 }
-
+ 
 .logo-image {
   height: 56px;
   width: auto;
   object-fit: contain;
 }
-
+ 
 .header-text {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 0;
 }
-
+ 
 .logo-text {
-  font-family: "Inter", "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 18px;
   font-weight: 700;
   color: #2d3a4b;
   margin: 0;
   line-height: 1.2;
 }
-
+ 
 .logo-subtitle {
-  font-family: "Inter", "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 12px;
   color: #556174;
   margin: 0;
-  line-height: 1.5;
+  /* line-height: 1.5; */
   font-weight: 500;
-  font-style: italic;
+  /* font-style: italic; */
   max-width: none;
   overflow: visible;
   text-overflow: unset;
   white-space: normal;
 }
-
+ 
 .header-right {
   display: flex;
   align-items: center;
@@ -67,19 +67,20 @@
   padding-right: 8px;
   flex-shrink: 0;
 }
-
+ 
 .header-right a {
   color: #7a869a;
   text-decoration: none;
-  font-size: 14px;
+  font-size: 12px;
   padding: 8px 12px;
   transition: color 0.2s ease;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif
 }
-
+ 
 .header-right a:hover {
   color: #4c6fff;
 }
-
+ 
 .profile {
   background: #f0f3f8;
   padding: 10px;
@@ -87,11 +88,11 @@
   cursor: pointer;
   transition: background 0.2s ease;
 }
-
+ 
 .profile:hover {
   background: #e6ebf2;
 }
-
+ 
 @media (max-width: 768px) {
   .header {
     padding: 12px 16px;
@@ -101,6 +102,7 @@
   }
   .logo-subtitle {
     display: none;
-
+ 
   }
 }
+ 

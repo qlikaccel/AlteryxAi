@@ -348,14 +348,18 @@ export const downloadCSVFile = (
 };
 
 export const downloadBusinessSpecificDoc = async () => {
-  const res = await axios.post(
+  const res = await axios.get(
     `${BASE_URL}/project/brd/download`,
-    {},
     {
       responseType: "blob",
       headers: getAuthHeaders(),
+      validateStatus: (status) => status === 200 || status === 202,
     }
   );
+
+  if (res.status === 202) {
+    throw new Error("Business Requirement Document is still being prepared. Please try again in a few seconds.");
+  }
 
   const disposition = res.headers["content-disposition"] || "";
   const fileNameMatch = disposition.match(/filename="?([^";]+)"?/i);

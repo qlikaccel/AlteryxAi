@@ -38,6 +38,7 @@ import sys
 import os
 import re
 import time
+import threading
 import requests
 import pandas as pd
 import json
@@ -87,6 +88,7 @@ from relationship_service import (
     resolve_relationships_unified,
 )
 from brd_generator import (
+    BRD_PROMPT_VERSION,
     build_brd_prompt,
     build_default_document,
     build_download_filename,
@@ -114,6 +116,11 @@ except ImportError:
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+PROJECT_BRD_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_brd_cache")
+PROJECT_BRD_CACHE_TTL_SECONDS = 900
+project_brd_generation_state: Dict[str, bool] = {}
+project_brd_generation_lock = threading.Lock()
 
 # ==================== APP ====================
 
@@ -1063,11 +1070,49 @@ def _build_prefixed_relationship_input(app_name: str, tables: List[Dict[str, Any
     return relationship_input
 
 
-@app.post("/project/brd/download")
-async def download_project_brd(
-    client: QlikClient = Depends(get_qlik_client),
-    ws_client: QlikWebSocketClient = Depends(get_qlik_websocket_client),
-):
+def _project_brd_cache_key(tenant_url: Optional[str]) -> str:
+    raw_value = f"{tenant_url or os.getenv('QLIK_TENANT_URL') or 'default'}_{BRD_PROMPT_VERSION}".strip().lower()
+    normalized = re.sub(r"[^a-z0-9]+", "_", raw_value).strip("_")
+    return normalized or "default"
+
+
+def _project_brd_cache_path(cache_key: str) -> str:
+    return os.path.join(PROJECT_BRD_CACHE_DIR, f"project_brd_{cache_key}.html")
+
+
+def _project_brd_cache_info(cache_key: str) -> Optional[Dict[str, Any]]:
+    cache_path = _project_brd_cache_path(cache_key)
+    if not os.path.exists(cache_path):
+        return None
+
+    modified_at = os.path.getmtime(cache_path)
+    return {
+        "path": cache_path,
+        "filename": build_download_filename("QlikAI End-to-End Project"),
+        "generated_at": datetime.fromtimestamp(modified_at).isoformat(),
+        "age_seconds": max(0, int(time.time() - modified_at)),
+    }
+
+
+def _project_brd_cache_is_fresh(cache_key: str) -> bool:
+    cache_info = _project_brd_cache_info(cache_key)
+    return bool(cache_info and cache_info["age_seconds"] <= PROJECT_BRD_CACHE_TTL_SECONDS)
+
+
+def _is_project_brd_generation_running(cache_key: str) -> bool:
+    with project_brd_generation_lock:
+        return project_brd_generation_state.get(cache_key, False)
+
+
+def _set_project_brd_generation_running(cache_key: str, is_running: bool) -> None:
+    with project_brd_generation_lock:
+        project_brd_generation_state[cache_key] = is_running
+
+
+def _generate_project_brd_content(
+    client: QlikClient,
+    ws_client: QlikWebSocketClient,
+) -> Dict[str, str]:
     raw_apps = client.get_applications()
     normalized_apps = []
     for raw_app in raw_apps:
@@ -1162,7 +1207,7 @@ async def download_project_brd(
     if not application_inventory:
         raise HTTPException(status_code=500, detail="Unable to inspect any applications for consolidated BRD generation")
 
-    project_title = "QlikAI End-to-End Project"
+    project_title = "QlikAI Accelerator"
     project_id = "PROJECT_PORTFOLIO"
     project_summary = {
         "application_count": len(application_inventory),
@@ -1219,10 +1264,53 @@ async def download_project_brd(
     html_content = render_brd_html(document)
     filename = build_download_filename(project_title)
 
+    return {"html_content": html_content, "filename": filename}
+
+
+def _refresh_project_brd_cache(cache_key: str, client: QlikClient, ws_client: QlikWebSocketClient) -> None:
+    if _is_project_brd_generation_running(cache_key):
+        return
+
+    _set_project_brd_generation_running(cache_key, True)
+    try:
+        artifact = _generate_project_brd_content(client, ws_client)
+        cache_path = _project_brd_cache_path(cache_key)
+        with open(cache_path, "w", encoding="utf-8") as cache_file:
+            cache_file.write(artifact["html_content"])
+        logger.info("Project BRD cache refreshed for %s", cache_key)
+    except Exception:
+        logger.exception("Project BRD cache refresh failed for %s", cache_key)
+    finally:
+        _set_project_brd_generation_running(cache_key, False)
+
+
+@app.post("/project/brd/refresh")
+async def refresh_project_brd_cache(
+    background_tasks: BackgroundTasks,
+    x_tenant_url: Optional[str] = Header(None),
+    client: QlikClient = Depends(get_qlik_client),
+    ws_client: QlikWebSocketClient = Depends(get_qlik_websocket_client),
+):
+    return {
+        "status": "disabled",
+        "cached": False,
+        "message": "Project BRD cache warming is disabled. The BRD is generated fresh on download.",
+    }
+
+
+@app.get("/project/brd/download")
+@app.post("/project/brd/download")
+async def download_project_brd(
+    background_tasks: BackgroundTasks,
+    x_tenant_url: Optional[str] = Header(None),
+    client: QlikClient = Depends(get_qlik_client),
+    ws_client: QlikWebSocketClient = Depends(get_qlik_websocket_client),
+):
+    artifact = _generate_project_brd_content(client, ws_client)
     return StreamingResponse(
-        io.BytesIO(html_content.encode("utf-8")),
+        io.BytesIO(artifact["html_content"].encode("utf-8")),
         media_type="text/html; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{artifact["filename"]}"'},
     )
 
 

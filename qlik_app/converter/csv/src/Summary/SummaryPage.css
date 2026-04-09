@@ -2,8 +2,7 @@ PAGE WRAP
 .summary-layout {
   display: flex;
   height: 100vh;           /* full screen */
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   /* font-size: 14px; */
   color: #1f1f1f;
 }
@@ -65,7 +64,7 @@ PAGE WRAP
   background: #e0e0e0;
   border-color: #999;
 }
-
+ 
 /* Tab / Top button styles (glassmorphism) */
 .tab-button {
   padding: 8px 14px;
@@ -84,31 +83,31 @@ PAGE WRAP
   color: var(--btn-color);
   opacity: 0.75;
 }
-
+ 
 .tab-button:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 22px rgba(0, 0, 0, 0.14);
   opacity: 0.95;
 }
-
+ 
 .tab-button.active {
   opacity: 1;
   background: rgba(255, 255, 255, 0.35);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
 }
-
+ 
 .tab-button--sourceTypes {
   --btn-color: #16a34a;
 }
-
+ 
 .tab-button--summary {
   --btn-color: #d97706;
 }
-
+ 
 .tab-button--er {
   --btn-color: #2563eb;
 }
-
+ 
 .title {
   margin: 0;
   font-size: 14px;
@@ -299,7 +298,7 @@ PAGE WRAP
 .summary-report table {
   width: 100%;
   border-collapse: collapse;
-  font-family: Arial, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 14px;
 }
  
@@ -389,7 +388,7 @@ PAGE WRAP
   /* min-width: 120px; */
   justify-content: center;
 }
-
+ 
 .download-btn:hover {
   background-color: #005fa3;
 }
@@ -397,45 +396,45 @@ PAGE WRAP
    ADD THESE STYLES TO YOUR SummaryPage.css
    Place them near your existing .download-btn styles
    =================================================== */
-
+ 
 /* Publish MQuery to Power BI button */
 .publish-pbi-btn {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 9px 18px;
-  background: linear-gradient(135deg, #f0a500 0%, #e07b00 100%);
+  background: rgb(8, 122, 33);
   color: #fff;
   font-size: 13px;
-  font-weight: 600;
+  /* font-weight: 600; */
   border: none;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 6px rgba(240, 165, 0, 0.35);
+ 
   letter-spacing: 0.02em;
   flex: 1;
   min-width: 120px;
   justify-content: center;
 }
-
+ 
 .publish-pbi-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #ffb820 0%, #f08c00 100%);
+  background:rgb(13, 100, 13);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(240, 165, 0, 0.45);
+  /* box-shadow: 0 4px 12px rgba(240, 165, 0, 0.45); */
 }
-
+ 
 .publish-pbi-btn:active:not(:disabled) {
   transform: translateY(0);
   box-shadow: 0 1px 4px rgba(240, 165, 0, 0.3);
 }
-
+ 
 .publish-pbi-btn:disabled {
   opacity: 0.65;
   cursor: not-allowed;
   transform: none;
 }
-
+ 
 /* Spinner inside the publish button */
 .publish-spinner {
   display: inline-block;
@@ -447,11 +446,11 @@ PAGE WRAP
   animation: publish-spin 0.7s linear infinite;
   flex-shrink: 0;
 }
-
+ 
 @keyframes publish-spin {
   to { transform: rotate(360deg); }
 }
-
+ 
 /* Status message below the button */
 .publish-status-msg {
   margin-top: 10px;
@@ -462,26 +461,26 @@ PAGE WRAP
   line-height: 1.5;
   word-break: break-word;
 }
-
+ 
 .publish-success {
   background: #ecfdf5;
   color: #065f46;
   border: 1px solid #6ee7b7;
 }
-
+ 
 .publish-error {
   background: #fef2f2;
   color: #991b1b;
   border: 1px solid #fca5a5;
 }
-
+ 
 .source-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1) !important;
   border-color: #667eea !important;
   background: #fff !important;
 }
-
+ 
 .summary-table-container {
   width: 100%;
   overflow-x: auto;
@@ -490,7 +489,7 @@ PAGE WRAP
 .summary-table {
   width: 100%;
   border-collapse: collapse;
-  font-family: "Source Sans Pro", Helvetica, Arial, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 14px;
 }
  
@@ -593,29 +592,29 @@ PAGE WRAP
   background-color: rgb(183 183 183);
   border-radius: 10px;
   font-weight: 600;
-  font-family: "Source Sans Pro", HelveticaNeue, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-
+ 
 /* Master-row visual highlight (no text badge in the list) */
 .table-item.master-row {
   border-left: 4px solid #2563eb;
   background-color: rgba(37,99,235,0.06);
   font-weight: 700;
 }
-
+ 
 /* Small master chip shown in the detail header when a master is selected */
 .master-indicator {
   background: #e6f0ff;
   color: #0b3a66;
   border-radius: 999px;
   padding: 4px 8px;
-  font-weight: 700;
-  font-size: 12px;
+  font-weight: 500;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
-
-
+ 
+ 
 .new-badge {
   display: inline-block;
   background-color: #ff6b6b;
@@ -783,7 +782,7 @@ PAGE WRAP
   cursor: not-allowed;
   background: #7b93c6; /* muted blue when disabled */
 }
-
+ 
 .export-hint {
   color: #6b7280;
   font-size: 13px;
@@ -794,7 +793,7 @@ PAGE WRAP
 .export-btn:active {
   background: #e65100;
 }
-
+ 
 /* CONTINUE TO EXPORT BUTTON */
 .continue-export-btn {
   padding: 10px 16px;
@@ -809,18 +808,18 @@ PAGE WRAP
   transition: all 0.3s ease;
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
-
+ 
 .continue-export-btn:hover {
   background: linear-gradient(135deg, #5568d3 0%, #6a3fa0 100%);
   box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
   transform: translateY(-2px);
 }
-
+ 
 .continue-export-btn:active {
   transform: translateY(0);
   box-shadow: 0 2px 10px rgba(102, 126, 234, 0.4);
 }
-
+ 
 .continue-export-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -828,7 +827,7 @@ PAGE WRAP
   box-shadow: none;
   transform: none;
 }
-
+ 
  
 .warning-box {
   background: #fff3cd;
@@ -1378,7 +1377,7 @@ PAGE WRAP
   gap: 8px;
   margin-top: 8px;
 }
-
+ 
 .toggle-btn {
   padding: 8px 10px;
   background: #f0f0f0;
@@ -1390,19 +1389,19 @@ PAGE WRAP
   transition: all 0.2s ease;
   white-space: nowrap;
 }
-
+ 
 .toggle-btn:hover {
   background: #e8e8e8;
   border-color: #999;
 }
-
+ 
 .toggle-btn.active {
   background: #667eea;
   border-color: #667eea;
   color: white;
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
-
+ 
 .select-all-btn,
 .clear-btn {
   padding: 6px 10px;
@@ -1415,17 +1414,17 @@ PAGE WRAP
   transition: all 0.2s ease;
   white-space: nowrap;
 }
-
+ 
 .select-all-btn:hover {
   background: #e8f5e9;
   border-color: #4caf50;
 }
-
+ 
 .clear-btn:hover {
   background: #ffe8e8;
   border-color: #f44336;
 }
-
+ 
 /* Table items with checkboxes */
 .table-item {
   padding: 10px 8px;
@@ -1438,17 +1437,17 @@ PAGE WRAP
   gap: 8px;
   border-left: 3px solid transparent;
 }
-
+ 
 .table-item:hover {
   background-color: #e8f5e9;
 }
-
+ 
 .table-item.active {
   background-color: #e3f2fd;
   border-left-color: #667eea;
   font-weight: 600;
 }
-
+ 
 .table-checkbox {
   width: 18px;
   height: 18px;
@@ -1456,14 +1455,14 @@ PAGE WRAP
   accent-color: #667eea;
   flex-shrink: 0;
 }
-
+ 
 .table-item span {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
+ 
 .new-badge {
   background-color: #4caf50;
   color: white;
@@ -1472,8 +1471,8 @@ PAGE WRAP
   font-size: 10px;
   font-weight: 600;
   flex-shrink: 0;
-} 
-
+}
+ 
 /* Inline export icon/button shown beside table names for standalone/master tables */
 .inline-export {
   background: transparent;
@@ -1488,7 +1487,7 @@ PAGE WRAP
 }
 .inline-export img { width: 16px; height: 16px; }
 .inline-export:hover { background: rgba(0,0,0,0.04); }
-
+ 
 /* ================= 3-DIV SUMMARY LAYOUT ================= */
 .summary-container {
   display: flex;
@@ -1496,7 +1495,7 @@ PAGE WRAP
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
-
+ 
 .summary-div {
   background: #fff;
   padding: 16px;
@@ -1504,13 +1503,13 @@ PAGE WRAP
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   border: 1px solid #e0e0e0;
 }
-
+ 
 /* Pie-Chart Div */
 .pie-chart-div {
   flex: 0 0 auto;
   min-width: 400px;
 }
-
+ 
 /* LoadScript Div */
 .loadscript-div {
   flex: 1;
@@ -1518,7 +1517,7 @@ PAGE WRAP
   display: flex;
   flex-direction: column;
 }
-
+ 
 .loadscript-header {
   display: flex;
   justify-content: space-between;
@@ -1527,14 +1526,14 @@ PAGE WRAP
   padding-bottom: 12px;
   border-bottom: 1px solid #e0e0e0;
 }
-
+ 
 .loadscript-header h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
   color: #1f1f1f;
 }
-
+ 
 .fetch-btn,
 .convert-btn {
   padding: 15px 20px;
@@ -1551,20 +1550,20 @@ PAGE WRAP
   gap: 6px;
   white-space:nowrap;
 }
-
+ 
 .fetch-btn:hover:not(:disabled),
 .convert-btn:hover:not(:disabled) {
   background: #0a2d52;
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(11, 58, 102, 0.2);
 }
-
+ 
 .fetch-btn:disabled,
 .convert-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-
+ 
 .error-message {
   background: #fee;
   color: #c33;
@@ -1574,14 +1573,14 @@ PAGE WRAP
   border-left: 4px solid #c33;
   font-size: 13px;
 }
-
+ 
 .loadscript-displays {
   display: flex;
   gap: 12px;
   height: 850px;
   flex-shrink: 0;
 }
-
+ 
 .display-section {
   flex: 1 1 50%;
   min-width: 0;
@@ -1593,14 +1592,14 @@ PAGE WRAP
   padding: 12px;
   overflow: hidden;
 }
-
+ 
 .display-section h4 {
   margin: 0 0 8px 0;
   font-size: 13px;
   font-weight: 600;
   color: #333;
 }
-
+ 
 .script-content {
   flex: 1;
   overflow: auto;
@@ -1612,14 +1611,14 @@ PAGE WRAP
   flex: 1;
   min-height: 0;
 }
-
+ 
 .mquery-button-group {
   display: flex;
   gap: 8px;
   width: 100%;
   flex-wrap: wrap;
 }
-
+ 
 .script-content pre {
   margin: 0;
   font-family: 'Courier New', monospace;
@@ -1629,7 +1628,7 @@ PAGE WRAP
   word-break: break-word;
   line-height: 1.4;
 }
-
+ 
 .empty-display {
   color: #999;
   font-size: 12px;
@@ -1640,42 +1639,42 @@ PAGE WRAP
   text-align: center;
   padding: 20px;
 }
-
+ 
 .loadscript-display .convert-btn {
   width: 100%;
   justify-content: center;
 }
-
+ 
 .mquery-display {
   position: relative;
 }
-
+ 
 /* Responsive design */
 @media (max-width: 1400px) {
   .summary-container {
     flex-direction: column;
   }
-
+ 
   .pie-chart-div,
   .loadscript-div {
     min-width: auto;
     width: 100%;
   }
-
+ 
   .loadscript-displays {
     flex-direction: column;
     min-height: auto;
   }
-
+ 
   .display-section {
     min-height: 250px;
   }
-
+ 
   .script-content {
     max-height: 300px;
   }
 }
-
+ 
 /* ===== TAB STYLING ===== */
 .tab-button {
   padding: 10px 18px;
@@ -1691,25 +1690,25 @@ PAGE WRAP
   position: relative;
   bottom: -8px;
 }
-
+ 
 .tab-button:hover {
   background-color: #f3f4f6;
   color: #374151;
 }
-
+ 
 .tab-button.active {
   background-color: #dbeafe;
   color: #0b83f5;
   border-bottom-color: #0b83f5;
 }
-
+ 
 .tabs-content {
   display: flex;
   flex-direction: column;
   gap: 16px;
   animation: fadeIn 0.2s ease-in-out;
 }
-
+ 
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -1720,24 +1719,25 @@ PAGE WRAP
     transform: translateY(0);
   }
 }
-
+ 
 .tab-content {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-
+ 
 .summary-tab {
   min-height: 500px;
 }
-
+ 
 .mquery-tab {
   min-height: 500px;
 }
-
+ 
 .display-section .mquery-display{
    
     border: 2px solid #e0e0e0;
     border-radius: 8px;
-    
+   
 }
+ 

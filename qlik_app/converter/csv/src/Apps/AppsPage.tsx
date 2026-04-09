@@ -18,10 +18,10 @@ export default function AppsPage() {
   const [apps, setApps] = useState<App[]>([]);
   const [tableCount, setTableCount] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [brdDownloading, setBrdDownloading] = useState(false);
   const [appsError, setAppsError] = useState<string | null>(null);
   const [favourites, setFavourites] = useState<string[]>([]);
   const [pageLoadTime, setPageLoadTime] = useState<string | null>(null);
-  const [generatingBrd, setGeneratingBrd] = useState(false);
 
   const [query, setQuery] = useState("");
   const [sortNewestFirst] = useState(true);
@@ -132,13 +132,13 @@ export default function AppsPage() {
     });
 
   const handleBusinessDocDownload = async () => {
+    setBrdDownloading(true);
     try {
-      setGeneratingBrd(true);
       await downloadBusinessSpecificDoc();
     } catch (error: any) {
       alert(`Failed to generate the consolidated Business Specific Doc: ${error?.message || "Unknown error"}`);
     } finally {
-      setGeneratingBrd(false);
+      setBrdDownloading(false);
     }
   };
 
@@ -146,29 +146,55 @@ export default function AppsPage() {
     <div className="wrap">
       {/* HEADER */}
       <div className="qlik-header">
-         <div className="qlik-header-left">
-          {apps.length} Application{apps.length !== 1 ? 's' : ''} to explore
+         <div className="qlik-header-left-group">
+          <div className="qlik-header-left">
+            {apps.length} Application{apps.length !== 1 ? 's' : ''}
+          </div>
+
+          <button
+            type="button"
+            className="business-doc-icon-btn"
+            onClick={handleBusinessDocDownload}
+            disabled={apps.length === 0 || brdDownloading}
+            title="Business Requirements Document"
+            aria-label="Download Business Requirements Document"
+          >
+            <svg
+              className="business-doc-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M7 2h7l5 5v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm6 1.5V8h4.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M8.5 11h7M8.5 14.5h7M8.5 18h4.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
+
+            {brdDownloading && <span className="business-doc-spinner" aria-hidden="true" />}
+          </button>
         </div>
 
         <div className="qlik-header-right">
           <div className="tools">
             <input
               type="search"
-              placeholder="Search apps..."
+              placeholder="Search Apps..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="apps-search"
             />
-
-            <button
-              type="button"
-              className="business-doc-btn"
-              onClick={handleBusinessDocDownload}
-              disabled={generatingBrd || apps.length === 0}
-              title="Generate and download the consolidated Business Requirements Document for the entire project"
-            >
-              {generatingBrd ? "Generating BRD..." : "Business Requirement Document"}
-            </button>
 
             {/* <buttonz
               className="sort-btn"
