@@ -1,11 +1,15 @@
 import html
 import json
+import math
 import re
+import base64
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
 BRD_PROMPT_VERSION = "2026-04-09-migration-v2"
+_BRD_LOGO_DATA_URI: Optional[str] = None
 
 
 def _e(value: Any) -> str:
@@ -15,6 +19,21 @@ def _e(value: Any) -> str:
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9]+", "_", value or "document").strip("_")
     return slug or "document"
+
+
+def _get_brd_logo_data_uri() -> str:
+    global _BRD_LOGO_DATA_URI
+    if _BRD_LOGO_DATA_URI is not None:
+        return _BRD_LOGO_DATA_URI
+
+    logo_path = Path(__file__).resolve().parents[2] / "converter" / "csv" / "public" / "qlikai.png"
+    try:
+        encoded = base64.b64encode(logo_path.read_bytes()).decode("ascii")
+        _BRD_LOGO_DATA_URI = f"data:image/png;base64,{encoded}"
+    except Exception:
+        _BRD_LOGO_DATA_URI = ""
+
+    return _BRD_LOGO_DATA_URI
 
 
 def extract_json_object(raw_text: str) -> Dict[str, Any]:
@@ -236,11 +255,14 @@ def build_default_document(
     project_scope: str = "application",
     application_inventory: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    date_label = datetime.now().strftime("%B %d, %Y")
+    generated_at = datetime.now()
+    date_label = generated_at.strftime("%B %d, %Y")
+    time_label = generated_at.strftime("%I:%M %p").lstrip("0")
+    generated_datetime_label = f"{date_label} {time_label}"
     summary = dict(summary or {})
     application_inventory = application_inventory or []
     app_count = len(application_inventory)
-    app_type = "AI-Powered Qlik Sense to Power BI Migration Platform" if project_scope == "application" else "AI-Powered Qlik-to-Power BI Migration Project Portfolio"
+    app_type = "Qlik Application Migration Specification" if project_scope == "application" else "AI-Powered Qlik-to-Power BI Migration Project Portfolio"
     sheet_names = [sheet.get("name", "") for sheet in sheets if sheet.get("name")]
     sheet_preview = ", ".join(sheet_names[:6]) if sheet_names else "Not explicitly available"
     fields_count = len(fields or [])
@@ -249,16 +271,15 @@ def build_default_document(
     has_script = bool((script or "").strip())
 
     tech_stack = [
-        "React 18.x",
-        "TypeScript 5.x",
-        "FastAPI",
-        "Python 3.10+",
-        "Qlik Cloud REST API",
+        "Qlik Cloud",
         "QIX WebSocket",
+        "Qlik Cloud REST API",
+        "Qlik Load Script" if has_script else "Qlik Metadata",
+        "Qlik Sheets" if sheet_names else "Sheet metadata unavailable",
         "Llama-3.1-8B",
         "Mistral-7B",
-        "Microsoft Entra ID",
         "Power BI / Fabric",
+        "Microsoft Entra ID",
     ]
 
     if project_scope == "project":
@@ -426,8 +447,17 @@ def build_default_document(
         "app_title": app_title,
         "app_id": app_id,
         "date_label": date_label,
+        "time_label": time_label,
+        "generated_datetime_label": generated_datetime_label,
         "project_type": app_type,
         "project_subtitle": "Business Requirements Document",
+        "application_purpose": (
+            f"{app_title} is documented here as a Qlik application whose business behavior is inferred from {table_count} detected table(s), {fields_count} field(s), {len(sheets or [])} sheet(s), and {relationship_count} inferred relationship(s). "
+            "The BRD focuses on the selected application's source model, transformation logic, and migration-readiness signals for a Power BI target state."
+            if project_scope == "application"
+            else "QlikAI is positioned as an AI-powered analytics acceleration platform that automates Qlik Sense to Microsoft Power BI / Fabric migration activities, from authentication and metadata extraction through AI-assisted analysis to publication-path execution."
+        ),
+        "primary_languages": "Python 3.10+ / TypeScript 5.x",
         "project_overview": (
             f"{app_title} is documented here as a {'portfolio of Qlik migration candidates' if project_scope == 'project' else 'Qlik-to-Power BI migration candidate'} derived from live metadata, load-script logic, "
             f"sheet structure, entity definitions, and inferred table relationships. The current inspection found "
@@ -627,153 +657,168 @@ def _ensure_project_modules(
     return normalized
 
 
-def _render_office_details_er_diagram() -> str:
-        return '''
-<div class="er-diagram-card">
-    <div class="er-diagram-title">Office Details ER Diagram</div>
-    <svg class="office-er-svg" viewBox="0 0 1260 980" role="img" aria-label="Office Details entity relationship diagram">
-        <defs>
-            <marker id="officeArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-                <path d="M0,0 L8,4 L0,8 z" fill="#1a5c5a"></path>
-            </marker>
-        </defs>
-        <path d="M635 306 L635 344 L150 344 L150 360" class="er-link"></path>
-        <path d="M635 306 L635 344 L390 344 L390 360" class="er-link"></path>
-        <path d="M635 306 L635 360" class="er-link"></path>
-        <path d="M635 306 L635 344 L870 344 L870 360" class="er-link"></path>
-        <path d="M635 306 L635 344 L1095 344 L1095 360" class="er-link"></path>
-        <path d="M635 306 L635 500" class="er-link"></path>
-        <path d="M635 750 L635 790 L150 790 L150 806" class="er-link"></path>
-        <path d="M635 750 L635 790 L390 790 L390 806" class="er-link"></path>
-        <path d="M635 750 L635 806" class="er-link"></path>
-        <path d="M635 750 L635 790 L880 790 L880 806" class="er-link"></path>
-        <path d="M970 880 L1030 880" class="er-link"></path>
+def _relationship_table_name(endpoint: Any) -> str:
+    raw = str(endpoint or "").strip()
+    if not raw:
+        return ""
+    return raw.split(".", 1)[0].strip()
 
-        <g class="er-node" transform="translate(525 20)">
-            <rect width="220" height="286" rx="8"></rect>
-            <rect width="220" height="36" rx="8" class="er-head"></rect>
-            <text x="110" y="23" text-anchor="middle" class="er-head-text">Employees</text>
-            <text x="14" y="63">string location_id</text>
-            <text x="14" y="86">string role_id</text>
-            <text x="14" y="109">string salary_band_id</text>
-            <text x="14" y="132">string department_id</text>
-            <text x="14" y="155">string employee_id</text>
-            <text x="14" y="178">string employee_name</text>
-            <text x="14" y="201">string emp_department_name</text>
-            <text x="14" y="224">string total_hours</text>
-            <text x="14" y="247">string total_days</text>
-            <text x="14" y="270">string avg_hours</text>
-            <text x="14" y="293">string performance_category</text>
-        </g>
 
-        <g class="er-node er-small" transform="translate(70 360)">
-            <rect width="160" height="98" rx="8"></rect>
-            <rect width="160" height="30" rx="8" class="er-head"></rect>
-            <text x="80" y="20" text-anchor="middle" class="er-head-text">Departments</text>
-            <text x="12" y="53">string department_id</text>
-            <text x="12" y="76">string department_name</text>
-        </g>
+def _render_dynamic_er_diagram(table_inventory: List[Dict[str, Any]], relationships: List[Dict[str, Any]], subject_title: str, figure_number: str) -> str:
+    if not table_inventory:
+        return '<p>No table inventory was available to build an ER diagram.</p>'
 
-        <g class="er-node er-small" transform="translate(290 360)">
-            <rect width="200" height="144" rx="8"></rect>
-            <rect width="200" height="30" rx="8" class="er-head"></rect>
-            <text x="100" y="20" text-anchor="middle" class="er-head-text">Employee_Summary</text>
-            <text x="12" y="53">string employee_id</text>
-            <text x="12" y="76">string total_hours</text>
-            <text x="12" y="99">string total_days</text>
-            <text x="12" y="122">string avg_hours</text>
-        </g>
+    inventory_by_name = {
+        (row.get("name") or "").strip(): row
+        for row in table_inventory
+        if (row.get("name") or "").strip()
+    }
+    inventory_order = list(inventory_by_name.keys())
+    degrees: Dict[str, int] = {name: 0 for name in inventory_order}
+    seen_edges = set()
+    edges: List[Dict[str, Any]] = []
 
-        <g class="er-node er-small" transform="translate(555 360)">
-            <rect width="160" height="120" rx="8"></rect>
-            <rect width="160" height="30" rx="8" class="er-head"></rect>
-            <text x="80" y="20" text-anchor="middle" class="er-head-text">Locations</text>
-            <text x="12" y="53">string location_id</text>
-            <text x="12" y="76">string city</text>
-            <text x="12" y="99">string country</text>
-        </g>
+    for rel in relationships or []:
+        from_table = _relationship_table_name(rel.get("from"))
+        to_table = _relationship_table_name(rel.get("to"))
+        if not from_table or not to_table or from_table == to_table:
+            continue
+        if from_table not in inventory_by_name or to_table not in inventory_by_name:
+            continue
+        edge_key = tuple(sorted((from_table, to_table)))
+        if edge_key in seen_edges:
+            continue
+        seen_edges.add(edge_key)
+        edges.append({"from": from_table, "to": to_table, "cardinality": rel.get("cardinality", "unknown")})
+        degrees[from_table] = degrees.get(from_table, 0) + 1
+        degrees[to_table] = degrees.get(to_table, 0) + 1
 
-        <g class="er-node er-small" transform="translate(790 360)">
-            <rect width="160" height="98" rx="8"></rect>
-            <rect width="160" height="30" rx="8" class="er-head"></rect>
-            <text x="80" y="20" text-anchor="middle" class="er-head-text">Roles</text>
-            <text x="12" y="53">string role_id</text>
-            <text x="12" y="76">string role_name</text>
-        </g>
+    selected_names = sorted(
+        inventory_order,
+        key=lambda name: (-degrees.get(name, 0), inventory_order.index(name)),
+    )[: min(9, len(inventory_order))]
 
-        <g class="er-node er-small" transform="translate(1015 360)">
-            <rect width="160" height="98" rx="8"></rect>
-            <rect width="160" height="30" rx="8" class="er-head"></rect>
-            <text x="80" y="20" text-anchor="middle" class="er-head-text">Salary</text>
-            <text x="12" y="53">string salary_band_id</text>
-            <text x="12" y="76">string salary_range</text>
-        </g>
+    if not selected_names:
+        return '<p>No table inventory was available to build an ER diagram.</p>'
 
-        <g class="er-node" transform="translate(525 500)">
-            <rect width="220" height="250" rx="8"></rect>
-            <rect width="220" height="36" rx="8" class="er-head"></rect>
-            <text x="110" y="23" text-anchor="middle" class="er-head-text">Final_Activity</text>
-            <text x="14" y="63">string employee_id</text>
-            <text x="14" y="86">string date_id</text>
-            <text x="14" y="109">string project_id</text>
-            <text x="14" y="132">string shift_id</text>
-            <text x="14" y="155">string performance_id</text>
-            <text x="14" y="178">string activity_id</text>
-            <text x="14" y="201">string hours_worked</text>
-            <text x="14" y="224">string work_type</text>
-            <text x="14" y="247">string productivity_flag</text>
-        </g>
+    selected_set = set(selected_names)
+    edges = [edge for edge in edges if edge["from"] in selected_set and edge["to"] in selected_set]
 
-        <g class="er-node er-small" transform="translate(70 806)">
-            <rect width="160" height="170" rx="8"></rect>
-            <rect width="160" height="30" rx="8" class="er-head"></rect>
-            <text x="80" y="20" text-anchor="middle" class="er-head-text">Dates</text>
-            <text x="12" y="53">string date_id</text>
-            <text x="12" y="76">string full_date</text>
-            <text x="12" y="99">string year</text>
-            <text x="12" y="122">string month</text>
-            <text x="12" y="145">string day</text>
-            <text x="12" y="168">string quarter</text>
-        </g>
+    node_width = 250
+    header_height = 34
+    row_height = 18
+    node_padding = 14
+    x_gap = 48
+    y_gap = 68
+    max_fields = 6
+    columns = 1 if len(selected_names) == 1 else min(3, max(2, math.ceil(math.sqrt(len(selected_names)))))
 
-        <g class="er-node er-small" transform="translate(310 806)">
-            <rect width="160" height="98" rx="8"></rect>
-            <rect width="160" height="30" rx="8" class="er-head"></rect>
-            <text x="80" y="20" text-anchor="middle" class="er-head-text">Performance</text>
-            <text x="12" y="53">string performance_id</text>
-            <text x="12" y="76">string rating</text>
-        </g>
+    rows: List[List[str]] = []
+    for index, table_name in enumerate(selected_names):
+        if index % columns == 0:
+            rows.append([])
+        rows[-1].append(table_name)
 
-        <g class="er-node er-small" transform="translate(560 806)">
-            <rect width="160" height="98" rx="8"></rect>
-            <rect width="160" height="30" rx="8" class="er-head"></rect>
-            <text x="80" y="20" text-anchor="middle" class="er-head-text">Shift</text>
-            <text x="12" y="53">string shift_id</text>
-            <text x="12" y="76">string shift_type</text>
-        </g>
+    node_meta: Dict[str, Dict[str, Any]] = {}
+    view_width = 40 + columns * node_width + max(columns - 1, 0) * x_gap + 40
+    current_y = 24
 
-        <g class="er-node er-small" transform="translate(790 806)">
-            <rect width="180" height="144" rx="8"></rect>
-            <rect width="180" height="30" rx="8" class="er-head"></rect>
-            <text x="90" y="20" text-anchor="middle" class="er-head-text">Projects</text>
-            <text x="12" y="53">string project_id</text>
-            <text x="12" y="76">string client_id</text>
-            <text x="12" y="99">string project_name</text>
-            <text x="12" y="122">string start_date / end_date</text>
-        </g>
+    for row_tables in rows:
+        row_box_heights: List[int] = []
+        for table_name in row_tables:
+            sample_fields = [field.strip() for field in str(inventory_by_name[table_name].get("sample_fields", "")).split(",") if field.strip()][:max_fields]
+            if not sample_fields:
+                sample_fields = ["No fields available"]
+            row_box_heights.append(header_height + node_padding + len(sample_fields) * row_height + 12)
 
-        <g class="er-node er-small" transform="translate(1030 831)">
-            <rect width="160" height="120" rx="8"></rect>
-            <rect width="160" height="30" rx="8" class="er-head"></rect>
-            <text x="80" y="20" text-anchor="middle" class="er-head-text">Clients</text>
-            <text x="12" y="53">string client_id</text>
-            <text x="12" y="76">string client_name</text>
-            <text x="12" y="99">string industry</text>
-        </g>
-    </svg>
-    <div class="fig-caption">Figure 16.1 - Office Details data model reconstructed from the original application tables and relationships.</div>
-</div>
-'''
+        row_height_px = max(row_box_heights) if row_box_heights else 120
+        total_row_width = len(row_tables) * node_width + max(len(row_tables) - 1, 0) * x_gap
+        start_x = max(40, int((view_width - total_row_width) / 2))
+
+        for index, table_name in enumerate(row_tables):
+            sample_fields = [field.strip() for field in str(inventory_by_name[table_name].get("sample_fields", "")).split(",") if field.strip()][:max_fields]
+            if not sample_fields:
+                sample_fields = ["No fields available"]
+            node_meta[table_name] = {
+                "x": start_x + index * (node_width + x_gap),
+                "y": current_y,
+                "width": node_width,
+                "height": header_height + node_padding + len(sample_fields) * row_height + 12,
+                "fields": sample_fields,
+            }
+
+        current_y += row_height_px + y_gap
+
+    view_height = current_y + 20
+    marker_id = "officeArrow"
+    edge_paths: List[str] = []
+
+    for edge in edges:
+        from_meta = node_meta[edge["from"]]
+        to_meta = node_meta[edge["to"]]
+
+        if from_meta["y"] < to_meta["y"]:
+            x1 = from_meta["x"] + from_meta["width"] / 2
+            y1 = from_meta["y"] + from_meta["height"]
+            x2 = to_meta["x"] + to_meta["width"] / 2
+            y2 = to_meta["y"]
+        elif from_meta["y"] > to_meta["y"]:
+            x1 = from_meta["x"] + from_meta["width"] / 2
+            y1 = from_meta["y"]
+            x2 = to_meta["x"] + to_meta["width"] / 2
+            y2 = to_meta["y"] + to_meta["height"]
+        elif from_meta["x"] < to_meta["x"]:
+            x1 = from_meta["x"] + from_meta["width"]
+            y1 = from_meta["y"] + from_meta["height"] / 2
+            x2 = to_meta["x"]
+            y2 = to_meta["y"] + to_meta["height"] / 2
+        else:
+            x1 = from_meta["x"]
+            y1 = from_meta["y"] + from_meta["height"] / 2
+            x2 = to_meta["x"] + to_meta["width"]
+            y2 = to_meta["y"] + to_meta["height"] / 2
+
+        mid_x = (x1 + x2) / 2
+        mid_y = (y1 + y2) / 2
+        label = _e(edge.get("cardinality", ""))
+        edge_paths.append(
+            f'<path d="M{x1:.1f} {y1:.1f} L{mid_x:.1f} {mid_y:.1f} L{x2:.1f} {y2:.1f}" class="er-link" marker-end="url(#{marker_id})"></path>'
+            + (f'<text x="{mid_x:.1f}" y="{mid_y - 8:.1f}" text-anchor="middle" class="er-cardinality">{label}</text>' if label else "")
+        )
+
+    node_groups: List[str] = []
+    for table_name in selected_names:
+        meta = node_meta[table_name]
+        text_rows = []
+        for field_index, field_name in enumerate(meta["fields"], start=1):
+            text_y = header_height + node_padding + field_index * row_height - 4
+            text_rows.append(f'<text x="14" y="{text_y}">string {_e(field_name)}</text>')
+
+        node_groups.append(
+            f'<g class="er-node" transform="translate({meta["x"]} {meta["y"]})">'
+            f'<rect width="{meta["width"]}" height="{meta["height"]}" rx="8"></rect>'
+            f'<rect width="{meta["width"]}" height="{header_height}" rx="8" class="er-head"></rect>'
+            f'<text x="{meta["width"] / 2:.1f}" y="22" text-anchor="middle" class="er-head-text">{_e(table_name)}</text>'
+            + ''.join(text_rows)
+            + '</g>'
+        )
+
+    return (
+        '<div class="er-diagram-card">'
+        f'<div class="er-diagram-title">{_e(subject_title)} ER Diagram</div>'
+        f'<svg class="office-er-svg" viewBox="0 0 {view_width} {view_height}" role="img" aria-label="{_e(subject_title)} entity relationship diagram">'
+        '<defs>'
+        f'<marker id="{marker_id}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">'
+        '<path d="M0,0 L8,4 L0,8 z" fill="#1a5c5a"></path>'
+        '</marker>'
+        '</defs>'
+        + ''.join(edge_paths)
+        + ''.join(node_groups)
+        + '</svg>'
+        f'<div class="fig-caption">{_e(figure_number)} - {_e(subject_title)} data model reconstructed from the selected application tables and inferred relationships.</div>'
+        '<div class="callout"><strong>ER Diagram Note</strong><div>Relationships and entities shown here are generated from the currently selected application only.</div></div>'
+        '</div>'
+    )
 
 
 def _render_er_grid(tables: List[Dict[str, Any]]) -> str:
@@ -810,6 +855,16 @@ def _render_sample_tables(samples: List[Dict[str, Any]]) -> str:
 def _render_project_brd_html(document: Dict[str, Any]) -> str:
     app_title = document.get("app_title", "QlikAI Accelerator")
     date_label = document.get("date_label", datetime.now().strftime("%B %d, %Y"))
+    time_label = document.get("time_label", datetime.now().strftime("%I:%M %p").lstrip("0"))
+    generated_datetime_label = document.get("generated_datetime_label", f"{date_label} {time_label}")
+    logo_data_uri = _get_brd_logo_data_uri()
+    project_subtitle = document.get("project_subtitle", "Business Requirements Document")
+    cover_tagline = document.get("cover_tagline", "AI-Powered Qlik Sense to Microsoft Power BI Transformation Platform")
+    logo_html = (
+        f'<div class="cover-logo-wrap"><img src="{logo_data_uri}" alt="QlikAI logo" class="cover-logo" /></div>'
+        if logo_data_uri
+        else ""
+    )
     summary = document.get("summary", {}) or {}
     relationships = document.get("relationships", []) or []
     table_inventory = document.get("table_inventory", []) or []
@@ -1050,7 +1105,7 @@ def _render_project_brd_html(document: Dict[str, Any]) -> str:
     )
 
     chapters = [
-        ("ch1", "Chapter 1", "Introduction", "Purpose, application identity, and migration context", f"<h2>1.1 Purpose of the Document</h2><p>This document provides a comprehensive technical and business requirements overview of { _e(app_title) }, designed to support stakeholder alignment, modernization planning, migration execution, and knowledge transfer.</p><h2>1.2 Application Purpose</h2><p>QlikAI is positioned as an AI-powered analytics acceleration platform that automates Qlik Sense to Microsoft Power BI / Fabric migration activities, from authentication and metadata extraction through AI-assisted analysis to publication-path execution.</p><h2>1.3 Application At a Glance</h2>{app_glance}"),
+        ("ch1", "Chapter 1", "Introduction", "Purpose, application identity, and migration context", f"<h2>1.1 Purpose of the Document</h2><p>This document provides a comprehensive technical and business requirements overview of { _e(app_title) }, designed to support stakeholder alignment, modernization planning, migration execution, and knowledge transfer.</p><h2>1.2 Application Purpose</h2><p>{_e(document.get('application_purpose', ''))}</p><h2>1.3 Application At a Glance</h2>{app_glance}"),
         ("ch2", "Chapter 2", "Purpose & Scope", "Migration scope, boundaries, and objectives", f"<h2>2.1 Detailed Purpose</h2><p>The platform provides a standardized migration baseline for enterprise BI modernization by combining source-system extraction, AI summarization, and target-state Power BI publication planning.</p><h2>2.2 Scope</h2><div class=\"scope-grid\"><div class=\"scope-box in-scope\"><h4>In Scope</h4><div class=\"scope-item\"><span>✔</span><span>Qlik authentication, metadata extraction, AI summary generation, and publishing path selection</span></div><div class=\"scope-item\"><span>✔</span><span>Power BI dataset / semantic model publication planning</span></div><div class=\"scope-item\"><span>✔</span><span>Migration risk, security, and prerequisite analysis</span></div></div><div class=\"scope-box out-scope\"><h4>Out of Scope</h4><div class=\"scope-item\"><span>✘</span><span>Manual report design and end-user training</span></div><div class=\"scope-item\"><span>✘</span><span>Custom post-migration DAX beyond documented migration scope</span></div><div class=\"scope-item\"><span>✘</span><span>Broader data-warehouse redesign beyond the extracted source context</span></div></div></div><h2>2.3 Objectives</h2>{objectives_table}"),
         ("ch3", "Chapter 3", "Business Functionality & Key Features", "Core migration capabilities and business value", f"<h2>3.1 Feature Overview</h2>{feature_table}<div class=\"callout\"><strong>Business Value</strong><div>Automated discovery, migration analysis, and publication-path planning replace slow manual documentation with a repeatable, governed execution baseline.</div></div>"),
         ("ch4", "Chapter 4", "High-Level Architecture", "Layered migration architecture and design patterns", f"<h2>4.1 Architecture Layers</h2>{architecture_table}<h2>4.2 Design Patterns</h2>{_render_table(['Pattern','Where Applied','Benefit'], [[row.get('pattern',''), row.get('where_applied',''), row.get('benefit','')] for row in (document.get('design_patterns', []) or []) if row])}<h2>4.3 Functional Modules</h2><div class=\"module-grid\">{_render_module_cards(project_modules)}</div>"),
@@ -1065,7 +1120,7 @@ def _render_project_brd_html(document: Dict[str, Any]) -> str:
         ("ch13", "Chapter 13", "Activity & Process Flows", "Execution sequence and fallback behavior", "<h2>13.1 Authentication Flow</h2><p>Connect -> validate tenant -> authenticate with approved method -> establish session -> discover applications.</p><h2>13.2 Extraction Flow</h2><p>Select application -> open QIX session -> retrieve metadata and load script -> build migration context.</p><h2>13.3 Publication Flow</h2><p>Infer source path -> validate prerequisites -> publish via selected strategy -> return artifact reference.</p>"),
         ("ch14", "Chapter 14", "End-to-End Data Flow", "Context and level-1 flow decomposition", f"<h2>14.1 Process Decomposition</h2>{process_table}<div class=\"callout\"><strong>DFD Note</strong><div>The migration flow is primarily in-memory and API-driven. Persistent storage is not required in the core BRD generation path.</div></div>"),
         ("ch15", "Chapter 15", "Interface Description & Integration Architecture", "Frontend, backend, and external integration surfaces", f"<h2>15.1 Integration Technologies</h2>{integration_table}"),
-        ("ch16", "Chapter 16", "Logical Entity Inventory", "Core entities and relationships", f"<h2>16.1 Entity Definitions</h2>{entity_table}<h2>16.2 Sample ER Diagram</h2>{_render_office_details_er_diagram()}<h2>16.3 Inferred Relationships</h2>{_render_relationship_table(relationships)}"),
+        ("ch16", "Chapter 16", "Logical Entity Inventory", "Core entities and relationships", f"<h2>16.1 Entity Definitions</h2>{entity_table}<h2>16.2 Sample ER Diagram</h2>{_render_dynamic_er_diagram(table_inventory, relationships, app_title, 'Figure 16.1')}<h2>16.3 Inferred Relationships</h2>{_render_relationship_table(relationships)}"),
         ("ch17", "Chapter 17", "Non-Functional Requirements", "Security, availability, performance, and resilience", f"<h2>17.1 NFR Overview</h2>{nfr_table}"),
         ("ch18", "Chapter 18", "Current Risks & Challenges", "Migration-specific blockers and mitigations", f"<h2>18.1 Risk Register</h2>{risks_table}"),
         ("ch19", "Chapter 19", "Deployment Architecture", "Target runtime and environment layout", f"<h2>19.1 Deployment Overview</h2>{deployment_table}<h2>19.2 Environment Considerations</h2><p>Environment variables should cover Qlik tenant access, Microsoft tenant and client identities, workspace targets, and LLM configuration, while keeping secrets outside source control.</p>"),
@@ -1077,8 +1132,13 @@ def _render_project_brd_html(document: Dict[str, Any]) -> str:
         ("ch25", "Chapter 25", "References & Appendices", "Processing summary and appendix linkage", f"<h2>25.1 Processing Summary</h2>{processing_summary}<h2>25.2 Appendix Linkage</h2><p>Appendix A contains the project conflict-resolution register used to normalize migration terminology, auth assumptions, and publishing-path semantics.</p>"),
     ]
 
+    toc_table = _render_table(
+        ["Section", "Title", "Page"],
+        [["Document Control", "Control Page", "02"], *[[chapter_no, title, f"{index + 4:02d}"] for index, (_chapter_id, chapter_no, title, _subtitle, _content) in enumerate(chapters)], ["Appendix A", "BRD Conflict Resolution Register", f"{len(chapters) + 4:02d}"]],
+    )
+
     chapter_pages = "".join(
-        f'<div class="page" id="{chapter_id}"><div class="page-inner"><div class="ch-header"><div><div class="ch-num">{_e(chapter_no)}</div><div class="ch-title">{_e(title)}</div></div><div class="ch-subtitle">{_e(subtitle)}</div></div>{content}</div><div class="pg-watermark">QlikAI BRD - Confidential</div><div class="pg-num">{index + 3:02d}</div></div>'
+        f'<div class="page" id="{chapter_id}"><div class="page-inner"><div class="ch-header"><div><div class="ch-num">{_e(chapter_no)}</div><div class="ch-title">{_e(title)}</div></div><div class="ch-subtitle">{_e(subtitle)}</div></div>{content}</div><div class="pg-watermark">QlikAI BRD - Confidential</div><div class="pg-timestamp">Generated {_e(generated_datetime_label)}</div><div class="pg-num">{index + 4:02d}</div></div>'
         for index, (chapter_id, chapter_no, title, subtitle, content) in enumerate(chapters)
     )
 
@@ -1094,19 +1154,20 @@ def _render_project_brd_html(document: Dict[str, Any]) -> str:
   * {{ box-sizing:border-box; }} body {{ background:#d4cfc6; font-family:'DM Mono', monospace; color:var(--ink); font-size:13px; line-height:1.65; margin:0; }}
     .doc-wrapper {{ max-width:var(--page-w); margin:0 auto; padding:24px 0 80px; }} .page {{ background:var(--paper); margin-bottom:24px; box-shadow:0 4px 32px rgba(0,0,0,.18), 0 1px 4px rgba(0,0,0,.12); position:relative; overflow:hidden; }} .page::before {{ content:''; position:absolute; left:0; top:0; bottom:0; width:5px; background:linear-gradient(180deg,var(--gold) 0%, var(--teal) 100%); }} .page-inner {{ padding:60px 64px; min-height:980px; }} .cover-page .page-inner {{ display:flex; flex-direction:column; justify-content:space-between; padding:0; min-height:1060px; }}
     .cover-disclaimer {{ margin:56px 64px 0; padding:6px 0 0 24px; border-left:4px solid #2b2b2b; font-family:'DM Serif Display', serif; font-size:18px; line-height:1.7; font-style:italic; color:#2d2a25; }} .cover-disclaimer strong {{ font-style:italic; }}
-    .cover-header {{ background:var(--ink); padding:32px 64px 40px; color:var(--paper); margin-top:32px; }} .cover-title-block {{ padding-top:0; }} .cover-doc-type {{ font-size:10px; letter-spacing:.25em; text-transform:uppercase; color:var(--gold); margin-bottom:16px; }} .cover-title {{ font-family:'DM Serif Display', serif; font-size:52px; line-height:1.08; color:var(--paper); margin-bottom:4px; }} .cover-subtitle {{ font-family:'DM Serif Display', serif; font-size:24px; color:#888; font-style:italic; white-space:nowrap; }} .cover-body {{ padding:48px 64px; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:28px; align-content:start; }}
+    .cover-header {{ background:var(--ink); padding:52px 64px 60px; color:var(--paper); margin-top:32px; min-height:306px; position:relative; }} .cover-brand {{ min-height:194px; }} .cover-title-block {{ padding-top:0; min-width:0; }} .cover-doc-type {{ font-size:10px; letter-spacing:.42em; text-transform:uppercase; color:var(--gold); margin-bottom:28px; margin-left:0; }} .cover-title-row {{ display:flex; align-items:center; gap:18px; margin-bottom:14px; min-width:0; }} .cover-logo-wrap {{ flex:0 0 auto; display:flex; align-items:center; justify-content:flex-start; }} .cover-logo {{ width:auto; height:34px; object-fit:contain; display:block; border-radius:6px; }} .cover-title {{ font-family:'DM Serif Display', serif; font-size:58px; line-height:1; color:var(--paper); margin:0; max-width:760px; }} .cover-subtitle {{ font-family:'DM Serif Display', serif; font-size:24px; line-height:1.08; color:#8d9bb3; font-style:italic; white-space:normal; }} .cover-body {{ padding:48px 64px; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:28px; align-content:start; }}
   .cover-meta-group h4, .cover-stack h4, h2, .ch-num, .glossary-term {{ font-family:'Syne', sans-serif; }} .cover-meta-group h4 {{ font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); margin-bottom:12px; border-bottom:1px solid var(--rule); padding-bottom:6px; }} .cover-meta-row {{ display:flex; justify-content:space-between; font-size:12px; padding:5px 0; border-bottom:1px solid var(--cream); gap:14px; }} .cover-meta-row span:first-child {{ color:var(--muted); }} .cover-stack {{ grid-column:1 / -1; background:var(--cream); padding:20px 24px; border-left:3px solid var(--teal); }} .tech-pills {{ display:flex; flex-wrap:wrap; gap:8px; }} .tech-pill {{ background:var(--ink); color:var(--gold-light); font-size:10px; padding:4px 12px; letter-spacing:.06em; }} .cover-footer {{ background:var(--cream); border-top:2px solid var(--rule); padding:20px 64px; display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--muted); letter-spacing:.05em; }} .confidential {{ background:var(--rust); color:#fff; padding:4px 12px; font-size:9px; letter-spacing:.15em; text-transform:uppercase; }}
-  .ch-header {{ border-bottom:2px solid var(--ink); padding-bottom:20px; margin-bottom:40px; display:flex; justify-content:space-between; align-items:flex-end; gap:20px; }} .ch-title {{ font-family:'DM Serif Display', serif; font-size:32px; line-height:1.1; }} .ch-subtitle {{ font-size:10px; color:var(--muted); max-width:340px; text-align:right; line-height:1.5; }} .pg-num {{ position:absolute; bottom:20px; right:32px; font-size:10px; color:var(--muted); letter-spacing:.1em; }} .pg-watermark {{ position:absolute; bottom:20px; left:32px; font-size:9px; color:var(--rule); letter-spacing:.08em; text-transform:uppercase; }} h2 {{ font-size:13px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--teal); margin:32px 0 14px; padding-bottom:6px; border-bottom:1px solid var(--rule); }} p {{ color:#333; margin-bottom:12px; font-size:12.5px; line-height:1.7; }}
+    .ch-header {{ border-bottom:2px solid var(--ink); padding-bottom:20px; margin-bottom:40px; display:flex; justify-content:space-between; align-items:flex-end; gap:20px; }} .ch-title {{ font-family:'DM Serif Display', serif; font-size:32px; line-height:1.1; }} .ch-subtitle {{ font-size:10px; color:var(--muted); max-width:340px; text-align:right; line-height:1.5; }} .pg-num {{ position:absolute; bottom:20px; right:32px; font-size:10px; color:var(--muted); letter-spacing:.1em; }} .pg-watermark {{ position:absolute; bottom:20px; left:32px; font-size:9px; color:var(--rule); letter-spacing:.08em; text-transform:uppercase; }} .pg-timestamp {{ position:absolute; bottom:20px; left:50%; transform:translateX(-50%); font-size:9px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; }} h2 {{ font-size:13px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--teal); margin:32px 0 14px; padding-bottom:6px; border-bottom:1px solid var(--rule); }} p {{ color:#333; margin-bottom:12px; font-size:12.5px; line-height:1.7; }}
   .brd-table {{ width:100%; border-collapse:collapse; margin:18px 0 28px; font-size:11.5px; }} .brd-table thead tr {{ background:var(--ink); color:var(--paper); }} .brd-table thead th {{ padding:10px 14px; text-align:left; font-family:'Syne', sans-serif; font-size:9px; letter-spacing:.15em; text-transform:uppercase; font-weight:600; }} .brd-table tbody tr:nth-child(even) {{ background:var(--cream); }} .brd-table td {{ padding:9px 14px; border-bottom:1px solid var(--rule); vertical-align:top; line-height:1.5; }} .brd-table td:first-child {{ font-weight:500; color:var(--teal); }}
     .callout {{ padding:16px 20px; margin:16px 0; font-size:12px; line-height:1.6; border-left:4px solid var(--teal); background:var(--cream); }} .scope-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:16px 0 24px; }} .scope-box {{ padding:16px 20px; }} .scope-box.in-scope {{ background:#e8f4f0; border-top:3px solid var(--teal); }} .scope-box.out-scope {{ background:#fdf0ee; border-top:3px solid var(--rust); }} .scope-box h4 {{ font-size:9px; letter-spacing:.18em; text-transform:uppercase; margin-bottom:12px; font-weight:700; }} .scope-item {{ display:flex; gap:8px; margin-bottom:7px; font-size:11.5px; line-height:1.45; }} .module-grid {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:16px 0 24px; align-items:stretch; }} .module-card {{ border:1px solid var(--rule); padding:18px 18px 16px; background:#fff; position:relative; min-height:190px; display:flex; flex-direction:column; }} .module-card::before {{ content:attr(data-num); position:absolute; top:12px; right:14px; font-family:'DM Serif Display', serif; font-size:28px; color:var(--cream); line-height:1; }} .module-card h4 {{ font-family:'Syne', sans-serif; font-size:11px; font-weight:700; letter-spacing:.05em; color:var(--teal); margin-bottom:8px; padding-right:28px; }} .module-card p {{ flex:1; margin-bottom:12px; }} .module-tag {{ display:inline-block; background:var(--cream); font-size:9px; padding:2px 8px; margin-top:auto; color:var(--muted); letter-spacing:.05em; }} .check-list {{ list-style:none; margin:10px 0; }} .check-list li {{ display:flex; gap:10px; padding:6px 0; border-bottom:1px solid var(--cream); font-size:11.5px; align-items:baseline; }} .glossary-grid {{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin:16px 0; }} .glossary-item {{ padding:10px 14px; background:#fff; border:1px solid var(--rule); }} .glossary-def {{ font-size:11px; color:#555; line-height:1.5; }} .relationship-grid {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:18px 0 24px; }} .relationship-card {{ border:1px solid var(--rule); background:#fff; padding:14px 16px; }} .relationship-card-head {{ font-family:'Syne', sans-serif; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--teal); margin-bottom:10px; }} .relationship-line {{ display:grid; grid-template-columns:84px 1fr; gap:12px; padding:6px 0; border-top:1px solid var(--cream); align-items:start; }} .relationship-line:first-of-type {{ border-top:none; padding-top:0; }} .relationship-line span {{ color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.08em; }} .relationship-line strong {{ font-size:11px; overflow-wrap:anywhere; word-break:break-word; }} .er-diagram-card {{ background:#fbfaf7; border:1px solid var(--rule); padding:18px 18px 14px; }} .er-diagram-title {{ font-family:'Syne', sans-serif; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--teal); margin-bottom:14px; }} .office-er-svg {{ width:100%; height:auto; display:block; background:#f5f2ec; border:1px solid #ded5c8; border-radius:10px; }} .office-er-svg .er-link {{ fill:none; stroke:#1a5c5a; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; marker-end:url(#officeArrow); }} .office-er-svg .er-node rect {{ fill:#fff; stroke:#8f78ff; stroke-width:1.5; }} .office-er-svg .er-node .er-head {{ fill:#f3edff; }} .office-er-svg text {{ font-family:'DM Mono', monospace; font-size:13px; fill:#2d2a25; }} .office-er-svg .er-head-text {{ font-family:'Syne', sans-serif; font-size:14px; font-weight:700; letter-spacing:.03em; fill:#3d2f7a; }} @media print {{ .doc-wrapper {{ padding-top:0; }} .page {{ break-after:always; box-shadow:none; margin:0; }} }}
 </style>
 </head>
 <body>
 <div class="doc-wrapper">
-        <div class="page cover-page" id="cover"><div class="page-inner"><div class="cover-disclaimer"><strong>Disclaimer:</strong> This document provides a high-fidelity baseline of application architecture, synthesized by QlikAI Accelerator through a rigorous analysis of the source code. It is designed to significantly accelerate the comprehension process by providing a structured foundation for modernization. Because applications reflect architectural implementation rather than original system design, this document is intended as a collaborative draft. We encourage Subject Matter Experts (SMEs) to review, refine, and validate these requirements to ensure they accurately capture the nuanced business goals of the current landscape.</div><div class="cover-header"><div class="cover-title-block"><div class="cover-doc-type">BRD-QLIKAI-001</div><div class="cover-title">{_e(app_title)}</div><div class="cover-subtitle">AI-Powered Qlik Sense to Microsoft Power BI Transformation Platform</div></div></div><div class="cover-body"><div class="cover-meta-group"><h4>Type Details</h4><div class="cover-meta-row"><span>Document ID</span><span>BRD-QLIKAI-001</span></div><div class="cover-meta-row"><span>Version</span><span>v1.0 Final</span></div><div class="cover-meta-row"><span>Date</span><span>{_e(date_label)}</span></div><div class="cover-meta-row"><span>Classification</span><span>CONFIDENTIAL</span></div><div class="cover-meta-row"><span>Application</span><span>{_e(app_title)}</span></div><div class="cover-meta-row"><span>Platform</span><span>Cloud-Native / Linux</span></div><div class="cover-meta-row"><span>Primary Languages</span><span>Python / TypeScript</span></div></div><div class="cover-meta-group"><h4>Applications</h4><div class="cover-meta-row"><span>Applications</span><span>{_e(app_count)}</span></div><div class="cover-meta-row"><span>Tables</span><span>{_e(table_count)}</span></div><div class="cover-meta-row"><span>Fields</span><span>{_e(field_count)}</span></div><div class="cover-meta-row"><span>Sheets</span><span>{_e(sheet_count)}</span></div><div class="cover-meta-row"><span>Relationships</span><span>{_e(relationship_count)}</span></div><div class="cover-meta-row"><span>Generated</span><span>Fresh, cache-free</span></div></div><div class="cover-stack"><h4>Technology Stack</h4><div class="tech-pills">{tech_pills}</div></div></div><div class="cover-footer"><span>Migration-focused BRD generated from live project metadata</span><span class="confidential">Confidential</span></div></div></div>
-        <div class="page" id="control"><div class="page-inner"><div class="ch-header"><div><div class="ch-num">Document Control</div><div class="ch-title">Control Page</div></div><div class="ch-subtitle">Revision tracking and analysis baseline</div></div><h2>Document Control</h2>{update_tracking}</div><div class="pg-watermark">QlikAI BRD - Confidential</div><div class="pg-num">02</div></div>
+    <div class="page cover-page" id="cover"><div class="page-inner"><div class="cover-disclaimer"><strong>Disclaimer:</strong> This document provides a high-fidelity baseline of application architecture, synthesized by QlikAI Accelerator through a rigorous analysis of the source code. It is designed to significantly accelerate the comprehension process by providing a structured foundation for modernization. Because applications reflect architectural implementation rather than original system design, this document is intended as a collaborative draft. We encourage Subject Matter Experts (SMEs) to review, refine, and validate these requirements to ensure they accurately capture the nuanced business goals of the current landscape.</div><div class="cover-header"><div class="cover-brand"><div class="cover-title-block"><div class="cover-doc-type">{_e(project_subtitle)}</div><div class="cover-title-row">{logo_html}<div class="cover-title">{_e(app_title)}</div></div><div class="cover-subtitle">{_e(cover_tagline)}</div></div></div></div><div class="cover-body"><div class="cover-meta-group"><h4>Type Details</h4><div class="cover-meta-row"><span>Document ID</span><span>BRD-QLIKAI-001</span></div><div class="cover-meta-row"><span>Version</span><span>v1.0 Final</span></div><div class="cover-meta-row"><span>Date &amp; Time</span><span>{_e(generated_datetime_label)}</span></div><div class="cover-meta-row"><span>Classification</span><span>CONFIDENTIAL</span></div><div class="cover-meta-row"><span>Application</span><span>{_e(app_title)}</span></div><div class="cover-meta-row"><span>Platform</span><span>Cloud-Native / Linux</span></div><div class="cover-meta-row"><span>Primary Languages</span><span>{_e(document.get('primary_languages', 'Python / TypeScript'))}</span></div></div><div class="cover-meta-group"><h4>Application Metrics</h4><div class="cover-meta-row"><span>Applications</span><span>{_e(app_count)}</span></div><div class="cover-meta-row"><span>Tables</span><span>{_e(table_count)}</span></div><div class="cover-meta-row"><span>Fields</span><span>{_e(field_count)}</span></div><div class="cover-meta-row"><span>Sheets</span><span>{_e(sheet_count)}</span></div><div class="cover-meta-row"><span>Relationships</span><span>{_e(relationship_count)}</span></div><div class="cover-meta-row"><span>Generated</span><span>Fresh, cache-free</span></div></div><div class="cover-stack"><h4>Technology Stack</h4><div class="tech-pills">{tech_pills}</div></div></div><div class="cover-footer"><span>Migration-focused BRD generated from live project metadata</span><span>Generated {_e(generated_datetime_label)}</span><span class="confidential">Confidential</span></div></div></div>
+        <div class="page" id="control"><div class="page-inner"><div class="ch-header"><div><div class="ch-num">Document Control</div><div class="ch-title">Control Page</div></div><div class="ch-subtitle">Revision tracking and analysis baseline</div></div><h2>Document Control</h2>{update_tracking}</div><div class="pg-watermark">QlikAI BRD - Confidential</div><div class="pg-timestamp">Generated {_e(generated_datetime_label)}</div><div class="pg-num">02</div></div>
+        <div class="page" id="toc"><div class="page-inner"><div class="ch-header"><div><div class="ch-title">Table of Contents</div></div><div class="ch-subtitle">Document navigation and section index</div></div>{toc_table}</div><div class="pg-watermark">QlikAI BRD - Confidential</div><div class="pg-timestamp">Generated {_e(generated_datetime_label)}</div><div class="pg-num">03</div></div>
   {chapter_pages}
-    <div class="page" id="appendix-a"><div class="page-inner"><div class="ch-header"><div><div class="ch-num">Appendix A</div><div class="ch-title">BRD Conflict Resolution Register</div></div><div class="ch-subtitle">Normalization decisions applied across the migration document</div></div><h2>A.1 Conflict Resolution Register</h2>{conflict_register}</div><div class="pg-watermark">QlikAI BRD - Confidential</div><div class="pg-num">{len(chapters) + 3:02d}</div></div>
+    <div class="page" id="appendix-a"><div class="page-inner"><div class="ch-header"><div><div class="ch-num">Appendix A</div><div class="ch-title">BRD Conflict Resolution Register</div></div><div class="ch-subtitle">Normalization decisions applied across the migration document</div></div><h2>A.1 Conflict Resolution Register</h2>{conflict_register}</div><div class="pg-watermark">QlikAI BRD - Confidential</div><div class="pg-timestamp">Generated {_e(generated_datetime_label)}</div><div class="pg-num">{len(chapters) + 4:02d}</div></div>
 </div></body></html>'''
 
 
@@ -1116,6 +1177,15 @@ def render_brd_html(document: Dict[str, Any]) -> str:
 
     app_title = document.get("app_title", "Qlik Application")
     date_label = document.get("date_label", datetime.now().strftime("%B %d, %Y"))
+    time_label = document.get("time_label", datetime.now().strftime("%I:%M %p").lstrip("0"))
+    generated_datetime_label = document.get("generated_datetime_label", f"{date_label} {time_label}")
+    logo_data_uri = _get_brd_logo_data_uri()
+    cover_tagline = document.get("cover_tagline", "AI-Powered Qlik Sense to Microsoft Power BI Transformation Platform")
+    logo_html = (
+        f'<div class="cover-logo-wrap"><img src="{logo_data_uri}" alt="QlikAI logo" class="cover-logo" /></div>'
+        if logo_data_uri
+        else ""
+    )
     project_type = document.get("project_type", "Qlik Analytics Application")
     project_subtitle = document.get("project_subtitle", "Business Requirements Document")
     project_scope = document.get("project_scope", "application")
@@ -1148,7 +1218,7 @@ def render_brd_html(document: Dict[str, Any]) -> str:
                 ["Project" if project_scope == "project" else "Application", app_title],
                 ["Document Type", project_subtitle],
                 ["Project Type", project_type],
-                ["Generated On", date_label],
+                ["Generated On", generated_datetime_label],
                 ["Project ID" if project_scope == "project" else "App ID", document.get("app_id", "")],
                 ["Applications Analyzed", str(summary.get("application_count", len(application_inventory)))] if project_scope == "project" else None,
                 ["Tables Detected", str(summary.get("table_count", len(table_inventory)))],
@@ -1218,6 +1288,266 @@ def render_brd_html(document: Dict[str, Any]) -> str:
         ["Version", "Date", "Author", "Changes"],
         [[row.get("version", ""), row.get("date", ""), row.get("author", ""), row.get("changes", "")] for row in revision_history[:10]],
     )
+    document_control_table = _render_table(
+        ["Entry", "Date", "Change Summary"],
+        [
+            ["01", "April 2026", "Initial BRD generation from QlikAI source analysis."],
+            ["02", "April 2026", "Merged app-specific and project-level BRD content, including requirements catalog, detailed use cases, deployment guidance, and conflict normalization decisions."],
+        ],
+    )
+    static_code_analysis_table = _render_table(
+        ["Category", "Files", "Used", "Orphan", "LOC", "Used LOC", "Orphan LOC"],
+        [
+            ["TypeScript / React", "~35", "35", "0", "~3,500", "3,500", "0"],
+            ["Python", "~20", "20", "0", "~2,800", "2,800", "0"],
+            ["Config / YAML", "~10", "10", "0", "~400", "400", "0"],
+            ["Total", "65", "65", "0", "6,700", "6,700", "0"],
+        ],
+    )
+    requirements_catalog_table = _render_table(
+        ["ID", "Requirement", "Priority", "Acceptance Criteria", "Status"],
+        [
+            ["FR-01", "Authenticate BI Engineer against Qlik tenant before app discovery, analysis, or publishing.", "HIGH", "Valid credentials create authenticated session; invalid credentials return clear error.", "RESOLVED"],
+            ["FR-02", "Support only approved Qlik auth methods (API Key and OAuth2/JWT) for v1.0.", "HIGH", "Supported methods are documented consistently and unsupported methods are rejected.", "RESOLVED"],
+            ["FR-03", "List all Qlik applications accessible to the authenticated BI Engineer.", "HIGH", "Returns accessible application list and handles empty results gracefully.", "DEFINED"],
+            ["FR-04", "Extract metadata for the selected Qlik application including tables, fields, row counts, LoadScript, and structure.", "HIGH", "Returns documented result set or structured failure response with error details.", "DEFINED"],
+            ["FR-05", "Generate an executive summary for the selected Qlik application using the configured LLM service.", "HIGH", "Summary is generated in approved format and within the response-time target.", "DEFINED"],
+            ["FR-06", "Support multi-turn analytical chat grounded in Qlik application metadata.", "MEDIUM", "Context is preserved across the documented turn count and summarization is applied consistently.", "DEFINED"],
+            ["FR-07", "Automatically invoke a fallback LLM model if the primary model fails or is unavailable.", "MEDIUM", "Primary-model failure triggers fallback automatically and returns valid result or structured error.", "DEFINED"],
+            ["FR-08", "Support three distinct and mutually exclusive Power BI publishing paths (A/B/C).", "HIGH", "Each path has an unambiguous process definition, required inputs, and failure behavior.", "RESOLVED"],
+            ["FR-09", "Publish a Power BI semantic model or dataset to the target workspace based on selected publishing path.", "HIGH", "Target workspace contains expected artifact and BI Engineer receives confirmation.", "DEFINED"],
+            ["FR-10", "Bind and use Microsoft credentials for Power BI and SharePoint operations through approved identity flows.", "HIGH", "Operations succeed when prerequisites are satisfied and fail with actionable messages when unmet.", "DEFINED"],
+            ["FR-11", "Validate workspace membership, application permissions, and required Microsoft prerequisites before publication begins.", "HIGH", "If any role or permission is absent, publication is blocked before data movement starts.", "ADDED"],
+            ["FR-12", "Determine the appropriate publishing path based on Qlik source characteristics and migration rules.", "HIGH", "Supported source types are mapped deterministically to the documented path-selection logic.", "DEFINED"],
+            ["FR-13", "Identify and report unsupported or partially supported Qlik constructs before or during migration execution.", "HIGH", "Unsupported constructs are reported with object name, impact, and recommended next action.", "ADDED"],
+            ["NFR-01", "Meet defined performance targets for API response, metadata extraction, LLM analysis, and publish operations.", "MEDIUM", "Performance targets are measurable and met under documented baseline load assumptions.", "DEFINED"],
+            ["NFR-03", "Enforce a consistent policy for secret storage, token handling, and session lifecycle across frontend and backend.", "HIGH", "Each credential type has documented storage location, lifetime, invalidation rule, and rotation policy.", "RESOLVED"],
+        ],
+    )
+    detailed_use_cases_table = _render_table(
+        ["ID", "Actor", "Title", "Preconditions", "Main Flow", "Failure Flow"],
+        [
+            ["UC-001", "BI Engineer", "Authenticate with Qlik Tenant", "Valid Qlik tenant URL and one supported auth credential.", "Open Connect page, enter tenant URL and approved auth method, validate credentials, establish session, and redirect to discovery.", "Invalid URL blocks submission; auth failure returns clear error; unreachable tenant returns structured connectivity error."],
+            ["UC-002", "BI Engineer", "View Accessible Qlik Applications", "Authenticated Qlik session exists in browser session state.", "Call Qlik inventory endpoints, present accessible application list, allow filter or search, and choose target application.", "Expired session redirects to authentication; empty result shows a structured empty state."],
+            ["UC-003", "BI Engineer", "Extract Metadata from Qlik Application", "Authenticated session exists and target application is selected.", "Open QIX session, call GetScript/GetAppObject/GetLayout/EvaluateEx in parallel, store extracted metadata, and signal completion to the UI.", "QIX failure retries with exponential backoff; partial extraction proceeds with flagged incomplete areas."],
+            ["UC-004", "BI Engineer", "Generate AI Executive Summary", "Metadata extraction for the selected Qlik application is complete.", "Compute insights, build strict prompt, call Llama-3.1-8B, parse exactly 7 bullets, and display stakeholder-ready summary.", "Primary failure triggers retry and Mistral-7B fallback; both failures invoke deterministic fallback output."],
+            ["UC-005", "BI Engineer", "Publish Dataset to Power BI via Path A", "Metadata extraction is complete; source type fits Path A; Microsoft token acquired.", "Generate Power Query M, authenticate through Microsoft identity, publish semantic model through XMLA, and return workspace link.", "Missing permissions block publication with remediation guidance; XMLA failure returns structured traceable error."],
+            ["UC-006", "BI Engineer", "Publish Dataset via Path B", "Source pattern fits CSV + DAX + REST publication.", "Export CSV data, generate DAX, optionally stage in SharePoint, and push dataset through Power BI REST APIs.", "SharePoint or REST API failure returns actionable diagnostics and preserves path-specific error trace."],
+            ["UC-007", "BI Engineer", "Publish Dataset via Path C", "Source pattern fits DB or ODBC-backed publication.", "Detect connection string, configure DirectQuery or Import, and publish target dataset configuration.", "Unsupported connector details or permission gaps block execution with recommended next action."],
+            ["UC-008", "BI Engineer", "Conduct Multi-Turn AI Chat", "Application metadata is available and analysis screen is active.", "Submit contextual questions, preserve conversation history, and receive responses grounded in live metadata.", "Model failure triggers fallback chain; malformed response returns structured assistant error."],
+            ["UC-009", "BI Engineer", "View Pre-Migration Cleanup Recommendations", "Source analysis is complete.", "Review duplicate applications, redundant reports, unused tables, and normalization opportunities before migration.", "Missing source signals downgrade recommendations and flag them as inferred only."],
+            ["UC-010", "BI Engineer", "Upload CSV Data to SharePoint", "Path B workflow is selected and Microsoft prerequisites are valid.", "Upload CSV artifacts to SharePoint document library and capture storage location for downstream refresh.", "Graph or SharePoint failure returns upload-specific remediation guidance."],
+            ["UC-011", "BI Engineer", "Validate Migration Compatibility", "Metadata and script analysis are available.", "Run unsupported-construct review and path-fit validation before publication begins.", "Blocking constructs halt execution and return impact plus manual remediation notes."],
+            ["UC-012", "BI Engineer", "Retry Failed Migration Run", "A prior migration attempt has failed with structured diagnostics.", "Re-run failed extraction, analysis, or publishing phase using retry-safe controls and logged trace context.", "Repeated failure escalates to support with preserved diagnostics."],
+            ["UC-013", "BI Engineer", "Log Out and Clear Session", "Authenticated browser session exists.", "Trigger logout, clear sessionStorage artifacts, and return to connection screen.", "Any stale session artifact is invalidated on next protected request."],
+            ["UC-014", "Administrator", "Configure Integration Prerequisites", "Administrator has access to environment configuration and Microsoft tenant setup.", "Configure Qlik connectivity, Entra ID, workspace membership, environment variables, and deployment prerequisites.", "Invalid configuration blocks downstream migration execution until corrected."],
+            ["UC-015", "Support Engineer", "Investigate Failed Migration", "A failed migration incident and operational logs are available.", "Inspect request traces, dependency status, permissions, and upstream API responses to determine root cause.", "If root cause remains external, record dependency blocker and escalate with evidence."],
+        ],
+    )
+    object_inventory_table = _render_table(
+        ["Module", "Class / Service", "Package / Path", "Type", "Key Methods"],
+        [
+            ["Backend", "QlikAuthService", "routers/qlik.py", "Service", "validate_login(), validate_tenant()"],
+            ["Backend", "QlikMetadataService", "routers/qlik.py", "Service", "get_applications(), get_app_metadata()"],
+            ["Backend", "QIXWebSocketClient", "services/qix.py", "Client", "open_session(), get_script(), get_layout(), evaluate_ex(), create_session_object()"],
+            ["Backend", "LoadScriptParser", "services/parser.py", "Utility", "parse_tables(), parse_fields(), detect_source_type(), extract_joins()"],
+            ["Backend", "LLMService", "routers/llm.py", "Service", "generate_summary(), multi_turn_chat(), invoke_fallback()"],
+            ["Backend", "PowerBIPublisher", "routers/powerbi.py", "Service", "publish_path_a(), publish_path_b(), publish_path_c(), bind_credentials()"],
+            ["Backend", "MSALTokenProvider", "routers/powerbi.py", "Auth", "acquire_token(), refresh_token(), get_cached_token()"],
+            ["Backend", "SharePointUploader", "routers/powerbi.py", "Service", "upload_csv(), get_library_path()"],
+            ["Frontend", "ConnectPage", "src/pages/Connect/ConnectPage.tsx", "React Component", "handleConnect(), validateTenantUrl(), setAuthMethod()"],
+            ["Frontend", "AnalysisPage", "src/pages/Analysis/AnalysisPage.tsx", "React Component", "sendQuery(), renderSummary(), initiatePublish()"],
+            ["Frontend", "AuthContext", "src/context/AuthContext.tsx", "React Context", "login(), logout(), getToken(), isAuthenticated()"],
+            ["Frontend", "ApiService", "src/services/api.ts", "Axios Client", "get(), post(), interceptRequest(), handleError()"],
+        ],
+    )
+    activity_flows_table = _render_table(
+        ["Flow", "Sequence"],
+        [
+            ["Qlik Cloud Authentication Flow", "BI Engineer opens Connect page, enters tenant URL and approved credentials, validates Qlik session, and on success navigates to discovery. Invalid inputs block submission and return structured errors."],
+            ["Metadata Extraction Flow", "BI Engineer selects Qlik application, QIX WebSocket session opens, GetScript/GetAppObject/GetLayout/EvaluateEx run in parallel, and extracted metadata is stored in analysis state."],
+            ["End-to-End Publishing Flow", "LoadScript is fetched, parser detects source type, and Path A (M/XMLA), Path B (CSV + DAX + REST), or Path C (DB/ODBC DirectQuery or Import) executes based on migration rules."],
+            ["LLM Fallback Sequence", "Request summary, assemble prompt, call Llama-3.1-8B, and on timeout or failure automatically route to Mistral-7B before deterministic fallback output."],
+        ],
+    )
+    data_flow_context_table = _render_table(
+        ["External / Actor", "Inputs", "Outputs"],
+        [
+            ["BI Engineer", "Tenant URL, credentials, application selection, chat queries, publish trigger", "Application list, 7-bullet summary, publish confirmation, diagnostics"],
+            ["Administrator", "Azure / Entra configuration, environment setup, workspace preparation", "Health status, config validation, integration readiness"],
+            ["External Services", "Qlik Cloud, Hugging Face, Microsoft Entra ID, Power BI, SharePoint", "Metadata, inference output, tokens, datasets, staged files"],
+        ],
+    )
+    interface_frontend_table = _render_table(
+        ["Component", "File Path", "Description"],
+        [
+            ["ConnectPage", "src/pages/Connect/ConnectPage.tsx", "Qlik Cloud authentication UI with tenant URL input, API key field, connection validation, and method selection."],
+            ["AnalysisPage", "src/pages/Analysis/AnalysisPage.tsx", "Multi-turn AI chat interface with metadata display, LLM query handling, executive summary rendering, and publish trigger."],
+            ["AuthContext", "src/context/AuthContext.tsx", "Global session state for token storage, session lifecycle, and authenticated flag handling."],
+            ["ApiService", "src/services/api.ts", "Axios HTTP client with auth interceptors that attach tokens to backend API calls."],
+        ],
+    )
+    backend_api_table = _render_table(
+        ["Method", "Endpoint", "Description"],
+        [
+            ["POST", "/api/qlik/connect", "Authenticate against Qlik Cloud tenant with tenant URL and approved credentials."],
+            ["GET", "/api/qlik/apps", "List accessible Qlik applications for the authenticated session."],
+            ["POST", "/api/qlik/extract/{app_id}", "Extract full metadata for a selected Qlik application via QIX WebSocket."],
+            ["POST", "/api/llm/summary", "Generate 7-bullet executive summary from metadata insights."],
+            ["POST", "/api/llm/chat", "Handle multi-turn chat requests grounded in metadata context."],
+            ["POST", "/api/powerbi/publish", "Publish dataset to Power BI through the selected path."],
+            ["POST", "/api/powerbi/sharepoint/upload", "Upload CSV artifacts to SharePoint for Path B storage scenarios."],
+            ["GET", "/health", "Liveness and dependency-health check for operational monitoring."],
+        ],
+    )
+    integration_technologies_table = _render_table(
+        ["Technology", "Direction", "Pattern", "Notes"],
+        [
+            ["HTTP / HTTPS (FastAPI REST)", "Inbound", "Request-Response", "Standard REST API interaction for BI Engineer-facing requests."],
+            ["QIX WebSocket (JSON-RPC 2.0)", "Outbound", "Persistent Connection", "Primary channel for deep Qlik metadata extraction beyond REST capabilities."],
+            ["Qlik Cloud REST API v1", "Outbound", "Request-Response", "Application discovery and listing alongside QIX WebSocket."],
+            ["Hugging Face Inference API", "Outbound", "Request-Response", "LLM inference for executive summary and multi-turn chat with Bearer token auth."],
+            ["Power BI XMLA API", "Outbound", "Request-Response", "Semantic model publication for Path A."],
+            ["Power BI REST API", "Outbound", "Request-Response", "Dataset push for Path B and related programmatic dataset operations."],
+            ["Microsoft Graph / SharePoint", "Outbound", "Request-Response", "CSV upload and document library integration for Path B staging."],
+            ["Microsoft Entra ID (OAuth2)", "Outbound", "Authorization Code / Client Credentials", "Centralized identity plane for Power BI and SharePoint operations."],
+        ],
+    )
+    logical_entity_table = _render_table(
+        ["Entity", "Definition"],
+        [
+            ["QlikApp", "app_id (PK), tenant_url, app_name, owner, modified_date, table_count, field_count"],
+            ["QlikTable", "table_name (PK), app_id (FK), row_count, source_type"],
+            ["QlikField", "field_name (PK), table_name (FK), data_type, cardinality"],
+            ["MigrationSession", "session_id (PK), app_id (FK), publish_path, status, created_ts"],
+            ["ExecutiveSummary", "summary_id (PK), session_id (FK), model_used, bullet_count, generated_ts"],
+            ["PublishResult", "result_id (PK), session_id (FK), workspace_id, artifact_url, status"],
+        ],
+    )
+    logical_relationships_table = _render_table(
+        ["Parent Entity", "Child Entity", "Relationship"],
+        [
+            ["QlikApp", "QlikTable", "1:N - One application contains many tables"],
+            ["QlikTable", "QlikField", "1:N - One table contains many fields"],
+            ["QlikApp", "MigrationSession", "1:N - One application may have multiple migration sessions"],
+            ["MigrationSession", "ExecutiveSummary", "1:1 - One session has one generated executive summary"],
+            ["MigrationSession", "PublishResult", "1:1 - One session produces one publish result"],
+        ],
+    )
+    nfr_security_table = _render_table(
+        ["Layer", "Control", "Implementation"],
+        [
+            ["Transport", "HTTPS / TLS 1.3", "All traffic encrypted in transit; no HTTP fallback."],
+            ["Auth - Qlik", "API Key / OAuth2-JWT", "Approved Qlik authentication methods only; tokens masked and session-scoped."],
+            ["Auth - Power BI", "OAuth 2.0 / MSAL", "Service Principal with least-privilege permissions and token refresh."],
+            ["Application", "Input Validation", "Schema validation and URL-format validation across frontend and backend."],
+            ["CORS", "Origin Allowlist", "Frontend origins constrained in FastAPI middleware with regex for approved environments."],
+            ["Credential Handling", "Environment Variables Only", "Backend secrets remain in environment variables and never in source control or logs."],
+        ],
+    )
+    performance_table = _render_table(
+        ["Metric", "Target / Baseline", "Strategy"],
+        [
+            ["API Response Time (p95)", "<2 seconds", "Async FastAPI, connection pooling, and session-scoped metadata caching."],
+            ["LLM Analysis Response", "<15 seconds", "Streaming responses, prompt optimization, and token compression."],
+            ["Metadata Extraction (per application)", "<30 seconds", "Parallel async QIX queries for large multi-table Qlik applications."],
+            ["Power BI Push (10K rows)", "<60 seconds", "Batch push with parallel dataset creation and retry logic."],
+            ["System Uptime", "99.9% monthly", "Cloud auto-restart, health endpoint monitoring, and dependency fallback behavior."],
+        ],
+    )
+    risks_challenges_table = _render_table(
+        ["ID", "Risk / Challenge", "Priority", "Mitigation Strategy"],
+        [
+            ["R-01", "Hugging Face Inference API rate limits or outage", "HIGH", "Automatic Llama-3.1-8B to Mistral-7B to deterministic fallback chain with retry."],
+            ["R-02", "QIX WebSocket connection instability on large applications", "HIGH", "Session reconnect with auto-retry and partial extraction fallback."],
+            ["R-03", "Power BI workspace permissions not pre-configured", "HIGH", "Validate prerequisites before any publication and return remediation guidance."],
+            ["R-04", "Azure / Entra secret expiry", "MEDIUM", "Defined rotation policy and operational alerts before expiry."],
+            ["R-05", "No RAG pipeline in v1.0", "MEDIUM", "Future enhancement planned for metadata embedding and richer contextual analysis."],
+            ["R-06", "Unsupported Qlik constructs blocking migration", "MEDIUM", "Pre-migration compatibility check with impact and next action."],
+            ["R-07", "QIX WebSocket dependency prevents offline extraction", "MEDIUM", "Requires live tenant connectivity with retry and reconnect support."],
+            ["R-08", "Large Qlik application extraction may exceed preferred SLA", "LOW", "Parallel extraction and workload-band guidance."],
+            ["R-09", "CSV data passing through backend in Path B creates transient PII risk", "HIGH", "TLS in transit, no disk persistence, masked logs, and secure SharePoint staging."],
+            ["R-10", "Delivery pipeline remains GitHub Actions-based rather than Kubernetes-native", "LOW", "Automated deployment, smoke tests, and rollback workflow remain in place."],
+        ],
+    )
+    deployment_architecture_table = _render_table(
+        ["Tier", "Runtime", "Purpose"],
+        [
+            ["Frontend", "React SPA (Vite build) on DigitalOcean App Platform", "User workflow, authentication UI, discovery, analysis, and export interaction."],
+            ["Backend", "FastAPI + Uvicorn (Docker)", "Extraction, BRD generation, LLM orchestration, and Power BI publication."],
+            ["External Services", "Qlik Cloud, Hugging Face, Microsoft Entra ID, Power BI Service, SharePoint Online", "Identity, metadata extraction, inference, and publication dependencies."],
+        ],
+    )
+    env_vars_table = _render_table(
+        ["Variable", "Purpose / Example"],
+        [
+            ["QLIK_TENANT_URL", "https://your-tenant.qlikcloud.com"],
+            ["QLIK_API_KEY", "Configured API key for Qlik Cloud service access"],
+            ["AZURE_TENANT_ID", "Microsoft Entra tenant identifier"],
+            ["AZURE_CLIENT_ID", "Service Principal client identifier"],
+            ["AZURE_CLIENT_SECRET", "Service Principal secret configured in deployment environment"],
+            ["POWERBI_WORKSPACE_ID", "Target Power BI workspace identifier"],
+            ["SHAREPOINT_SITE_URL", "https://yourtenant.sharepoint.com"],
+            ["SHAREPOINT_LIBRARY", "Shared Documents"],
+            ["LLM_PROVIDER", "Huggingface"],
+            ["HUGGINGFACE_PRIMARY_URL", "meta-llama/Meta-Llama-3.1-8B-Instruct endpoint"],
+            ["HUGGINGFACE_FALLBACK_URL", "mistralai/Mistral-7B-Instruct-v0.3 endpoint"],
+            ["HUGGINGFACE_API_KEY", "Configured Hugging Face API token"],
+            ["LOG_LEVEL", "INFO"],
+            ["DEBUG", "False"],
+            ["ENVIRONMENT", "Production"],
+            ["VITE_API_URL", "Configured frontend API base URL"],
+        ],
+    )
+    ci_cd_table = _render_table(
+        ["Stage", "Description"],
+        [
+            ["Stage 1 - Source", "Git push to main or develop triggers GitHub Actions workflow."],
+            ["Stage 2 - Test", "Frontend tests and backend pytest or coverage gates execute before build."],
+            ["Stage 3 - Build", "Docker image build for FastAPI and Vite production build for the React frontend."],
+            ["Stage 4 - Push & Deploy", "Container image is published and deployment proceeds with readiness check before traffic cutover."],
+            ["Stage 5 - Verify", "Smoke tests run against the deployed endpoint with rollback on failure."],
+        ],
+    )
+    repo_file_descriptions_table = _render_table(
+        ["File / Path", "Module", "Description"],
+        [
+            ["src/pages/Connect/ConnectPage.tsx", "Frontend", "Qlik Cloud authentication UI with tenant URL input and connection validation."],
+            ["src/pages/Analysis/AnalysisPage.tsx", "Frontend", "Multi-turn AI chat interface with metadata display and executive summary rendering."],
+            ["src/context/AuthContext.tsx", "Frontend", "Global session state and authentication lifecycle management."],
+            ["src/services/api.ts", "Frontend", "Axios HTTP client with auth interceptors for backend calls."],
+            ["main.py", "Backend", "FastAPI application entry point with middleware and route orchestration."],
+            ["routers/qlik.py", "Backend", "Qlik Cloud integration through REST API and QIX WebSocket management."],
+            ["routers/llm.py", "Backend", "Hugging Face LLM integration and fallback handling."],
+            ["routers/powerbi.py", "Backend", "Power BI and SharePoint publishing across all three paths."],
+            ["services/qix.py", "Backend", "QIX WebSocket client for metadata and script extraction."],
+            ["services/parser.py", "Backend", "LoadScript parser for tables, fields, filters, joins, and source-type detection."],
+            [".env", "Config", "Environment variables for Qlik, Microsoft, LLM, and deployment configuration."],
+            ["Dockerfile / cloudbuild.yaml", "DevOps", "Container build and deployment configuration artifacts."],
+        ],
+    )
+    references_documents_table = _render_table(
+        ["Reference", "Description"],
+        [
+            ["QlikAI Technical Documentation Draft", "Primary source document for the merged BRD."],
+            ["Qlik Cloud REST API v1 Documentation", "https://qlik.dev/apis/rest"],
+            ["QIX Engine API Reference", "https://qlik.dev/apis/json-rpc"],
+            ["Power BI REST API Reference", "https://docs.microsoft.com/en-us/rest/api/power-bi"],
+            ["Microsoft MSAL Python Documentation", "https://learn.microsoft.com/en-us/entra/msal"],
+            ["Hugging Face Inference API", "https://huggingface.co/docs/api-inference"],
+        ],
+    )
+    appendix_conflict_register_table = _render_table(
+        ["Topic", "Resolution Applied"],
+        [
+            ["Qlik credential handling", "Separate backend-only secrets from browser-session artifacts and keep approved auth terminology only."],
+            ["Authentication methods", "Restrict narrative to API Key and OAuth2/JWT for v1.0."],
+            ["LLM configuration", "Treat Llama-3.1-8B as primary and Mistral-7B as fallback across the BRD."],
+            ["Publishing path semantics", "Keep Path A = M/XMLA, Path B = CSV + DAX/REST, Path C = DB/ODBC DirectQuery or Import."],
+            ["Health semantics", "Document health behavior consistently as operational monitoring with explicit prerequisite validation."],
+            ["Implementation alignment", "Treat this BRD as the migration target-state baseline while validating code-level alignment during delivery."],
+        ],
+    )
 
     security_html = "<ul class=\"check-list\">" + "".join(
         f"<li><span class=\"check-mark\">{_e('✔' if row.get('status') == 'pass' else '⚠' if row.get('status') == 'warn' else '✘')}</span><span>{_e(row.get('text', ''))}</span></li>"
@@ -1234,7 +1564,7 @@ def render_brd_html(document: Dict[str, Any]) -> str:
         for row in migration_phases[:8]
     ) + "</div>"
 
-    tech_pills = "".join(f"<span class=\"tech-pill\">{_e(item)}</span>" for item in tech_stack[:10])
+    tech_pills = "".join(f"<span class=\"tech-pill\">{_e(item)}</span>" for item in tech_stack[:14])
     sheet_rows = "".join(f"<span class=\"tech-pill\">{_e(item)}</span>" for item in document.get("sheets", [])[:12]) or "<span class=\"tech-pill\">No sheets detected</span>"
     project_label = "Project" if project_scope == "project" else "Application"
     project_id_label = "Project ID" if project_scope == "project" else "App ID"
@@ -1247,6 +1577,31 @@ def render_brd_html(document: Dict[str, Any]) -> str:
     if project_scope == "project":
         application_inventory_section = f'<h2>2.4 Application Inventory</h2>{application_inventory_table}'
     sheet_inventory_label = "2.5" if project_scope == "project" else "2.4"
+    app_chapters = [
+        ("Chapter 1", "Executive Summary & Project Overview"),
+        ("Chapter 2", "System Architecture Overview"),
+        ("Chapter 3", "Data Model & Relationships"),
+        ("Chapter 4", "Module Breakdown & Functional Areas"),
+        ("Chapter 5", "Use Cases, Logic & Data Flow"),
+        ("Chapter 6", "Quality, Security & Migration"),
+        ("Chapter 7", "Appendix & Glossary"),
+        ("Chapter 8", "Requirements Baseline & Catalog"),
+        ("Chapter 9", "Detailed Use Case Specifications"),
+        ("Chapter 10", "Object & Class Model"),
+        ("Chapter 11", "Activity & Process Flows"),
+        ("Chapter 12", "End-to-End Data Flow"),
+        ("Chapter 13", "Interface & Integration Architecture"),
+        ("Chapter 14", "Logical Entity Inventory"),
+        ("Chapter 15", "Non-Functional Requirements"),
+        ("Chapter 16", "Deployment Architecture"),
+        ("Chapter 17", "Repository File-by-File Guide"),
+        ("Chapter 18", "Reference Documents"),
+        ("Appendix A", "BRD Conflict Resolution Register"),
+    ]
+    toc_table = _render_table(
+        ["Section", "Title", "Page"],
+        [[section, title, f"{index + 4:02d}"] for index, (section, title) in enumerate(app_chapters)],
+    )
 
     return f"""<!DOCTYPE html>
 <html lang=\"en\">
@@ -1256,201 +1611,275 @@ def render_brd_html(document: Dict[str, Any]) -> str:
 <title>BRD - {_e(app_title)}</title>
 <link href=\"https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap\" rel=\"stylesheet\">
 <style>
-  :root {{
-    --ink: #0e0e0e;
-    --paper: #f8f4ee;
-    --cream: #ede8df;
-    --gold: #c49a2d;
-    --gold-light: #e8c96a;
-    --rust: #a83a1e;
-    --teal: #1a5c5a;
-    --rule: #c9bfad;
-    --muted: #6b6254;
-    --page-w: 900px;
-  }}
-  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  body {{ background: #d4cfc6; font-family: 'DM Mono', monospace; color: var(--ink); font-size: 13px; line-height: 1.65; }}
-    .doc-wrapper {{ max-width: var(--page-w); margin: 0 auto; padding: 24px 0 80px; }}
-  .page {{ background: var(--paper); margin-bottom: 24px; box-shadow: 0 4px 32px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.12); position: relative; overflow: hidden; }}
-  .page::before {{ content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: linear-gradient(180deg, var(--gold) 0%, var(--teal) 100%); }}
-  .page-inner {{ padding: 60px 64px; min-height: 980px; }}
-  .cover-page .page-inner {{ display: flex; flex-direction: column; justify-content: space-between; padding: 0; min-height: 1060px; }}
-    .cover-disclaimer {{ margin: 56px 64px 0; padding: 6px 0 0 24px; border-left: 4px solid #2b2b2b; font-family: 'DM Serif Display', serif; font-size: 18px; line-height: 1.7; font-style: italic; color: #2d2a25; }}
-    .cover-disclaimer strong {{ font-style: italic; }}
-    .cover-header {{ background: var(--ink); padding: 32px 64px 40px; color: var(--paper); margin-top: 32px; }}
-    .cover-title-block {{ padding-top: 0; }}
-  .cover-doc-type {{ font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--gold); margin-bottom: 16px; }}
-  .cover-title {{ font-family: 'DM Serif Display', serif; font-size: 52px; line-height: 1.08; color: var(--paper); margin-bottom: 4px; }}
-    .cover-subtitle {{ font-family: 'DM Serif Display', serif; font-size: 24px; color: #888; font-style: italic; white-space: nowrap; }}
-    .cover-body {{ padding: 48px 64px; flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-content: start; }}
-  .cover-meta-group h4, .cover-stack h4, h2, .ch-num, .phase-num, .glossary-term {{ font-family: 'Syne', sans-serif; }}
-  .cover-meta-group h4 {{ font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; border-bottom: 1px solid var(--rule); padding-bottom: 6px; }}
-  .cover-meta-row {{ display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--cream); gap: 14px; }}
-  .cover-meta-row span:first-child {{ color: var(--muted); }}
-  .cover-stack {{ grid-column: 1 / -1; background: var(--cream); padding: 20px 24px; border-left: 3px solid var(--teal); }}
-  .tech-pills {{ display: flex; flex-wrap: wrap; gap: 8px; }}
-  .tech-pill {{ background: var(--ink); color: var(--gold-light); font-size: 10px; padding: 4px 12px; letter-spacing: 0.06em; }}
-  .cover-footer {{ background: var(--cream); border-top: 2px solid var(--rule); padding: 20px 64px; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--muted); letter-spacing: 0.05em; }}
-  .confidential {{ background: var(--rust); color: #fff; padding: 4px 12px; font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; }}
-  .ch-header {{ border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 40px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }}
-  .ch-title {{ font-family: 'DM Serif Display', serif; font-size: 32px; line-height: 1.1; }}
-  .ch-subtitle {{ font-size: 10px; color: var(--muted); max-width: 340px; text-align: right; line-height: 1.5; }}
-  .pg-num {{ position: absolute; bottom: 20px; right: 32px; font-size: 10px; color: var(--muted); letter-spacing: 0.1em; }}
-  .pg-watermark {{ position: absolute; bottom: 20px; left: 32px; font-size: 9px; color: var(--rule); letter-spacing: 0.08em; text-transform: uppercase; }}
-  h2 {{ font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin: 32px 0 14px; padding-bottom: 6px; border-bottom: 1px solid var(--rule); }}
-  h3 {{ font-family: 'DM Serif Display', serif; font-size: 17px; margin: 22px 0 10px; }}
-  p {{ color: #333; margin-bottom: 12px; font-size: 12.5px; line-height: 1.7; }}
-  .brd-table {{ width: 100%; border-collapse: collapse; margin: 18px 0 28px; font-size: 11.5px; }}
-  .brd-table thead tr {{ background: var(--ink); color: var(--paper); }}
-  .brd-table thead th {{ padding: 10px 14px; text-align: left; font-family: 'Syne', sans-serif; font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; font-weight: 600; }}
-  .brd-table tbody tr:nth-child(even) {{ background: var(--cream); }}
-  .brd-table td {{ padding: 9px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; line-height: 1.5; }}
-  .brd-table td:first-child {{ font-weight: 500; color: var(--teal); }}
-  .callout {{ padding: 16px 20px; margin: 16px 0; font-size: 12px; line-height: 1.6; border-left: 4px solid var(--teal); background: var(--cream); }}
-  .scope-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 16px 0 24px; }}
-  .scope-box {{ padding: 16px 20px; }}
-  .scope-box.in-scope {{ background: #e8f4f0; border-top: 3px solid var(--teal); }}
-  .scope-box.out-scope {{ background: #fdf0ee; border-top: 3px solid var(--rust); }}
-  .scope-box h4 {{ font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 12px; font-weight: 700; }}
-  .scope-box.in-scope h4 {{ color: var(--teal); }}
-  .scope-box.out-scope h4 {{ color: var(--rust); }}
-  .scope-item {{ display: flex; gap: 8px; margin-bottom: 7px; font-size: 11.5px; line-height: 1.45; }}
-    .module-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0 24px; align-items: stretch; }}
-    .module-card {{ border: 1px solid var(--rule); padding: 18px 18px 16px; background: #fff; position: relative; min-height: 190px; display: flex; flex-direction: column; }}
-  .module-card::before {{ content: attr(data-num); position: absolute; top: 12px; right: 14px; font-family: 'DM Serif Display', serif; font-size: 28px; color: var(--cream); line-height: 1; }}
-    .module-card h4 {{ font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--teal); margin-bottom: 8px; padding-right: 28px; }}
-    .module-card p {{ flex: 1; margin-bottom: 12px; }}
-    .module-tag {{ display: inline-block; background: var(--cream); font-size: 9px; padding: 2px 8px; margin-top: auto; color: var(--muted); letter-spacing: 0.05em; }}
-  .code-block {{ background: var(--ink); color: #a8e6cf; font-size: 11px; padding: 20px 24px; margin: 16px 0 24px; line-height: 1.7; overflow-x: auto; border-left: 3px solid var(--gold); white-space: pre-wrap; }}
-  .er-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 20px 0; }}
-  .er-table {{ border: 1px solid var(--rule); overflow: hidden; }}
-  .er-table-head {{ background: var(--teal); color: #fff; padding: 8px 12px; font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }}
-  .er-field {{ padding: 5px 12px; font-size: 10.5px; border-bottom: 1px solid var(--cream); display: flex; justify-content: space-between; gap: 12px; }}
-  .er-field .type {{ color: var(--muted); font-size: 9.5px; }}
-    .relationship-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0 24px; }}
-    .relationship-card {{ border: 1px solid var(--rule); background: #fff; padding: 14px 16px; }}
-    .relationship-card-head {{ font-family: 'Syne', sans-serif; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 10px; }}
-    .relationship-line {{ display: grid; grid-template-columns: 84px 1fr; gap: 12px; padding: 6px 0; border-top: 1px solid var(--cream); align-items: start; }}
-    .relationship-line:first-of-type {{ border-top: none; padding-top: 0; }}
-    .relationship-line span {{ color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }}
-    .relationship-line strong {{ font-size: 11px; overflow-wrap: anywhere; word-break: break-word; }}
-    .er-diagram-card {{ background: #fbfaf7; border: 1px solid var(--rule); padding: 18px 18px 14px; }}
-    .er-diagram-title {{ font-family: 'Syne', sans-serif; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 14px; }}
-    .office-er-svg {{ width: 100%; height: auto; display: block; background: #f5f2ec; border: 1px solid #ded5c8; border-radius: 10px; }}
-    .office-er-svg .er-link {{ fill: none; stroke: #1a5c5a; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#officeArrow); }}
-    .office-er-svg .er-node rect {{ fill: #fff; stroke: #8f78ff; stroke-width: 1.5; }}
-    .office-er-svg .er-node .er-head {{ fill: #f3edff; }}
-    .office-er-svg text {{ font-family: 'DM Mono', monospace; font-size: 13px; fill: #2d2a25; }}
-    .office-er-svg .er-head-text {{ font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.03em; fill: #3d2f7a; }}
-  .phase-list {{ margin: 20px 0; border-left: 2px solid var(--teal); padding-left: 24px; }}
-  .phase-item {{ position: relative; margin-bottom: 24px; }}
-  .phase-item::before {{ content: ''; position: absolute; left: -31px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--teal); border: 2px solid var(--paper); box-shadow: 0 0 0 2px var(--teal); }}
-  .phase-title {{ font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; margin-bottom: 4px; }}
-  .phase-dur {{ font-size: 10.5px; color: var(--muted); margin-bottom: 6px; }}
-  .phase-desc {{ font-size: 11.5px; color: #444; }}
-  .check-list {{ list-style: none; margin: 10px 0; }}
-  .check-list li {{ display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--cream); font-size: 11.5px; align-items: baseline; }}
-  .glossary-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 16px 0; }}
-  .glossary-item {{ padding: 10px 14px; background: #fff; border: 1px solid var(--rule); }}
-  .glossary-def {{ font-size: 11px; color: #555; line-height: 1.5; }}
-  .fig-caption {{ text-align: center; font-size: 10px; color: var(--muted); margin-top: -10px; margin-bottom: 20px; letter-spacing: 0.04em; font-style: italic; }}
-    @media print {{ .doc-wrapper {{ padding-top: 0; }} .page {{ break-after: always; box-shadow: none; margin: 0; }} }}
+    :root {{
+        --ink: #0e0e0e;
+        --paper: #f8f4ee;
+        --cream: #ede8df;
+        --gold: #c49a2d;
+        --gold-light: #e8c96a;
+        --rust: #a83a1e;
+        --teal: #1a5c5a;
+        --rule: #c9bfad;
+        --muted: #6b6254;
+        --page-w: 900px;
+    }}
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+    body {{ background: #d4cfc6; font-family: 'DM Mono', monospace; color: var(--ink); font-size: 13px; line-height: 1.65; }}
+        .doc-wrapper {{ max-width: var(--page-w); margin: 0 auto; padding: 24px 0 80px; }}
+    .page {{ background: var(--paper); margin-bottom: 24px; box-shadow: 0 4px 32px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.12); position: relative; overflow: hidden; }}
+    .page::before {{ content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: linear-gradient(180deg, var(--gold) 0%, var(--teal) 100%); }}
+    .page-inner {{ padding: 60px 64px; min-height: 980px; }}
+    .cover-page .page-inner {{ display: flex; flex-direction: column; justify-content: space-between; padding: 0; min-height: 1060px; }}
+        .cover-disclaimer {{ margin: 56px 64px 0; padding: 6px 0 0 24px; border-left: 4px solid #2b2b2b; font-family: 'DM Serif Display', serif; font-size: 18px; line-height: 1.7; font-style: italic; color: #2d2a25; }}
+        .cover-disclaimer strong {{ font-style: italic; }}
+        .cover-header {{ background: var(--ink); padding: 52px 64px 60px; color: var(--paper); margin-top: 32px; min-height: 306px; position: relative; }}
+        .cover-brand {{ min-height: 194px; }}
+        .cover-title-block {{ padding-top: 0; min-width: 0; }}
+        .cover-doc-type {{ font-size: 10px; letter-spacing: 0.42em; text-transform: uppercase; color: var(--gold); margin-bottom: 28px; margin-left: 0; }}
+        .cover-title-row {{ display: flex; align-items: center; gap: 18px; margin-bottom: 14px; min-width: 0; }}
+        .cover-logo-wrap {{ flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-start; }}
+        .cover-logo {{ width: auto; height: 34px; object-fit: contain; display: block; border-radius: 6px; }}
+        .cover-title {{ font-family: 'DM Serif Display', serif; font-size: 58px; line-height: 1; color: var(--paper); margin: 0; max-width: 760px; }}
+        .cover-subtitle {{ font-family: 'DM Serif Display', serif; font-size: 24px; line-height: 1.08; color: #8d9bb3; font-style: italic; white-space: normal; }}
+        .cover-body {{ padding: 48px 64px; flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-content: start; }}
+    .cover-meta-group h4, .cover-stack h4, h2, .ch-num, .phase-num, .glossary-term {{ font-family: 'Syne', sans-serif; }}
+    .cover-meta-group h4 {{ font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; border-bottom: 1px solid var(--rule); padding-bottom: 6px; }}
+    .cover-meta-row {{ display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--cream); gap: 14px; }}
+    .cover-meta-row span:first-child {{ color: var(--muted); }}
+    .cover-stack {{ grid-column: 1 / -1; background: var(--cream); padding: 20px 24px; border-left: 3px solid var(--teal); }}
+    .tech-pills {{ display: flex; flex-wrap: wrap; gap: 8px; }}
+    .tech-pill {{ background: var(--ink); color: var(--gold-light); font-size: 10px; padding: 4px 12px; letter-spacing: 0.06em; }}
+    .cover-footer {{ background: var(--cream); border-top: 2px solid var(--rule); padding: 20px 64px; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--muted); letter-spacing: 0.05em; }}
+    .confidential {{ background: var(--rust); color: #fff; padding: 4px 12px; font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; }}
+    .ch-header {{ border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 40px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }}
+    .ch-title {{ font-family: 'DM Serif Display', serif; font-size: 32px; line-height: 1.1; }}
+    .ch-subtitle {{ font-size: 10px; color: var(--muted); max-width: 340px; text-align: right; line-height: 1.5; }}
+    .pg-num {{ position: absolute; bottom: 20px; right: 32px; font-size: 10px; color: var(--muted); letter-spacing: 0.1em; }}
+        .pg-watermark {{ position: absolute; bottom: 20px; left: 32px; font-size: 9px; color: var(--rule); letter-spacing: 0.08em; text-transform: uppercase; }}
+        .pg-timestamp {{ position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }}
+    h2 {{ font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin: 32px 0 14px; padding-bottom: 6px; border-bottom: 1px solid var(--rule); }}
+    h3 {{ font-family: 'DM Serif Display', serif; font-size: 17px; margin: 22px 0 10px; }}
+    p {{ color: #333; margin-bottom: 12px; font-size: 12.5px; line-height: 1.7; }}
+    .brd-table {{ width: 100%; border-collapse: collapse; margin: 18px 0 28px; font-size: 11.5px; }}
+    .brd-table thead tr {{ background: var(--ink); color: var(--paper); }}
+    .brd-table thead th {{ padding: 10px 14px; text-align: left; font-family: 'Syne', sans-serif; font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; font-weight: 600; }}
+    .brd-table tbody tr:nth-child(even) {{ background: var(--cream); }}
+    .brd-table td {{ padding: 9px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; line-height: 1.5; }}
+    .brd-table td:first-child {{ font-weight: 500; color: var(--teal); }}
+    .callout {{ padding: 16px 20px; margin: 16px 0; font-size: 12px; line-height: 1.6; border-left: 4px solid var(--teal); background: var(--cream); }}
+    .scope-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 16px 0 24px; }}
+    .scope-box {{ padding: 16px 20px; }}
+    .scope-box.in-scope {{ background: #e8f4f0; border-top: 3px solid var(--teal); }}
+    .scope-box.out-scope {{ background: #fdf0ee; border-top: 3px solid var(--rust); }}
+    .scope-box h4 {{ font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 12px; font-weight: 700; }}
+    .scope-box.in-scope h4 {{ color: var(--teal); }}
+    .scope-box.out-scope h4 {{ color: var(--rust); }}
+    .scope-item {{ display: flex; gap: 8px; margin-bottom: 7px; font-size: 11.5px; line-height: 1.45; }}
+        .module-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0 24px; align-items: stretch; }}
+        .module-card {{ border: 1px solid var(--rule); padding: 18px 18px 16px; background: #fff; position: relative; min-height: 190px; display: flex; flex-direction: column; }}
+    .module-card::before {{ content: attr(data-num); position: absolute; top: 12px; right: 14px; font-family: 'DM Serif Display', serif; font-size: 28px; color: var(--cream); line-height: 1; }}
+        .module-card h4 {{ font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--teal); margin-bottom: 8px; padding-right: 28px; }}
+        .module-card p {{ flex: 1; margin-bottom: 12px; }}
+        .module-tag {{ display: inline-block; background: var(--cream); font-size: 9px; padding: 2px 8px; margin-top: auto; color: var(--muted); letter-spacing: 0.05em; }}
+    .code-block {{ background: var(--ink); color: #a8e6cf; font-size: 11px; padding: 20px 24px; margin: 16px 0 24px; line-height: 1.7; overflow-x: auto; border-left: 3px solid var(--gold); white-space: pre-wrap; }}
+    .er-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 20px 0; }}
+    .er-table {{ border: 1px solid var(--rule); overflow: hidden; }}
+    .er-table-head {{ background: var(--teal); color: #fff; padding: 8px 12px; font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }}
+    .er-field {{ padding: 5px 12px; font-size: 10.5px; border-bottom: 1px solid var(--cream); display: flex; justify-content: space-between; gap: 12px; }}
+    .er-field .type {{ color: var(--muted); font-size: 9.5px; }}
+        .relationship-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0 24px; }}
+        .relationship-card {{ border: 1px solid var(--rule); background: #fff; padding: 14px 16px; }}
+        .relationship-card-head {{ font-family: 'Syne', sans-serif; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 10px; }}
+        .relationship-line {{ display: grid; grid-template-columns: 84px 1fr; gap: 12px; padding: 6px 0; border-top: 1px solid var(--cream); align-items: start; }}
+        .relationship-line:first-of-type {{ border-top: none; padding-top: 0; }}
+        .relationship-line span {{ color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }}
+        .relationship-line strong {{ font-size: 11px; overflow-wrap: anywhere; word-break: break-word; }}
+        .er-diagram-card {{ background: #fbfaf7; border: 1px solid var(--rule); padding: 18px 18px 14px; }}
+        .er-diagram-title {{ font-family: 'Syne', sans-serif; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 14px; }}
+        .office-er-svg {{ width: 100%; height: auto; display: block; background: #f5f2ec; border: 1px solid #ded5c8; border-radius: 10px; }}
+        .office-er-svg .er-link {{ fill: none; stroke: #1a5c5a; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#officeArrow); }}
+        .office-er-svg .er-node rect {{ fill: #fff; stroke: #8f78ff; stroke-width: 1.5; }}
+        .office-er-svg .er-node .er-head {{ fill: #f3edff; }}
+        .office-er-svg text {{ font-family: 'DM Mono', monospace; font-size: 13px; fill: #2d2a25; }}
+        .office-er-svg .er-head-text {{ font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.03em; fill: #3d2f7a; }}
+    .phase-list {{ margin: 20px 0; border-left: 2px solid var(--teal); padding-left: 24px; }}
+    .phase-item {{ position: relative; margin-bottom: 24px; }}
+    .phase-item::before {{ content: ''; position: absolute; left: -31px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--teal); border: 2px solid var(--paper); box-shadow: 0 0 0 2px var(--teal); }}
+    .phase-title {{ font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; margin-bottom: 4px; }}
+    .phase-dur {{ font-size: 10.5px; color: var(--muted); margin-bottom: 6px; }}
+    .phase-desc {{ font-size: 11.5px; color: #444; }}
+    .check-list {{ list-style: none; margin: 10px 0; }}
+    .check-list li {{ display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--cream); font-size: 11.5px; align-items: baseline; }}
+    .glossary-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 16px 0; }}
+    .glossary-item {{ padding: 10px 14px; background: #fff; border: 1px solid var(--rule); }}
+    .glossary-def {{ font-size: 11px; color: #555; line-height: 1.5; }}
+    .fig-caption {{ text-align: center; font-size: 10px; color: var(--muted); margin-top: -10px; margin-bottom: 20px; letter-spacing: 0.04em; font-style: italic; }}
+        @media print {{ .doc-wrapper {{ padding-top: 0; }} .page {{ break-after: always; box-shadow: none; margin: 0; }} }}
 </style>
 </head>
 <body>
 <div class=\"doc-wrapper\">
-  <div class=\"page cover-page\" id=\"cover\">
-    <div class=\"page-inner\">
-            <div class=\"cover-disclaimer\"><strong>Disclaimer:</strong> This document provides a high-fidelity baseline of application architecture, synthesized by QlikAI Accelerator through a rigorous analysis of the source code. It is designed to significantly accelerate the comprehension process by providing a structured foundation for modernization. Because applications reflect architectural implementation rather than original system design, this document is intended as a collaborative draft. We encourage Subject Matter Experts (SMEs) to review, refine, and validate these requirements to ensure they accurately capture the nuanced business goals of the current landscape.</div>
-      <div class=\"cover-header\">
-        <div class=\"cover-title-block\">
-          <div class=\"cover-doc-type\">{_e(project_subtitle)}</div>
-          <div class=\"cover-title\">{_e(app_title)}</div>
-          <div class=\"cover-subtitle\">{_e(project_type)}</div>
+    <div class=\"page cover-page\" id=\"cover\">
+        <div class=\"page-inner\">
+                        <div class=\"cover-disclaimer\"><strong>Disclaimer:</strong> This document provides a high-fidelity baseline of application architecture, synthesized by QlikAI Accelerator through a rigorous analysis of the source code. It is designed to significantly accelerate the comprehension process by providing a structured foundation for modernization. Because applications reflect architectural implementation rather than original system design, this document is intended as a collaborative draft. We encourage Subject Matter Experts (SMEs) to review, refine, and validate these requirements to ensure they accurately capture the nuanced business goals of the current landscape.</div>
+                        <div class="cover-header">
+                                <div class="cover-brand">
+                                        <div class="cover-title-block">
+                                                <div class="cover-doc-type">{_e(project_subtitle)}</div>
+                                                <div class="cover-title-row">{logo_html}<div class="cover-title">{_e(app_title)}</div></div>
+                                                <div class="cover-subtitle">{_e(cover_tagline)}</div>
+                                        </div>
+                                </div>
+                        </div>
+            <div class=\"cover-body\">
+                <div class=\"cover-meta-group\">
+                                        <h4>Type Details</h4>
+                                        <div class=\"cover-meta-row\"><span>{project_label}</span><span>{_e(app_title)}</span></div>
+                    <div class=\"cover-meta-row\"><span>Document Type</span><span>{_e(project_subtitle)}</span></div>
+                    <div class=\"cover-meta-row\"><span>Date &amp; Time</span><span>{_e(generated_datetime_label)}</span></div>
+                    <div class=\"cover-meta-row\"><span>Prepared By</span><span>QlikAI BRD Generator</span></div>
+                    <div class=\"cover-meta-row\"><span>Classification</span><span>CONFIDENTIAL</span></div>
+                                        <div class=\"cover-meta-row\"><span>Primary Languages</span><span>{_e(document.get('primary_languages', 'Python / TypeScript'))}</span></div>
+                                        {cover_applications_html}
+                    <div class=\"cover-meta-row\"><span>Total Tables</span><span>{_e(summary.get('table_count', len(table_inventory)))}</span></div>
+                </div>
+                <div class=\"cover-meta-group\">
+                                        <h4>Application Metrics</h4>
+                                        <div class=\"cover-meta-row\"><span>{project_id_label}</span><span>{_e(document.get('app_id', ''))}</span></div>
+                    <div class=\"cover-meta-row\"><span>Fields</span><span>{_e(summary.get('total_fields', 0))}</span></div>
+                    <div class=\"cover-meta-row\"><span>Sheets</span><span>{_e(summary.get('sheet_count', len(document.get('sheets', []))))}</span></div>
+                    <div class=\"cover-meta-row\"><span>Relationships</span><span>{_e(summary.get('relationship_count', len(relationships)))}</span></div>
+                    <div class=\"cover-meta-row\"><span>Load Script</span><span>{'Available' if document.get('script_excerpt') else 'Not Available'}</span></div>
+                    <div class=\"cover-meta-row\"><span>Generated</span><span>AI-assisted</span></div>
+                </div>
+                <div class=\"cover-stack\">
+                    <h4>Technology Stack</h4>
+                    <div class=\"tech-pills\">{tech_pills}</div>
+                </div>
+            </div>
+                        <div class=\"cover-footer\">
+                                <span>Generated from live Qlik application metadata and script analysis</span>
+                                <span>Generated {_e(generated_datetime_label)}</span>
+                                <span class=\"confidential\">Confidential</span>
+                        </div>
         </div>
-      </div>
-      <div class=\"cover-body\">
-        <div class=\"cover-meta-group\">
-                    <h4>Type Details</h4>
-                    <div class=\"cover-meta-row\"><span>{project_label}</span><span>{_e(app_title)}</span></div>
-          <div class=\"cover-meta-row\"><span>Document Type</span><span>{_e(project_subtitle)}</span></div>
-          <div class=\"cover-meta-row\"><span>Date</span><span>{_e(date_label)}</span></div>
-          <div class=\"cover-meta-row\"><span>Prepared By</span><span>QlikAI BRD Generator</span></div>
-          <div class=\"cover-meta-row\"><span>Classification</span><span>CONFIDENTIAL</span></div>
-                    <div class=\"cover-meta-row\"><span>Primary Languages</span><span>Python / TypeScript</span></div>
-                    {cover_applications_html}
-          <div class=\"cover-meta-row\"><span>Total Tables</span><span>{_e(summary.get('table_count', len(table_inventory)))}</span></div>
-        </div>
-        <div class=\"cover-meta-group\">
-                    <h4>Applications</h4>
-                    <div class=\"cover-meta-row\"><span>{project_id_label}</span><span>{_e(document.get('app_id', ''))}</span></div>
-          <div class=\"cover-meta-row\"><span>Fields</span><span>{_e(summary.get('total_fields', 0))}</span></div>
-          <div class=\"cover-meta-row\"><span>Sheets</span><span>{_e(summary.get('sheet_count', len(document.get('sheets', []))))}</span></div>
-          <div class=\"cover-meta-row\"><span>Relationships</span><span>{_e(summary.get('relationship_count', len(relationships)))}</span></div>
-          <div class=\"cover-meta-row\"><span>Load Script</span><span>{'Available' if document.get('script_excerpt') else 'Not Available'}</span></div>
-          <div class=\"cover-meta-row\"><span>Generated</span><span>AI-assisted</span></div>
-        </div>
-        <div class=\"cover-stack\">
-          <h4>Technology Stack</h4>
-          <div class=\"tech-pills\">{tech_pills}</div>
-        </div>
-      </div>
-      <div class=\"cover-footer\">
-        <span>Generated from live Qlik application metadata and script analysis</span>
-        <span class=\"confidential\">Confidential</span>
-      </div>
     </div>
-  </div>
 
-  <div class=\"page\" id=\"ch1\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 1</div><div class=\"ch-title\">Executive Summary<br>&amp; Project Overview</div></div><div class=\"ch-subtitle\">Business context, inferred purpose, and documentation scope</div></div>
-    <h2>1.1 Project Introduction</h2><p>{_e(document.get('project_overview', ''))}</p>
-    <h2>1.2 Executive Summary</h2>{_render_list(document.get('executive_summary_bullets', []))}
-    <h2>1.3 Business Objectives</h2>{objectives_table}
-    <h2>1.4 Project Charter</h2>{charter_table}
-    <h2>1.5 Scope</h2><div class=\"scope-grid\"><div class=\"scope-box in-scope\"><h4>In Scope</h4>{''.join(f'<div class="scope-item"><span>✔</span><span>{_e(item)}</span></div>' for item in document.get('in_scope', []) if item)}</div><div class=\"scope-box out-scope\"><h4>Out of Scope</h4>{''.join(f'<div class="scope-item"><span>✘</span><span>{_e(item)}</span></div>' for item in document.get('out_of_scope', []) if item)}</div></div>
-  </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-num\">02</div></div>
+        <div class=\"page\" id=\"control\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Document Control</div><div class=\"ch-title\">Control &amp;<br>Revision Tracking</div></div><div class=\"ch-subtitle\">Merged BRD lineage and code analysis baseline</div></div><h2>DC.1 Document Control</h2>{document_control_table}<h2>DC.2 Static Code Analysis</h2>{static_code_analysis_table}</div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">02</div></div>
 
-  <div class=\"page\" id=\"ch2\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 2</div><div class=\"ch-title\">System Architecture<br>Overview</div></div><div class=\"ch-subtitle\">Architecture interpretation from metadata, sheets, script, and data model</div></div>
-    <h2>2.1 Architecture Style</h2><p>{_e(document.get('architecture_style', ''))}</p>
-    <h2>2.2 Layer Descriptions</h2>{architecture_table}
-    <h2>2.3 Design Patterns</h2>{design_patterns_table}
-        {application_inventory_section}
-        <h2>{sheet_inventory_label} Sheet Inventory</h2><div class=\"callout\"><strong>Detected Sheets</strong><div class=\"tech-pills\">{sheet_rows}</div></div>
-  </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-num\">03</div></div>
+        <div class=\"page\" id=\"toc\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-title\">Table of Contents</div></div><div class=\"ch-subtitle\">Document navigation and section index</div></div>{toc_table}</div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">03</div></div>
 
-  <div class=\"page\" id=\"ch3\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 3</div><div class=\"ch-title\">Data Model &amp;<br>Relationships</div></div><div class=\"ch-subtitle\">Entity inventory, inferred joins, and business structure</div></div>
-    <h2>3.1 Table Inventory</h2>{table_inventory_table}
-    <h2>3.2 Entity Relationship View</h2>{_render_er_grid(table_inventory)}<div class=\"fig-caption\">Figure 3.1 - Entity inventory derived from Qlik tables</div>
-        <h2>3.3 Sample ER Diagram</h2>{_render_office_details_er_diagram()}
-        <h2>3.4 Inferred Relationships</h2>{relationship_table}
-  </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-num\">04</div></div>
+        <div class=\"page\" id=\"ch1\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 1</div><div class=\"ch-title\">Executive Summary<br>&amp; Project Overview</div></div><div class=\"ch-subtitle\">Business context, inferred purpose, and documentation scope</div></div>
+        <h2>1.1 Project Introduction</h2><p>{_e(document.get('project_overview', ''))}</p>
+        <h2>1.2 Executive Summary</h2>{_render_list(document.get('executive_summary_bullets', []))}
+        <h2>1.3 Business Objectives</h2>{objectives_table}
+        <h2>1.4 Project Charter</h2>{charter_table}
+        <h2>1.5 Scope</h2><div class=\"scope-grid\"><div class=\"scope-box in-scope\"><h4>In Scope</h4>{''.join(f'<div class="scope-item"><span>✔</span><span>{_e(item)}</span></div>' for item in document.get('in_scope', []) if item)}</div><div class=\"scope-box out-scope\"><h4>Out of Scope</h4>{''.join(f'<div class="scope-item"><span>✘</span><span>{_e(item)}</span></div>' for item in document.get('out_of_scope', []) if item)}</div></div>
+        </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">04</div></div>
 
-  <div class=\"page\" id=\"ch4\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 4</div><div class=\"ch-title\">Module Breakdown<br>&amp; Functional Areas</div></div><div class=\"ch-subtitle\">Primary business entities and analytical domains</div></div>
-    <h2>4.1 Module Overview</h2><p>The application is decomposed into the following primary analytical modules based on discovered entities, script logic, and business-facing sheet structure.</p>
-    { _render_module_cards(module_summaries) }
-    <h2>4.2 Actors</h2>{actors_table}
-  </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-num\">05</div></div>
+    <div class=\"page\" id=\"ch2\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 2</div><div class=\"ch-title\">System Architecture<br>Overview</div></div><div class=\"ch-subtitle\">Architecture interpretation from metadata, sheets, script, and data model</div></div>
+        <h2>2.1 Architecture Style</h2><p>{_e(document.get('architecture_style', ''))}</p>
+        <h2>2.2 Layer Descriptions</h2>{architecture_table}
+        <h2>2.3 Design Patterns</h2>{design_patterns_table}
+                {application_inventory_section}
+                <h2>{sheet_inventory_label} Sheet Inventory</h2><div class=\"callout\"><strong>Detected Sheets</strong><div class=\"tech-pills\">{sheet_rows}</div></div>
+        </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">05</div></div>
 
-  <div class=\"page\" id=\"ch5\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 5</div><div class=\"ch-title\">Use Cases, Logic<br>&amp; Data Flow</div></div><div class=\"ch-subtitle\">User scenarios, process interpretation, and script-backed logic</div></div>
-    <h2>5.1 End-to-End Flow</h2><p>{_e(document.get('project_flow_summary', ''))}</p>
-    <h2>5.2 Use Cases</h2>{use_cases_table}
-    <h2>5.3 Data Flow Processes</h2>{data_flow_table}
-    <h2>5.4 Load Script Excerpt</h2><div class=\"code-block\">{_e(document.get('script_excerpt', 'No load script was available during BRD generation.'))}</div>
-    <h2>5.5 Sample Data Preview</h2>{_render_sample_tables(document.get('table_samples', []))}
-  </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-num\">06</div></div>
+    <div class=\"page\" id=\"ch3\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 3</div><div class=\"ch-title\">Data Model &amp;<br>Relationships</div></div><div class=\"ch-subtitle\">Entity inventory, inferred joins, and business structure</div></div>
+        <h2>3.1 Table Inventory</h2>{table_inventory_table}
+        <h2>3.2 Entity Relationship View</h2>{_render_er_grid(table_inventory)}<div class=\"fig-caption\">Figure 3.1 - Entity inventory derived from Qlik tables</div>
+                <h2>3.3 Sample ER Diagram</h2>{_render_dynamic_er_diagram(table_inventory, relationships, app_title, 'Figure 3.2')}
+                <h2>3.4 Inferred Relationships</h2>{relationship_table}
+        </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">06</div></div>
 
-  <div class=\"page\" id=\"ch6\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 6</div><div class=\"ch-title\">Quality, Security<br>&amp; Migration</div></div><div class=\"ch-subtitle\">Risks, controls, and downstream transition planning</div></div>
-    <h2>6.1 Technical Limitations</h2>{limitations_table}
-    <h2>6.2 Security Checklist</h2>{security_html}
-    <h2>6.3 Migration Phases</h2>{migration_html}
-  </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-num\">07</div></div>
+    <div class=\"page\" id=\"ch4\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 4</div><div class=\"ch-title\">Module Breakdown<br>&amp; Functional Areas</div></div><div class=\"ch-subtitle\">Primary business entities and analytical domains</div></div>
+        <h2>4.1 Module Overview</h2><p>The application is decomposed into the following primary analytical modules based on discovered entities, script logic, and business-facing sheet structure.</p>
+        { _render_module_cards(module_summaries) }
+        <h2>4.2 Actors</h2>{actors_table}
+        </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">07</div></div>
 
-  <div class=\"page\" id=\"ch7\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 7</div><div class=\"ch-title\">Appendix &amp;<br>Glossary</div></div><div class=\"ch-subtitle\">Reference material for onboarding and governance</div></div>
-    <h2>7.1 Setup Errors</h2>{setup_errors_table}
-    <h2>7.2 Coding Conventions</h2>{coding_conventions_table}
-    <h2>7.3 Glossary</h2>{glossary_html}
-    <h2>7.4 Revision History</h2>{revision_table}
-  </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-num\">08</div></div>
+    <div class=\"page\" id=\"ch5\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 5</div><div class=\"ch-title\">Use Cases, Logic<br>&amp; Data Flow</div></div><div class=\"ch-subtitle\">User scenarios, process interpretation, and script-backed logic</div></div>
+        <h2>5.1 End-to-End Flow</h2><p>{_e(document.get('project_flow_summary', ''))}</p>
+        <h2>5.2 Use Cases</h2>{use_cases_table}
+        <h2>5.3 Data Flow Processes</h2>{data_flow_table}
+        <h2>5.4 Load Script Excerpt</h2><div class=\"code-block\">{_e(document.get('script_excerpt', 'No load script was available during BRD generation.'))}</div>
+        <h2>5.5 Sample Data Preview</h2>{_render_sample_tables(document.get('table_samples', []))}
+        </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">08</div></div>
+
+    <div class=\"page\" id=\"ch6\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 6</div><div class=\"ch-title\">Quality, Security<br>&amp; Migration</div></div><div class=\"ch-subtitle\">Risks, controls, and downstream transition planning</div></div>
+        <h2>6.1 Technical Limitations</h2>{limitations_table}
+        <h2>6.2 Security Checklist</h2>{security_html}
+        <h2>6.3 Migration Phases</h2>{migration_html}
+        <h2>6.4 Acceptance Criteria</h2>{_render_table(['Acceptance Criterion', 'Expected Outcome'], [['BI Engineer authenticates with valid Qlik Cloud tenant URL and approved auth method within 5 seconds', 'Session state created and application list retrieved'], ['Executive summary generation', 'Exactly 7 bullets returned within 15 seconds'], ['Multi-turn chat continuity', 'Conversation context preserved across 20+ messages'], ['Path A publication', 'Semantic model is published and workspace artifact is reachable'], ['LLM fallback handling', 'Mistral-7B or deterministic fallback returns valid output when primary fails'], ['Health endpoint', 'Returns 200 when dependencies are reachable and non-200 when a critical dependency is unavailable'], ['Prerequisite validation', 'Publication blocks with remediation when required Power BI permissions are missing'], ['Unsupported construct detection', 'Blocking constructs are reported before migration execution proceeds']])}
+        <h2>6.5 Current Risks &amp; Challenges</h2>{risks_challenges_table}
+        </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">09</div></div>
+
+    <div class=\"page\" id=\"ch7\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 7</div><div class=\"ch-title\">Appendix &amp;<br>Glossary</div></div><div class=\"ch-subtitle\">Reference material for onboarding and governance</div></div>
+        <h2>7.1 Setup Errors</h2>{setup_errors_table}
+        <h2>7.2 Coding Conventions</h2>{coding_conventions_table}
+        <h2>7.3 Glossary</h2>{glossary_html}
+        <h2>7.4 Revision History</h2>{revision_table}
+        </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">10</div></div>
+
+    <div class=\"page\" id=\"ch8\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 8</div><div class=\"ch-title\">Requirements Baseline<br>&amp; Catalog</div></div><div class=\"ch-subtitle\">Authoritative FR/NFR baseline for the application-specific migration scope</div></div>
+        <h2>8.1 Purpose</h2><p>This chapter establishes the authoritative baseline of functional and non-functional requirements for the QlikAi_Demo_APP migration using the QlikAI Accelerator platform. It preserves the app-specific context while incorporating the missing enterprise requirements needed by migration engineering, testing, and stakeholder validation.</p>
+        <h2>8.2 Requirements Catalog</h2>{requirements_catalog_table}
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">11</div></div>
+
+    <div class=\"page\" id=\"ch9\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 9</div><div class=\"ch-title\">Detailed Use Case<br>Specifications</div></div><div class=\"ch-subtitle\">Expanded operational scenarios for implementation and validation</div></div>
+        <h2>9.1 Detailed Use Cases</h2>{detailed_use_cases_table}
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">12</div></div>
+
+    <div class=\"page\" id=\"ch10\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 10</div><div class=\"ch-title\">Object &amp; Class<br>Model</div></div><div class=\"ch-subtitle\">Application and platform services participating in migration flow</div></div>
+        <h2>10.1 Class Inventory</h2>{object_inventory_table}
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">13</div></div>
+
+    <div class=\"page\" id=\"ch11\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 11</div><div class=\"ch-title\">Activity &amp; Process<br>Flows</div></div><div class=\"ch-subtitle\">Authentication, extraction, LLM, and publishing sequence logic</div></div>
+        <h2>11.1 Activity Flows</h2>{activity_flows_table}
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">14</div></div>
+
+    <div class=\"page\" id=\"ch12\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 12</div><div class=\"ch-title\">End-to-End Data<br>Flow</div></div><div class=\"ch-subtitle\">Context and level-1 decomposition for the merged BRD</div></div>
+        <h2>12.1 Context Diagram</h2>{data_flow_context_table}
+        <h2>12.2 Level-1 Process Decomposition</h2>{data_flow_table}
+        <div class=\"callout\"><strong>DFD Key Note</strong><div>All core data stores map to Qlik Cloud APIs, Microsoft APIs, or in-memory session state. The migration flow does not require a primary persistent database in its core execution path.</div></div>
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">15</div></div>
+
+    <div class=\"page\" id=\"ch13\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 13</div><div class=\"ch-title\">Interface &amp;<br>Integration Architecture</div></div><div class=\"ch-subtitle\">Frontend, backend, and external integration surfaces</div></div>
+        <h2>13.1 Frontend Components</h2>{interface_frontend_table}
+        <h2>13.2 Backend APIs</h2>{backend_api_table}
+        <h2>13.3 Integration Technologies</h2>{integration_technologies_table}
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">16</div></div>
+
+    <div class=\"page\" id=\"ch14\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 14</div><div class=\"ch-title\">Logical Entity<br>Inventory</div></div><div class=\"ch-subtitle\">Entity definitions and relationship model for migration context</div></div>
+        <h2>14.1 Entity Definitions</h2>{logical_entity_table}
+        <h2>14.2 Key Relationships</h2>{logical_relationships_table}
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">17</div></div>
+
+    <div class=\"page\" id=\"ch15\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 15</div><div class=\"ch-title\">Non-Functional<br>Requirements</div></div><div class=\"ch-subtitle\">Security, availability, performance, and resilience</div></div>
+        <h2>15.1 Security Overview</h2>{nfr_security_table}
+        <h2>15.2 Availability</h2><p>Target availability is 99.9% monthly uptime excluding planned maintenance, upstream third-party outages, and customer-managed configuration failures. The platform relies on health monitoring and graceful degradation through the documented LLM fallback chain.</p>
+        <h2>15.3 Performance</h2>{performance_table}
+        <h2>15.4 Scalability &amp; Resilience</h2><p>FastAPI async processing, stateless backend design, session-scoped browser context, and page-level code splitting support bounded concurrency without blocking I/O-heavy external integrations.</p>
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">18</div></div>
+
+    <div class=\"page\" id=\"ch16\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 16</div><div class=\"ch-title\">Deployment<br>Architecture</div></div><div class=\"ch-subtitle\">Target runtime tiers, environment variables, and CI/CD flow</div></div>
+        <h2>16.1 Cloud Deployment Overview</h2>{deployment_architecture_table}
+        <h2>16.2 Environment Variables</h2>{env_vars_table}
+        <h2>16.3 CI/CD Pipeline</h2>{ci_cd_table}
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">19</div></div>
+
+    <div class=\"page\" id=\"ch17\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 17</div><div class=\"ch-title\">Repository File-by-File<br>Guide</div></div><div class=\"ch-subtitle\">Annotated repository surfaces relevant to migration delivery</div></div>
+        <h2>17.1 Repository Structure</h2><div class=\"code-block\">QlikAI/\n├── src/                    # React Frontend (TypeScript)\n│   ├── pages/\n│   │   ├── Connect/\n│   │   │   └── ConnectPage.tsx\n│   │   └── Analysis/\n│   │       └── AnalysisPage.tsx\n│   ├── context/\n│   │   └── AuthContext.tsx\n│   └── services/\n│       └── api.ts\n├── main.py\n├── routers/\n│   ├── qlik.py\n│   ├── llm.py\n│   └── powerbi.py\n├── services/\n│   ├── qix.py\n│   └── parser.py\n├── .env\n├── Dockerfile\n├── cloudbuild.yaml\n└── README.md</div>
+        <h2>17.2 Key File Descriptions</h2>{repo_file_descriptions_table}
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">20</div></div>
+
+    <div class=\"page\" id=\"ch18\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 18</div><div class=\"ch-title\">Reference<br>Documents</div></div><div class=\"ch-subtitle\">Primary references used to enrich the merged application BRD</div></div>
+        <h2>18.1 Reference Documents</h2>{references_documents_table}
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">21</div></div>
+
+    <div class=\"page\" id=\"appendix-a\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Appendix A</div><div class=\"ch-title\">BRD Conflict<br>Resolution Register</div></div><div class=\"ch-subtitle\">Normalization decisions carried into the merged app-specific BRD</div></div>
+        <h2>A.1 Conflict Resolution Register</h2>{appendix_conflict_register_table}
+    </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">22</div></div>
 </div></body></html>"""
 
 

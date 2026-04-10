@@ -1136,73 +1136,81 @@ def _generate_project_brd_content(
     for app_meta in normalized_apps:
         app_id = app_meta["app_id"]
         app_name = app_meta["name"]
-        app_snapshot = ws_client.get_app_tables_simple(app_id)
-        if not app_snapshot.get("success", False):
-            failed_apps.append(app_name)
-            logger.warning("Project BRD skipped app %s: %s", app_name, app_snapshot.get("error", "unknown error"))
-            continue
-
-        tables = app_snapshot.get("tables", []) or []
-        fields = app_snapshot.get("all_fields", []) or []
-        sheets = app_snapshot.get("sheets", []) or []
-        script = app_snapshot.get("script", "") or ""
-        summary = app_snapshot.get("summary", {}) or {}
-
-        for table in tables:
-            prefixed_table = dict(table)
-            prefixed_table["name"] = f"{app_name}::{table.get('name', 'Unknown')}"
-            all_tables.append(prefixed_table)
-
-        all_fields.extend(
-            [{**field, "name": f"{app_name}::{field.get('name', '')}", "app_name": app_name} for field in fields if field.get("name")]
-        )
-        all_sheets.extend(
-            [{**sheet, "name": f"{app_name} / {sheet.get('name', 'Unnamed Sheet')}", "app_name": app_name} for sheet in sheets]
-        )
-
-        prefixed_relationship_input = _build_prefixed_relationship_input(app_name, tables)
-        if prefixed_relationship_input:
-            all_relationships.extend(resolve_relationships_unified(prefixed_relationship_input))
-
-        if script.strip():
-            combined_scripts.append(f"// Application: {app_name}\n{script.strip()}")
-
-        total_script_tables += summary.get("script_table_count", 0)
-        application_inventory.append(
-            {
-                "name": app_name,
-                "app_id": app_id,
-                "table_count": summary.get("table_count", len(tables)),
-                "field_count": summary.get("total_fields", len(fields)),
-                "sheet_count": summary.get("sheet_count", len(sheets)),
-                "has_script": bool(script.strip()),
-                "last_modified": app_meta.get("last_modified", ""),
-            }
-        )
-
-        ranked_tables = sorted(
-            tables,
-            key=lambda item: item.get("no_of_rows") or item.get("row_count") or 0,
-            reverse=True,
-        )
-        for table in ranked_tables[:1]:
-            if len(table_samples) >= 6:
-                break
-            table_name = table.get("name")
-            if not table_name:
+        try:
+            app_snapshot = ws_client.get_app_tables_simple(app_id)
+            if not app_snapshot.get("success", False):
+                failed_apps.append(app_name)
+                logger.warning("Project BRD skipped app %s: %s", app_name, app_snapshot.get("error", "unknown error"))
                 continue
-            try:
-                sample_result = ws_client.get_table_data(app_id, table_name, limit=5)
-                if sample_result.get("success"):
-                    table_samples.append(
-                        {
-                            "table": f"{app_name}::{table_name}",
-                            "columns": sample_result.get("columns", [])[:8],
-                            "rows": (sample_result.get("rows", []) or [])[:3],
-                        }
-                    )
-            except Exception as sample_exc:
-                logger.warning("Project BRD sample fetch failed for %s/%s: %s", app_name, table_name, sample_exc)
+
+            tables = app_snapshot.get("tables", []) or []
+            fields = app_snapshot.get("all_fields", []) or []
+            sheets = app_snapshot.get("sheets", []) or []
+            script = app_snapshot.get("script", "") or ""
+            summary = app_snapshot.get("summary", {}) or {}
+
+            for table in tables:
+                prefixed_table = dict(table)
+                prefixed_table["name"] = f"{app_name}::{table.get('name', 'Unknown')}"
+                all_tables.append(prefixed_table)
+
+            all_fields.extend(
+                [{**field, "name": f"{app_name}::{field.get('name', '')}", "app_name": app_name} for field in fields if field.get("name")]
+            )
+            all_sheets.extend(
+                [{**sheet, "name": f"{app_name} / {sheet.get('name', 'Unnamed Sheet')}", "app_name": app_name} for sheet in sheets]
+            )
+
+            prefixed_relationship_input = _build_prefixed_relationship_input(app_name, tables)
+            if prefixed_relationship_input:
+                try:
+                    all_relationships.extend(resolve_relationships_unified(prefixed_relationship_input))
+                except Exception as relationship_exc:
+                    logger.warning("Project BRD relationship resolution failed for %s: %s", app_name, relationship_exc)
+
+            if script.strip():
+                combined_scripts.append(f"// Application: {app_name}\n{script.strip()}")
+
+            total_script_tables += summary.get("script_table_count", 0)
+            application_inventory.append(
+                {
+                    "name": app_name,
+                    "app_id": app_id,
+                    "table_count": summary.get("table_count", len(tables)),
+                    "field_count": summary.get("total_fields", len(fields)),
+                    "sheet_count": summary.get("sheet_count", len(sheets)),
+                    "has_script": bool(script.strip()),
+                    "last_modified": app_meta.get("last_modified", ""),
+                }
+            )
+
+            ranked_tables = sorted(
+                tables,
+                key=lambda item: item.get("no_of_rows") or item.get("row_count") or 0,
+                reverse=True,
+            )
+            for table in ranked_tables[:1]:
+                if len(table_samples) >= 6:
+                    break
+                table_name = table.get("name")
+                if not table_name:
+                    continue
+                try:
+                    sample_result = ws_client.get_table_data(app_id, table_name, limit=5)
+                    if sample_result.get("success"):
+                        table_samples.append(
+                            {
+                                "table": f"{app_name}::{table_name}",
+                                "columns": sample_result.get("columns", [])[:8],
+                                "rows": (sample_result.get("rows", []) or [])[:3],
+                            }
+                        )
+                except Exception as sample_exc:
+                    logger.warning("Project BRD sample fetch failed for %s/%s: %s", app_name, table_name, sample_exc)
+        except Exception as app_exc:
+            failed_apps.append(app_name)
+            logger.warning("Project BRD skipped app %s due to inspection failure: %s", app_name, app_exc)
+            continue
 
     if not application_inventory:
         raise HTTPException(status_code=500, detail="Unable to inspect any applications for consolidated BRD generation")
@@ -1306,12 +1314,18 @@ async def download_project_brd(
     client: QlikClient = Depends(get_qlik_client),
     ws_client: QlikWebSocketClient = Depends(get_qlik_websocket_client),
 ):
-    artifact = _generate_project_brd_content(client, ws_client)
-    return StreamingResponse(
-        io.BytesIO(artifact["html_content"].encode("utf-8")),
-        media_type="text/html; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{artifact["filename"]}"'},
-    )
+    try:
+        artifact = _generate_project_brd_content(client, ws_client)
+        return StreamingResponse(
+            io.BytesIO(artifact["html_content"].encode("utf-8")),
+            media_type="text/html; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{artifact["filename"]}"'},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Project BRD download failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.post("/applications/{app_id}/brd/download")

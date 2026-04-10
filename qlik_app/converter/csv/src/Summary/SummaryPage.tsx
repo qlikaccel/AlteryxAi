@@ -1,7 +1,7 @@
 import "./SummaryPage.css";
 import { useEffect, useState, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { fetchTables, fetchTableData, fetchTableDataSimple, exportTableAsCSV, fetchLoadScript, parseLoadScript } from "../api/qlikApi";
+import { fetchTables, fetchTableData, fetchTableDataSimple, exportTableAsCSV, fetchLoadScript, parseLoadScript, fetchApplicationBrdDocument, downloadHtmlFile } from "../api/qlikApi";
 import Csvicon from "../assets/Csvicon.png";
 import { useWizard } from "../context/WizardContext";
 import LoadingOverlay from "../components/LoadingOverlay/LoadingOverlay";
@@ -25,6 +25,7 @@ export default function SummaryPage() {
   const pageStartTimeRef = useRef<number | null>(null);
 
   const [appId, setAppId] = useState<string>("");
+  const appName = (location.state as any)?.appName || sessionStorage.getItem("appName") || appId || "this application";
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [filteredTables, setFilteredTables] = useState<TableInfo[]>([]);
   const [selectedTable, setSelectedTable] = useState<string>("");
@@ -35,6 +36,11 @@ export default function SummaryPage() {
   const [summary, setSummary] = useState<any>(null);
   const [pageLoadTime, setPageLoadTime] = useState<string | null>(null);
   const [totalRows, setTotalRows] = useState<number>(0);
+  const [applicationBrdHtml, setApplicationBrdHtml] = useState<string>("");
+  const [applicationBrdFileName, setApplicationBrdFileName] = useState<string>("");
+  const [applicationBrdLoading, setApplicationBrdLoading] = useState(false);
+  const [applicationBrdError, setApplicationBrdError] = useState<string>("");
+  const [applicationBrdLoadedAppId, setApplicationBrdLoadedAppId] = useState<string>("");
 
   const SERVER_FETCH_MAX = 200000;
 
@@ -43,10 +49,10 @@ export default function SummaryPage() {
   const [relations, setRelations] = useState<Record<string, string[]>>({});
 
   // ── TABS ──────────────────────────────────────────────────────────────────
-  // "sourceTypes" | "summary" | "mquery" | "er"
+  // "sourceTypes" | "summary" | "appSpec" | "mquery" | "er"
   // "er" replaces the old Schema modal button.
   // ──────────────────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"sourceTypes" | "summary" | "mquery" | "er">("sourceTypes");
+  const [activeTab, setActiveTab] = useState<"sourceTypes" | "summary" | "appSpec" | "mquery" | "er">("sourceTypes");
   const [sourceTypesTab, setSourceTypesTab] = useState<"database" | "scripts" | "csv" | null>(null);
 
   // LoadScript and MQuery Display States
@@ -212,6 +218,13 @@ export default function SummaryPage() {
   useEffect(() => {
     sessionStorage.setItem("summaryActiveTab", activeTab);
   }, [activeTab]);
+
+  useEffect(() => {
+    setApplicationBrdHtml("");
+    setApplicationBrdFileName("");
+    setApplicationBrdError("");
+    setApplicationBrdLoadedAppId("");
+  }, [appId]);
 
   // When user navigates to the M Query tab, pre-fill the SharePoint URL
   useEffect(() => {
@@ -612,6 +625,27 @@ export default function SummaryPage() {
     }
   };
 
+  const handleDownloadApplicationBrd = async () => {
+    try {
+      if (applicationBrdHtml && applicationBrdLoadedAppId === appId) {
+        downloadHtmlFile(applicationBrdHtml, applicationBrdFileName || `${appName}_BRD.html`);
+        return;
+      }
+
+      setApplicationBrdLoading(true);
+      setApplicationBrdError("");
+      const document = await fetchApplicationBrdDocument(appId);
+      setApplicationBrdHtml(document.htmlContent);
+      setApplicationBrdFileName(document.fileName);
+      setApplicationBrdLoadedAppId(appId);
+      downloadHtmlFile(document.htmlContent, document.fileName);
+    } catch (error: any) {
+      setApplicationBrdError(error?.message || "Failed to download the application specification document.");
+    } finally {
+      setApplicationBrdLoading(false);
+    }
+  };
+
   const masterMap = useMemo(() => {
     const map = new Map<string, string>();
     const groups: Record<string, any[]> = {};
@@ -688,7 +722,6 @@ export default function SummaryPage() {
     return arr;
   }, [filteredTables, masterMap, mainTable, relations]);
 
-  const isSelectionMaster = !!(selectedTable && isMasterTable(selectedTable));
   const isExportAllowed = Boolean(selectedTable);
 
   const prepareAndNavigateToExport = async (tableToExport?: string) => {
@@ -924,15 +957,14 @@ export default function SummaryPage() {
           <>
             {/* HEADER */}
             <div className="header">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: "20px" }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="summary-header-row">
+                <div className="summary-header-main">
+                  <h2 className="summary-page-title">
                     {selectedTable}
-                    {isSelectionMaster && <span className="master-indicator" style={{ marginLeft: '0px' }}>master</span>}
                   </h2>
 
-                  {/* ── TAB BAR: Source Types · Summary · ER Diagram ── */}
-                  <div style={{ display: "flex", gap: "14px", borderBottom: "none", marginLeft: '12px', borderRadius: '6px', padding: '4px' }}>
+                  {/* ── TAB BAR: Source Types · Summary · Application Spec · ER Diagram ── */}
+                  <div className="summary-tab-bar">
 
                     {/* Source Types Tab */}
                     <button
@@ -950,6 +982,14 @@ export default function SummaryPage() {
                       onClick={() => setActiveTab("summary")}
                     >
                       📊 Summary
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`tab-button tab-button--appSpec ${activeTab === "appSpec" ? "active" : ""}`}
+                      onClick={() => setActiveTab("appSpec")}
+                    >
+                      📄 App BRD
                     </button>
 
                     {/* ER Diagram Tab — replaces old Schema modal button */}
@@ -1156,6 +1196,43 @@ export default function SummaryPage() {
                 <div className="tab-content summary-tab">
                   <div className="summary-div pie-chart-div">
                     <SummaryReport summary={summary} rows={rows} aiBullets={aiSummaryBullets} aiLoading={aiSummaryLoading} />
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "appSpec" && (
+                <div className="tab-content app-spec-tab">
+                  <div className="app-spec-shell">
+                    <div className="app-spec-single-tab" aria-label="Active BRD tab">
+                      {appName}
+                    </div>
+                  </div>
+
+                  <div className="app-spec-document-panel">
+                    <div className="app-spec-document-header">
+                      <p>
+                        This project aims to migrate the Qlik application '{appName}' to Microsoft Power BI using the QlikAI Accelerator, an AI-powered Qlik-to-Power BI transformation platform. The migration will leverage Qlik authentication, metadata extraction, QIX/REST integration, AI executive summary generation, and Power BI publishing. The target-state publishing strategies will be three mutually exclusive paths: Path A = Power Query M + XMLA semantic model publication, Path B = CSV + DAX + Power BI REST publication, and Path C = DB/ODBC detection with DirectQuery or Import configuration.
+                      </p>
+                    </div>
+
+                    <div className="app-spec-document-body">
+                      <div className="app-spec-actions">
+                        <button
+                          type="button"
+                          className="app-spec-download-btn"
+                          onClick={handleDownloadApplicationBrd}
+                          disabled={applicationBrdLoading || !appId}
+                        >
+                          {applicationBrdLoading ? "Generating..." : "Download BRD"}
+                        </button>
+                      </div>
+
+                      {applicationBrdError && (
+                        <div className="app-spec-inline-error" role="alert">
+                          {applicationBrdError}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
