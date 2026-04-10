@@ -5,6 +5,7 @@ import axios from "axios";
 
 // Use environment variable for production (set by Render), fallback to localhost for dev
 const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const REQUEST_TIMEOUT_MS = 10000;
 // const BASE_URL = import.meta.env.VITE_API_URL || "https://qlikai-app-ltmrv.ondigitalocean.app"
 
 // Helper to get auth headers from sessionStorage
@@ -39,14 +40,35 @@ export const validateLogin = async (
   username: string,
   password: string
 ) => {
-  const res = await axios.post(`${BASE_URL}/validate-login`, {
-    tenant_url: tenantUrl,
-    connect_as_user: connectAsUser,
-    username,
-    password,
-  });
+  try {
+    const res = await axios.post(
+      `${BASE_URL}/validate-login`,
+      {
+        tenant_url: tenantUrl,
+        connect_as_user: connectAsUser,
+        username,
+        password,
+      },
+      {
+        timeout: REQUEST_TIMEOUT_MS,
+      }
+    );
 
-  return res.data;
+    return res.data;
+  } catch (error: any) {
+    const detail =
+      error?.response?.data?.detail ||
+      error?.message ||
+      "Connection failed. Please try again.";
+
+    if (error?.code === "ECONNABORTED") {
+      throw new Error(
+        "Connection timed out after 10 seconds. The backend service may be unresponsive."
+      );
+    }
+
+    throw new Error(detail);
+  }
 };
 
 // Validate SharePoint URL - STRICT validation

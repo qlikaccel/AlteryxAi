@@ -132,6 +132,7 @@ export default function ConnectPage() {
       navigate("/apps");
     } catch (err: any) {
       setError(
+        err?.message ||
         err.response?.data?.detail ||
         "Connection failed. Please check your credentials and try again."
       );
