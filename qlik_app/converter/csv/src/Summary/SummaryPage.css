@@ -1827,25 +1827,13 @@ PAGE WRAP
 }
 
 .app-spec-document-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
   padding: 18px 0 0;
 }
 
-.app-spec-document-header {
-  padding: 0 2px;
-}
-
-.app-spec-document-header p {
-  margin: 0;
-  max-width: none;
-  color: #475569;
-  font-size: 14px;
-  line-height: 1.75;
-}
-
-.app-spec-document-body {
+.app-spec-document-content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
   border: 1px solid #d6ebe8;
   border-radius: 18px;
   background: linear-gradient(135deg, #f4fbfa 0%, #ffffff 60%, #eef8f7 100%);
@@ -1853,10 +1841,19 @@ PAGE WRAP
   padding: 24px 28px;
 }
 
+.app-spec-document-content p {
+  margin: 0;
+  max-width: none;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
 .app-spec-actions {
   display: flex;
   justify-content: flex-start;
-  margin-top: 18px;
+  align-items: center;
+  padding-top: 4px;
 }
 
 .app-spec-download-btn {
@@ -1884,7 +1881,7 @@ PAGE WRAP
 }
 
 .app-spec-inline-error {
-  margin-top: 14px;
+  margin-top: 0;
   padding: 12px 14px;
   border: 1px solid #fecaca;
   border-radius: 12px;

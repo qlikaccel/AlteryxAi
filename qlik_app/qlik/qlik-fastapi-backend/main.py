@@ -4057,7 +4057,7 @@ async def convert_mquery_endpoint(request: ConvertMQueryRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Convert mquery error: {e}")
+        logger.error(f"Convert m query error: {e}")
         raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
 
 

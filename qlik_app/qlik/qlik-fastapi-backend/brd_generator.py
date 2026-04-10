@@ -415,7 +415,8 @@ def build_default_document(
     ]
 
     table_inventory = []
-    for table in tables[:20]:
+    visible_tables = tables[:20] if project_scope == "project" else tables
+    for table in visible_tables:
         table_inventory.append(
             {
                 "name": table.get("name", "Unknown"),
@@ -426,7 +427,8 @@ def build_default_document(
         )
 
     relationship_rows = []
-    for rel in relationships[:25]:
+    visible_relationships = relationships[:25] if project_scope == "project" else relationships
+    for rel in visible_relationships:
         relationship_rows.append(
             {
                 "from": f"{rel.get('fromTable', '')}.{rel.get('fromColumn', '')}",
@@ -542,6 +544,27 @@ def _render_table(headers: List[str], rows: List[List[str]]) -> str:
         body_parts.append(f"<tr>{cols}</tr>")
     body_html = "".join(body_parts) or f"<tr><td colspan=\"{len(headers)}\">No data available</td></tr>"
     return f"<table class=\"brd-table\"><thead><tr>{head_html}</tr></thead><tbody>{body_html}</tbody></table>"
+
+
+def _render_detailed_use_case_cards(use_cases: List[Dict[str, Any]]) -> str:
+    if not use_cases:
+        return "<p>No detailed use cases were available during generation.</p>"
+
+    cards = []
+    for use_case in use_cases:
+        cards.append(
+            '<article class="use-case-card">'
+            f'<div class="use-case-topline"><span class="use-case-id">{_e(use_case.get("id", ""))}</span><span class="use-case-actor">{_e(use_case.get("actor", ""))}</span></div>'
+            f'<h3 class="use-case-title">{_e(use_case.get("use_case", ""))}</h3>'
+            '<div class="use-case-grid">'
+            f'<div class="use-case-block"><span>Preconditions</span><p>{_e(use_case.get("preconditions", ""))}</p></div>'
+            f'<div class="use-case-block use-case-block-wide"><span>Main Flow</span><p>{_e(use_case.get("main_flow", ""))}</p></div>'
+            f'<div class="use-case-block use-case-block-wide"><span>Failure Flow</span><p>{_e(use_case.get("failure_flow", ""))}</p></div>'
+            '</div>'
+            '</article>'
+        )
+
+    return '<div class="use-case-card-list">' + ''.join(cards) + '</div>'
 
 
 def _render_list(items: List[str]) -> str:
@@ -664,7 +687,13 @@ def _relationship_table_name(endpoint: Any) -> str:
     return raw.split(".", 1)[0].strip()
 
 
-def _render_dynamic_er_diagram(table_inventory: List[Dict[str, Any]], relationships: List[Dict[str, Any]], subject_title: str, figure_number: str) -> str:
+def _render_dynamic_er_diagram(
+    table_inventory: List[Dict[str, Any]],
+    relationships: List[Dict[str, Any]],
+    subject_title: str,
+    figure_number: str,
+    max_tables: Optional[int] = 9,
+) -> str:
     if not table_inventory:
         return '<p>No table inventory was available to build an ER diagram.</p>'
 
@@ -693,10 +722,16 @@ def _render_dynamic_er_diagram(table_inventory: List[Dict[str, Any]], relationsh
         degrees[from_table] = degrees.get(from_table, 0) + 1
         degrees[to_table] = degrees.get(to_table, 0) + 1
 
-    selected_names = sorted(
+    ranked_names = sorted(
         inventory_order,
         key=lambda name: (-degrees.get(name, 0), inventory_order.index(name)),
-    )[: min(9, len(inventory_order))]
+    )
+
+    if max_tables is None or max_tables >= len(inventory_order):
+        selected_names = inventory_order
+    else:
+        ranked_subset = set(ranked_names[:max_tables])
+        selected_names = [name for name in inventory_order if name in ranked_subset]
 
     if not selected_names:
         return '<p>No table inventory was available to build an ER diagram.</p>'
@@ -704,52 +739,127 @@ def _render_dynamic_er_diagram(table_inventory: List[Dict[str, Any]], relationsh
     selected_set = set(selected_names)
     edges = [edge for edge in edges if edge["from"] in selected_set and edge["to"] in selected_set]
 
-    node_width = 250
+    adjacency: Dict[str, List[str]] = {name: [] for name in selected_names}
+    for edge in edges:
+        adjacency.setdefault(edge["from"], []).append(edge["to"])
+        adjacency.setdefault(edge["to"], []).append(edge["from"])
+
+    render_full_inventory = max_tables is None or len(selected_names) > 9
+    node_width = 228 if render_full_inventory else 252
     header_height = 34
     row_height = 18
     node_padding = 14
-    x_gap = 48
-    y_gap = 68
-    max_fields = 6
-    columns = 1 if len(selected_names) == 1 else min(3, max(2, math.ceil(math.sqrt(len(selected_names)))))
-
-    rows: List[List[str]] = []
-    for index, table_name in enumerate(selected_names):
-        if index % columns == 0:
-            rows.append([])
-        rows[-1].append(table_name)
-
+    x_gap = 92 if render_full_inventory else 58
+    y_gap = 40 if render_full_inventory else 52
+    max_fields = 5 if render_full_inventory else 6
     node_meta: Dict[str, Dict[str, Any]] = {}
-    view_width = 40 + columns * node_width + max(columns - 1, 0) * x_gap + 40
-    current_y = 24
+    ordered_components: List[List[str]] = []
+    visited_components = set()
+    for table_name in ranked_names if ranked_names else selected_names:
+        if table_name not in selected_set or table_name in visited_components:
+            continue
+        stack = [table_name]
+        component: List[str] = []
+        visited_components.add(table_name)
+        while stack:
+            current = stack.pop()
+            component.append(current)
+            for neighbor in adjacency.get(current, []):
+                if neighbor in selected_set and neighbor not in visited_components:
+                    visited_components.add(neighbor)
+                    stack.append(neighbor)
+        ordered_components.append(component)
 
-    for row_tables in rows:
-        row_box_heights: List[int] = []
-        for table_name in row_tables:
-            sample_fields = [field.strip() for field in str(inventory_by_name[table_name].get("sample_fields", "")).split(",") if field.strip()][:max_fields]
-            if not sample_fields:
-                sample_fields = ["No fields available"]
-            row_box_heights.append(header_height + node_padding + len(sample_fields) * row_height + 12)
+    component_layouts: List[Dict[str, Any]] = []
+    widest_component = 0
+    total_height = 28
 
-        row_height_px = max(row_box_heights) if row_box_heights else 120
-        total_row_width = len(row_tables) * node_width + max(len(row_tables) - 1, 0) * x_gap
-        start_x = max(40, int((view_width - total_row_width) / 2))
+    for component in ordered_components:
+        component_root = max(component, key=lambda name: (degrees.get(name, 0), -inventory_order.index(name)))
+        depths: Dict[str, int] = {component_root: 0}
+        queue = [component_root]
+        while queue:
+            current = queue.pop(0)
+            for neighbor in adjacency.get(current, []):
+                if neighbor in component and neighbor not in depths:
+                    depths[neighbor] = depths[current] + 1
+                    queue.append(neighbor)
 
-        for index, table_name in enumerate(row_tables):
-            sample_fields = [field.strip() for field in str(inventory_by_name[table_name].get("sample_fields", "")).split(",") if field.strip()][:max_fields]
-            if not sample_fields:
-                sample_fields = ["No fields available"]
-            node_meta[table_name] = {
-                "x": start_x + index * (node_width + x_gap),
-                "y": current_y,
-                "width": node_width,
-                "height": header_height + node_padding + len(sample_fields) * row_height + 12,
-                "fields": sample_fields,
+        for name in component:
+            depths.setdefault(name, max(depths.values(), default=0) + 1)
+
+        layer_map: Dict[int, List[str]] = {}
+        for name in component:
+            layer_map.setdefault(depths[name], []).append(name)
+
+        sorted_layers: List[List[str]] = []
+        for depth in sorted(layer_map.keys()):
+            layer_names = sorted(
+                layer_map[depth],
+                key=lambda name: (-degrees.get(name, 0), inventory_order.index(name)),
+            )
+            sorted_layers.append(layer_names)
+
+        component_height = 0
+        layer_heights: List[int] = []
+        for layer_names in sorted_layers:
+            heights = []
+            for name in layer_names:
+                sample_fields = [field.strip() for field in str(inventory_by_name[name].get("sample_fields", "")).split(",") if field.strip()][:max_fields]
+                if not sample_fields:
+                    sample_fields = ["No fields available"]
+                heights.append(header_height + node_padding + len(sample_fields) * row_height + 12)
+            layer_height = sum(heights) + max(0, len(heights) - 1) * y_gap
+            layer_heights.append(layer_height)
+            component_height = max(component_height, layer_height)
+
+        component_width = len(sorted_layers) * node_width + max(0, len(sorted_layers) - 1) * x_gap
+        widest_component = max(widest_component, component_width)
+        component_layouts.append(
+            {
+                "layers": sorted_layers,
+                "height": component_height,
+                "width": component_width,
             }
+        )
+        total_height += component_height + 72
 
-        current_y += row_height_px + y_gap
+    view_width = max(760, widest_component + 80)
+    current_y = 28
 
-    view_height = current_y + 20
+    for component_layout in component_layouts:
+        component_width = component_layout["width"]
+        component_height = component_layout["height"]
+        start_x = max(40, int((view_width - component_width) / 2))
+
+        for layer_index, layer_names in enumerate(component_layout["layers"]):
+            heights = []
+            field_sets: List[List[str]] = []
+            for name in layer_names:
+                sample_fields = [field.strip() for field in str(inventory_by_name[name].get("sample_fields", "")).split(",") if field.strip()][:max_fields]
+                if not sample_fields:
+                    sample_fields = ["No fields available"]
+                field_sets.append(sample_fields)
+                heights.append(header_height + node_padding + len(sample_fields) * row_height + 12)
+
+            layer_height = sum(heights) + max(0, len(heights) - 1) * y_gap
+            layer_start_y = current_y + max(0, int((component_height - layer_height) / 2))
+            x = start_x + layer_index * (node_width + x_gap)
+
+            running_y = layer_start_y
+            for node_index, name in enumerate(layer_names):
+                node_meta[name] = {
+                    "x": x,
+                    "y": running_y,
+                    "width": node_width,
+                    "height": heights[node_index],
+                    "fields": field_sets[node_index],
+                }
+                running_y += heights[node_index] + y_gap
+
+        current_y += component_height + 72
+
+    view_height = current_y + 8
     marker_id = "officeArrow"
     edge_paths: List[str] = []
 
@@ -757,33 +867,52 @@ def _render_dynamic_er_diagram(table_inventory: List[Dict[str, Any]], relationsh
         from_meta = node_meta[edge["from"]]
         to_meta = node_meta[edge["to"]]
 
-        if from_meta["y"] < to_meta["y"]:
-            x1 = from_meta["x"] + from_meta["width"] / 2
-            y1 = from_meta["y"] + from_meta["height"]
-            x2 = to_meta["x"] + to_meta["width"] / 2
-            y2 = to_meta["y"]
-        elif from_meta["y"] > to_meta["y"]:
-            x1 = from_meta["x"] + from_meta["width"] / 2
-            y1 = from_meta["y"]
-            x2 = to_meta["x"] + to_meta["width"] / 2
-            y2 = to_meta["y"] + to_meta["height"]
-        elif from_meta["x"] < to_meta["x"]:
-            x1 = from_meta["x"] + from_meta["width"]
-            y1 = from_meta["y"] + from_meta["height"] / 2
-            x2 = to_meta["x"]
-            y2 = to_meta["y"] + to_meta["height"] / 2
-        else:
-            x1 = from_meta["x"]
-            y1 = from_meta["y"] + from_meta["height"] / 2
-            x2 = to_meta["x"] + to_meta["width"]
-            y2 = to_meta["y"] + to_meta["height"] / 2
+        from_cx = from_meta["x"] + from_meta["width"] / 2
+        from_cy = from_meta["y"] + from_meta["height"] / 2
+        to_cx = to_meta["x"] + to_meta["width"] / 2
+        to_cy = to_meta["y"] + to_meta["height"] / 2
 
-        mid_x = (x1 + x2) / 2
-        mid_y = (y1 + y2) / 2
+        if from_meta["x"] < to_meta["x"]:
+            x1 = from_meta["x"] + from_meta["width"]
+            y1 = from_cy
+            x2 = to_meta["x"]
+            y2 = to_cy
+            bend_x = (x1 + x2) / 2
+            path_d = f"M{x1:.1f} {y1:.1f} L{bend_x:.1f} {y1:.1f} L{bend_x:.1f} {y2:.1f} L{x2:.1f} {y2:.1f}"
+            label_x = bend_x
+            label_y = (y1 + y2) / 2 - 8
+        elif from_meta["x"] > to_meta["x"]:
+            x1 = from_meta["x"]
+            y1 = from_cy
+            x2 = to_meta["x"] + to_meta["width"]
+            y2 = to_cy
+            bend_x = (x1 + x2) / 2
+            path_d = f"M{x1:.1f} {y1:.1f} L{bend_x:.1f} {y1:.1f} L{bend_x:.1f} {y2:.1f} L{x2:.1f} {y2:.1f}"
+            label_x = bend_x
+            label_y = (y1 + y2) / 2 - 8
+        elif from_meta["y"] <= to_meta["y"]:
+            x1 = from_cx
+            y1 = from_meta["y"] + from_meta["height"]
+            x2 = to_cx
+            y2 = to_meta["y"]
+            bend_y = (y1 + y2) / 2
+            path_d = f"M{x1:.1f} {y1:.1f} L{x1:.1f} {bend_y:.1f} L{x2:.1f} {bend_y:.1f} L{x2:.1f} {y2:.1f}"
+            label_x = (x1 + x2) / 2
+            label_y = bend_y - 8
+        else:
+            x1 = from_cx
+            y1 = from_meta["y"]
+            x2 = to_cx
+            y2 = to_meta["y"] + to_meta["height"]
+            bend_y = (y1 + y2) / 2
+            path_d = f"M{x1:.1f} {y1:.1f} L{x1:.1f} {bend_y:.1f} L{x2:.1f} {bend_y:.1f} L{x2:.1f} {y2:.1f}"
+            label_x = (x1 + x2) / 2
+            label_y = bend_y - 8
+
         label = _e(edge.get("cardinality", ""))
         edge_paths.append(
-            f'<path d="M{x1:.1f} {y1:.1f} L{mid_x:.1f} {mid_y:.1f} L{x2:.1f} {y2:.1f}" class="er-link" marker-end="url(#{marker_id})"></path>'
-            + (f'<text x="{mid_x:.1f}" y="{mid_y - 8:.1f}" text-anchor="middle" class="er-cardinality">{label}</text>' if label else "")
+            f'<path d="{path_d}" class="er-link" marker-end="url(#{marker_id})"></path>'
+            + (f'<text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" class="er-cardinality">{label}</text>' if label else "")
         )
 
     node_groups: List[str] = []
@@ -806,12 +935,17 @@ def _render_dynamic_er_diagram(table_inventory: List[Dict[str, Any]], relationsh
     return (
         '<div class="er-diagram-card">'
         f'<div class="er-diagram-title">{_e(subject_title)} ER Diagram</div>'
+        f'<div class="er-diagram-meta"><span class="er-stat">Tables: {_e(len(selected_names))}</span><span class="er-stat">Relationships: {_e(len(edges))}</span><span class="er-stat">Layout: layered by inferred joins</span></div>'
         f'<svg class="office-er-svg" viewBox="0 0 {view_width} {view_height}" role="img" aria-label="{_e(subject_title)} entity relationship diagram">'
         '<defs>'
         f'<marker id="{marker_id}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">'
         '<path d="M0,0 L8,4 L0,8 z" fill="#1a5c5a"></path>'
         '</marker>'
+        '<pattern id="officeGrid" width="32" height="32" patternUnits="userSpaceOnUse">'
+        '<path d="M 32 0 L 0 0 0 32" fill="none" stroke="#e8dfd2" stroke-width="1"></path>'
+        '</pattern>'
         '</defs>'
+        f'<rect x="0" y="0" width="{view_width}" height="{view_height}" fill="url(#officeGrid)"></rect>'
         + ''.join(edge_paths)
         + ''.join(node_groups)
         + '</svg>'
@@ -821,9 +955,10 @@ def _render_dynamic_er_diagram(table_inventory: List[Dict[str, Any]], relationsh
     )
 
 
-def _render_er_grid(tables: List[Dict[str, Any]]) -> str:
+def _render_er_grid(tables: List[Dict[str, Any]], max_tables: Optional[int] = 6) -> str:
     blocks = []
-    for table in tables[:6]:
+    visible_tables = tables if max_tables is None else tables[:max_tables]
+    for table in visible_tables:
         fields = table.get("sample_fields", "")
         field_items = [item.strip() for item in fields.split(",") if item.strip()]
         rows = "".join(
@@ -1257,7 +1392,7 @@ def render_brd_html(document: Dict[str, Any]) -> str:
     )
     table_inventory_table = _render_table(
         ["Table", "Rows", "Field Count", "Sample Fields"],
-        [[row.get("name", ""), str(row.get("rows", 0)), str(row.get("field_count", 0)), row.get("sample_fields", "")] for row in table_inventory[:20]],
+        [[row.get("name", ""), str(row.get("rows", 0)), str(row.get("field_count", 0)), row.get("sample_fields", "")] for row in table_inventory],
     )
     relationship_table = _render_relationship_table(relationships)
     actors_table = _render_table(
@@ -1324,25 +1459,24 @@ def render_brd_html(document: Dict[str, Any]) -> str:
             ["NFR-03", "Enforce a consistent policy for secret storage, token handling, and session lifecycle across frontend and backend.", "HIGH", "Each credential type has documented storage location, lifetime, invalidation rule, and rotation policy.", "RESOLVED"],
         ],
     )
-    detailed_use_cases_table = _render_table(
-        ["ID", "Actor", "Title", "Preconditions", "Main Flow", "Failure Flow"],
+    detailed_use_cases_table = _render_detailed_use_case_cards(
         [
-            ["UC-001", "BI Engineer", "Authenticate with Qlik Tenant", "Valid Qlik tenant URL and one supported auth credential.", "Open Connect page, enter tenant URL and approved auth method, validate credentials, establish session, and redirect to discovery.", "Invalid URL blocks submission; auth failure returns clear error; unreachable tenant returns structured connectivity error."],
-            ["UC-002", "BI Engineer", "View Accessible Qlik Applications", "Authenticated Qlik session exists in browser session state.", "Call Qlik inventory endpoints, present accessible application list, allow filter or search, and choose target application.", "Expired session redirects to authentication; empty result shows a structured empty state."],
-            ["UC-003", "BI Engineer", "Extract Metadata from Qlik Application", "Authenticated session exists and target application is selected.", "Open QIX session, call GetScript/GetAppObject/GetLayout/EvaluateEx in parallel, store extracted metadata, and signal completion to the UI.", "QIX failure retries with exponential backoff; partial extraction proceeds with flagged incomplete areas."],
-            ["UC-004", "BI Engineer", "Generate AI Executive Summary", "Metadata extraction for the selected Qlik application is complete.", "Compute insights, build strict prompt, call Llama-3.1-8B, parse exactly 7 bullets, and display stakeholder-ready summary.", "Primary failure triggers retry and Mistral-7B fallback; both failures invoke deterministic fallback output."],
-            ["UC-005", "BI Engineer", "Publish Dataset to Power BI via Path A", "Metadata extraction is complete; source type fits Path A; Microsoft token acquired.", "Generate Power Query M, authenticate through Microsoft identity, publish semantic model through XMLA, and return workspace link.", "Missing permissions block publication with remediation guidance; XMLA failure returns structured traceable error."],
-            ["UC-006", "BI Engineer", "Publish Dataset via Path B", "Source pattern fits CSV + DAX + REST publication.", "Export CSV data, generate DAX, optionally stage in SharePoint, and push dataset through Power BI REST APIs.", "SharePoint or REST API failure returns actionable diagnostics and preserves path-specific error trace."],
-            ["UC-007", "BI Engineer", "Publish Dataset via Path C", "Source pattern fits DB or ODBC-backed publication.", "Detect connection string, configure DirectQuery or Import, and publish target dataset configuration.", "Unsupported connector details or permission gaps block execution with recommended next action."],
-            ["UC-008", "BI Engineer", "Conduct Multi-Turn AI Chat", "Application metadata is available and analysis screen is active.", "Submit contextual questions, preserve conversation history, and receive responses grounded in live metadata.", "Model failure triggers fallback chain; malformed response returns structured assistant error."],
-            ["UC-009", "BI Engineer", "View Pre-Migration Cleanup Recommendations", "Source analysis is complete.", "Review duplicate applications, redundant reports, unused tables, and normalization opportunities before migration.", "Missing source signals downgrade recommendations and flag them as inferred only."],
-            ["UC-010", "BI Engineer", "Upload CSV Data to SharePoint", "Path B workflow is selected and Microsoft prerequisites are valid.", "Upload CSV artifacts to SharePoint document library and capture storage location for downstream refresh.", "Graph or SharePoint failure returns upload-specific remediation guidance."],
-            ["UC-011", "BI Engineer", "Validate Migration Compatibility", "Metadata and script analysis are available.", "Run unsupported-construct review and path-fit validation before publication begins.", "Blocking constructs halt execution and return impact plus manual remediation notes."],
-            ["UC-012", "BI Engineer", "Retry Failed Migration Run", "A prior migration attempt has failed with structured diagnostics.", "Re-run failed extraction, analysis, or publishing phase using retry-safe controls and logged trace context.", "Repeated failure escalates to support with preserved diagnostics."],
-            ["UC-013", "BI Engineer", "Log Out and Clear Session", "Authenticated browser session exists.", "Trigger logout, clear sessionStorage artifacts, and return to connection screen.", "Any stale session artifact is invalidated on next protected request."],
-            ["UC-014", "Administrator", "Configure Integration Prerequisites", "Administrator has access to environment configuration and Microsoft tenant setup.", "Configure Qlik connectivity, Entra ID, workspace membership, environment variables, and deployment prerequisites.", "Invalid configuration blocks downstream migration execution until corrected."],
-            ["UC-015", "Support Engineer", "Investigate Failed Migration", "A failed migration incident and operational logs are available.", "Inspect request traces, dependency status, permissions, and upstream API responses to determine root cause.", "If root cause remains external, record dependency blocker and escalate with evidence."],
-        ],
+            {"id": "UC-001", "actor": "BI Engineer", "use_case": "Authenticate with Qlik Tenant", "preconditions": "Valid Qlik tenant URL and one supported auth credential.", "main_flow": "Open Connect page, enter tenant URL and approved auth method, validate credentials, establish session, and redirect to discovery.", "failure_flow": "Invalid URL blocks submission; auth failure returns clear error; unreachable tenant returns structured connectivity error."},
+            {"id": "UC-002", "actor": "BI Engineer", "use_case": "View Accessible Qlik Applications", "preconditions": "Authenticated Qlik session exists in browser session state.", "main_flow": "Call Qlik inventory endpoints, present accessible application list, allow filter or search, and choose target application.", "failure_flow": "Expired session redirects to authentication; empty result shows a structured empty state."},
+            {"id": "UC-003", "actor": "BI Engineer", "use_case": "Extract Metadata from Qlik Application", "preconditions": "Authenticated session exists and target application is selected.", "main_flow": "Open QIX session, call GetScript, GetAppObject, GetLayout, and EvaluateEx in parallel, store extracted metadata, and signal completion to the UI.", "failure_flow": "QIX failure retries with exponential backoff; partial extraction proceeds with flagged incomplete areas."},
+            {"id": "UC-004", "actor": "BI Engineer", "use_case": "Generate AI Executive Summary", "preconditions": "Metadata extraction for the selected Qlik application is complete.", "main_flow": "Compute insights, build strict prompt, call Llama-3.1-8B, parse exactly 7 bullets, and display stakeholder-ready summary.", "failure_flow": "Primary failure triggers retry and Mistral-7B fallback; both failures invoke deterministic fallback output."},
+            {"id": "UC-005", "actor": "BI Engineer", "use_case": "Publish Dataset to Power BI via Path A", "preconditions": "Metadata extraction is complete; source type fits Path A; Microsoft token acquired.", "main_flow": "Generate Power Query M, authenticate through Microsoft identity, publish semantic model through XMLA, and return workspace link.", "failure_flow": "Missing permissions block publication with remediation guidance; XMLA failure returns structured traceable error."},
+            {"id": "UC-006", "actor": "BI Engineer", "use_case": "Publish Dataset via Path B", "preconditions": "Source pattern fits CSV + DAX + REST publication.", "main_flow": "Export CSV data, generate DAX, optionally stage in SharePoint, and push dataset through Power BI REST APIs.", "failure_flow": "SharePoint or REST API failure returns actionable diagnostics and preserves path-specific error trace."},
+            {"id": "UC-007", "actor": "BI Engineer", "use_case": "Publish Dataset via Path C", "preconditions": "Source pattern fits DB or ODBC-backed publication.", "main_flow": "Detect connection string, configure DirectQuery or Import, and publish target dataset configuration.", "failure_flow": "Unsupported connector details or permission gaps block execution with recommended next action."},
+            {"id": "UC-008", "actor": "BI Engineer", "use_case": "Conduct Multi-Turn AI Chat", "preconditions": "Application metadata is available and analysis screen is active.", "main_flow": "Submit contextual questions, preserve conversation history, and receive responses grounded in live metadata.", "failure_flow": "Model failure triggers fallback chain; malformed response returns structured assistant error."},
+            {"id": "UC-009", "actor": "BI Engineer", "use_case": "View Pre-Migration Cleanup Recommendations", "preconditions": "Source analysis is complete.", "main_flow": "Review duplicate applications, redundant reports, unused tables, and normalization opportunities before migration.", "failure_flow": "Missing source signals downgrade recommendations and flag them as inferred only."},
+            {"id": "UC-010", "actor": "BI Engineer", "use_case": "Upload CSV Data to SharePoint", "preconditions": "Path B workflow is selected and Microsoft prerequisites are valid.", "main_flow": "Upload CSV artifacts to SharePoint document library and capture storage location for downstream refresh.", "failure_flow": "Graph or SharePoint failure returns upload-specific remediation guidance."},
+            {"id": "UC-011", "actor": "BI Engineer", "use_case": "Validate Migration Compatibility", "preconditions": "Metadata and script analysis are available.", "main_flow": "Run unsupported-construct review and path-fit validation before publication begins.", "failure_flow": "Blocking constructs halt execution and return impact plus manual remediation notes."},
+            {"id": "UC-012", "actor": "BI Engineer", "use_case": "Retry Failed Migration Run", "preconditions": "A prior migration attempt has failed with structured diagnostics.", "main_flow": "Re-run failed extraction, analysis, or publishing phase using retry-safe controls and logged trace context.", "failure_flow": "Repeated failure escalates to support with preserved diagnostics."},
+            {"id": "UC-013", "actor": "BI Engineer", "use_case": "Log Out and Clear Session", "preconditions": "Authenticated browser session exists.", "main_flow": "Trigger logout, clear sessionStorage artifacts, and return to connection screen.", "failure_flow": "Any stale session artifact is invalidated on next protected request."},
+            {"id": "UC-014", "actor": "Administrator", "use_case": "Configure Integration Prerequisites", "preconditions": "Administrator has access to environment configuration and Microsoft tenant setup.", "main_flow": "Configure Qlik connectivity, Entra ID, workspace membership, environment variables, and deployment prerequisites.", "failure_flow": "Invalid configuration blocks downstream migration execution until corrected."},
+            {"id": "UC-015", "actor": "Support Engineer", "use_case": "Investigate Failed Migration", "preconditions": "A failed migration incident and operational logs are available.", "main_flow": "Inspect request traces, dependency status, permissions, and upstream API responses to determine root cause.", "failure_flow": "If root cause remains external, record dependency blocker and escalate with evidence."},
+        ]
     )
     object_inventory_table = _render_table(
         ["Module", "Class / Service", "Package / Path", "Type", "Key Methods"],
@@ -1675,6 +1809,16 @@ def render_brd_html(document: Dict[str, Any]) -> str:
     .scope-box.in-scope h4 {{ color: var(--teal); }}
     .scope-box.out-scope h4 {{ color: var(--rust); }}
     .scope-item {{ display: flex; gap: 8px; margin-bottom: 7px; font-size: 11.5px; line-height: 1.45; }}
+    .use-case-card-list {{ display: grid; gap: 16px; margin: 18px 0 24px; }}
+    .use-case-card {{ border: 1px solid var(--rule); background: linear-gradient(180deg, #fffdfa 0%, #f5efe5 100%); padding: 18px 20px; border-radius: 12px; box-shadow: 0 4px 14px rgba(27, 22, 16, 0.05); }}
+    .use-case-topline {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }}
+    .use-case-id {{ font-family: 'Syne', sans-serif; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--teal); }}
+    .use-case-actor {{ font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }}
+    .use-case-title {{ font-family: 'DM Serif Display', serif; font-size: 24px; line-height: 1.1; margin: 0 0 14px; color: #171411; }}
+    .use-case-grid {{ display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr) minmax(0, 1.3fr); gap: 14px; align-items: start; }}
+    .use-case-block {{ background: rgba(255,255,255,0.72); border: 1px solid rgba(201, 191, 173, 0.9); border-radius: 10px; padding: 12px 14px; min-width: 0; }}
+    .use-case-block span {{ display: block; margin-bottom: 8px; font-family: 'Syne', sans-serif; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--teal); }}
+    .use-case-block p {{ margin: 0; font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; word-break: break-word; }}
         .module-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0 24px; align-items: stretch; }}
         .module-card {{ border: 1px solid var(--rule); padding: 18px 18px 16px; background: #fff; position: relative; min-height: 190px; display: flex; flex-direction: column; }}
     .module-card::before {{ content: attr(data-num); position: absolute; top: 12px; right: 14px; font-family: 'DM Serif Display', serif; font-size: 28px; color: var(--cream); line-height: 1; }}
@@ -1694,14 +1838,17 @@ def render_brd_html(document: Dict[str, Any]) -> str:
         .relationship-line:first-of-type {{ border-top: none; padding-top: 0; }}
         .relationship-line span {{ color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }}
         .relationship-line strong {{ font-size: 11px; overflow-wrap: anywhere; word-break: break-word; }}
-        .er-diagram-card {{ background: #fbfaf7; border: 1px solid var(--rule); padding: 18px 18px 14px; }}
-        .er-diagram-title {{ font-family: 'Syne', sans-serif; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 14px; }}
-        .office-er-svg {{ width: 100%; height: auto; display: block; background: #f5f2ec; border: 1px solid #ded5c8; border-radius: 10px; }}
-        .office-er-svg .er-link {{ fill: none; stroke: #1a5c5a; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#officeArrow); }}
-        .office-er-svg .er-node rect {{ fill: #fff; stroke: #8f78ff; stroke-width: 1.5; }}
-        .office-er-svg .er-node .er-head {{ fill: #f3edff; }}
-        .office-er-svg text {{ font-family: 'DM Mono', monospace; font-size: 13px; fill: #2d2a25; }}
-        .office-er-svg .er-head-text {{ font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.03em; fill: #3d2f7a; }}
+        .er-diagram-card {{ background: linear-gradient(180deg, #fcfbf8 0%, #f4efe6 100%); border: 1px solid var(--rule); padding: 18px 18px 14px; border-radius: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.65); }}
+        .er-diagram-title {{ font-family: 'Syne', sans-serif; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 10px; }}
+        .er-diagram-meta {{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }}
+        .er-stat {{ background: rgba(26, 92, 90, 0.08); color: var(--teal); border: 1px solid rgba(26, 92, 90, 0.18); border-radius: 999px; padding: 5px 10px; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; }}
+        .office-er-svg {{ width: 100%; height: auto; display: block; background: radial-gradient(circle at top, #fbf8f2 0%, #f2ece3 68%, #ede5d9 100%); border: 1px solid #ded5c8; border-radius: 14px; }}
+        .office-er-svg .er-link {{ fill: none; stroke: #2a6c69; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#officeArrow); opacity: 0.92; }}
+        .office-er-svg .er-cardinality {{ font-size: 10.5px; letter-spacing: 0.04em; fill: #174847; paint-order: stroke; stroke: #f6f1e8; stroke-width: 4px; stroke-linejoin: round; }}
+        .office-er-svg .er-node rect {{ fill: rgba(255,255,255,0.97); stroke: #466d95; stroke-width: 1.35; filter: drop-shadow(0 8px 10px rgba(47, 40, 31, 0.10)); }}
+        .office-er-svg .er-node .er-head {{ fill: #e3eef7; stroke: #466d95; }}
+        .office-er-svg text {{ font-family: 'DM Mono', monospace; font-size: 12px; fill: #2d2a25; }}
+        .office-er-svg .er-head-text {{ font-family: 'Syne', sans-serif; font-size: 13.5px; font-weight: 700; letter-spacing: 0.03em; fill: #214765; }}
     .phase-list {{ margin: 20px 0; border-left: 2px solid var(--teal); padding-left: 24px; }}
     .phase-item {{ position: relative; margin-bottom: 24px; }}
     .phase-item::before {{ content: ''; position: absolute; left: -31px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--teal); border: 2px solid var(--paper); box-shadow: 0 0 0 2px var(--teal); }}
@@ -1714,7 +1861,8 @@ def render_brd_html(document: Dict[str, Any]) -> str:
     .glossary-item {{ padding: 10px 14px; background: #fff; border: 1px solid var(--rule); }}
     .glossary-def {{ font-size: 11px; color: #555; line-height: 1.5; }}
     .fig-caption {{ text-align: center; font-size: 10px; color: var(--muted); margin-top: -10px; margin-bottom: 20px; letter-spacing: 0.04em; font-style: italic; }}
-        @media print {{ .doc-wrapper {{ padding-top: 0; }} .page {{ break-after: always; box-shadow: none; margin: 0; }} }}
+        @media print {{ .doc-wrapper {{ padding-top: 0; }} .page {{ break-after: always; box-shadow: none; margin: 0; }} .use-case-card {{ break-inside: avoid; }} }}
+        @media (max-width: 960px) {{ .use-case-grid {{ grid-template-columns: 1fr; }} .use-case-title {{ font-size: 22px; }} }}
 </style>
 </head>
 <body>
@@ -1787,8 +1935,8 @@ def render_brd_html(document: Dict[str, Any]) -> str:
 
     <div class=\"page\" id=\"ch3\"><div class=\"page-inner\"><div class=\"ch-header\"><div><div class=\"ch-num\">Chapter 3</div><div class=\"ch-title\">Data Model &amp;<br>Relationships</div></div><div class=\"ch-subtitle\">Entity inventory, inferred joins, and business structure</div></div>
         <h2>3.1 Table Inventory</h2>{table_inventory_table}
-        <h2>3.2 Entity Relationship View</h2>{_render_er_grid(table_inventory)}<div class=\"fig-caption\">Figure 3.1 - Entity inventory derived from Qlik tables</div>
-                <h2>3.3 Sample ER Diagram</h2>{_render_dynamic_er_diagram(table_inventory, relationships, app_title, 'Figure 3.2')}
+        <h2>3.2 Entity Relationship View</h2>{_render_er_grid(table_inventory, max_tables=None)}<div class=\"fig-caption\">Figure 3.1 - Full entity inventory derived from the selected Qlik application tables</div>
+            <h2>3.3 Application ER Diagram</h2>{_render_dynamic_er_diagram(table_inventory, relationships, app_title, 'Figure 3.2', max_tables=None)}
                 <h2>3.4 Inferred Relationships</h2>{relationship_table}
         </div><div class=\"pg-watermark\">QlikAI BRD - Confidential</div><div class=\"pg-timestamp\">Generated {_e(generated_datetime_label)}</div><div class=\"pg-num\">06</div></div>
 

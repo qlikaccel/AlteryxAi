@@ -1209,13 +1209,10 @@ export default function SummaryPage() {
                   </div>
 
                   <div className="app-spec-document-panel">
-                    <div className="app-spec-document-header">
+                    <div className="app-spec-document-content">
                       <p>
                         This project aims to migrate the Qlik application '{appName}' to Microsoft Power BI using the QlikAI Accelerator, an AI-powered Qlik-to-Power BI transformation platform. The migration will leverage Qlik authentication, metadata extraction, QIX/REST integration, AI executive summary generation, and Power BI publishing. The target-state publishing strategies will be three mutually exclusive paths: Path A = Power Query M + XMLA semantic model publication, Path B = CSV + DAX + Power BI REST publication, and Path C = DB/ODBC detection with DirectQuery or Import configuration.
                       </p>
-                    </div>
-
-                    <div className="app-spec-document-body">
                       <div className="app-spec-actions">
                         <button
                           type="button"

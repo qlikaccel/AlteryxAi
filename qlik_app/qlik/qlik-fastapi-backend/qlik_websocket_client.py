@@ -5,6 +5,7 @@
 import websocket
 import json
 import ssl
+import socket
 import jwt
 import os
 import time
@@ -120,6 +121,7 @@ class QlikWebSocketClient:
     
     def connect_to_app(self, app_id: str) -> bool:
         """Connect to a specific app via WebSocket"""
+        last_error = None
         try:
             # Clean up tenant URL
             tenant_host = self.tenant_url.replace('https://', '').replace('http://', '')
@@ -141,16 +143,36 @@ class QlikWebSocketClient:
             
             if self.user_id:
                 headers["X-Qlik-User"] = f"UserDirectory={self.user_directory};UserId={self.user_id}"
-            
-            self.ws.connect(ws_url, header=headers)
-            self.connected = True
-            print("✓ WebSocket connected successfully")
+
+            for attempt in range(1, 4):
+                try:
+                    self.ws = websocket.WebSocket(sslopt={"cert_reqs": ssl.CERT_NONE})
+                    self.ws.settimeout(10)
+                    self.ws.connect(ws_url, header=headers, timeout=10)
+                    self.connected = True
+                    print("✓ WebSocket connected successfully")
+                    break
+                except (TimeoutError, socket.timeout, websocket.WebSocketTimeoutException, OSError) as exc:
+                    last_error = exc
+                    self.connected = False
+                    try:
+                        if self.ws:
+                            self.ws.close()
+                    except Exception:
+                        pass
+                    print(f"⚠️  WebSocket connect attempt {attempt}/3 failed: {exc}")
+                    if attempt == 3:
+                        raise
+                    time.sleep(attempt)
             
             # Open the app
             return self._open_app(app_id)
             
         except Exception as e:
-            print(f"✗ Connection error: {str(e)}")
+            if last_error is not None:
+                print(f"✗ Connection error after retries: {str(last_error)}")
+            else:
+                print(f"✗ Connection error: {str(e)}")
             import traceback
             traceback.print_exc()
             return False
