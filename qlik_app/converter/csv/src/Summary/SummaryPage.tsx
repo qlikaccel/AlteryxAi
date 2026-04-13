@@ -588,7 +588,7 @@ export default function SummaryPage() {
   };
 
   const handlePublishMQuery = async () => {
-    if (!mquery && !loadscript) { setPublishStatus("error"); setPublishMessage("No M Query available. Click 'Convert to MQuery' first."); return; }
+    if (!mquery && !loadscript) { setPublishStatus("error"); setPublishMessage("No M Query available. Click 'Convert to M Query' first."); return; }
     try {
       setPublishingMQuery(true);
       let masterRowCount = totalRows || (rows?.length || 0);
@@ -1314,7 +1314,7 @@ export default function SummaryPage() {
                               className="convert-btn"
                               style={{ opacity: (isCsvLoadscript && !isValidUrl) ? 0.5 : 1, cursor: (isCsvLoadscript && !isValidUrl) ? "not-allowed" : "pointer" }}
                             >
-                              {convertingToMquery ? "⏳ Converting..." : "🔄 Convert to MQuery"}
+                              {convertingToMquery ? "⏳ Converting..." : "🔄 Convert to M Query"}
                             </button>
                           </>
                         )}

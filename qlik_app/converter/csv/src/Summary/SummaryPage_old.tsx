@@ -1592,7 +1592,7 @@ const downloadCSV = async () => {
                                 cursor: (isCsvLoadscript && !isValidUrl) ? "not-allowed" : "pointer",
                               }}
                             >
-                              {convertingToMquery ? "⏳ Converting..." : "🔄 Convert to MQuery"}
+                              {convertingToMquery ? "⏳ Converting..." : "🔄 Convert to M Query"}
                             </button>
                           </>
                         )}
