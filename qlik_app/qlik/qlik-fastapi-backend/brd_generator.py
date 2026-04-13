@@ -23,15 +23,34 @@ def _slugify(value: str) -> str:
 
 def _get_brd_logo_data_uri() -> str:
     global _BRD_LOGO_DATA_URI
-    if _BRD_LOGO_DATA_URI is not None:
+    if _BRD_LOGO_DATA_URI:
         return _BRD_LOGO_DATA_URI
 
-    logo_path = Path(__file__).resolve().parents[2] / "converter" / "csv" / "public" / "qlikai.png"
-    try:
-        encoded = base64.b64encode(logo_path.read_bytes()).decode("ascii")
-        _BRD_LOGO_DATA_URI = f"data:image/png;base64,{encoded}"
-    except Exception:
-        _BRD_LOGO_DATA_URI = ""
+    base_path = Path(__file__).resolve()
+    logo_candidates = [
+        base_path.parents[2] / "converter" / "csv" / "public" / "qlikai.png",
+        base_path.parents[2] / "converter" / "csv" / "public" / "QlikAI.png",
+        base_path.parent / "qlikai.png",
+    ]
+
+    seen = set()
+    for logo_path in logo_candidates:
+        normalized = str(logo_path)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+
+        if not logo_path.exists():
+            continue
+
+        try:
+            encoded = base64.b64encode(logo_path.read_bytes()).decode("ascii")
+            _BRD_LOGO_DATA_URI = f"data:image/png;base64,{encoded}"
+            return _BRD_LOGO_DATA_URI
+        except Exception:
+            continue
+
+    _BRD_LOGO_DATA_URI = ""
 
     return _BRD_LOGO_DATA_URI
 
@@ -1289,7 +1308,7 @@ def _render_project_brd_html(document: Dict[str, Any]) -> str:
   * {{ box-sizing:border-box; }} body {{ background:#d4cfc6; font-family:'DM Mono', monospace; color:var(--ink); font-size:13px; line-height:1.65; margin:0; }}
     .doc-wrapper {{ max-width:var(--page-w); margin:0 auto; padding:24px 0 80px; }} .page {{ background:var(--paper); margin-bottom:24px; box-shadow:0 4px 32px rgba(0,0,0,.18), 0 1px 4px rgba(0,0,0,.12); position:relative; overflow:hidden; }} .page::before {{ content:''; position:absolute; left:0; top:0; bottom:0; width:5px; background:linear-gradient(180deg,var(--gold) 0%, var(--teal) 100%); }} .page-inner {{ padding:60px 64px; min-height:980px; }} .cover-page .page-inner {{ display:flex; flex-direction:column; justify-content:space-between; padding:0; min-height:1060px; }}
     .cover-disclaimer {{ margin:56px 64px 0; padding:6px 0 0 24px; border-left:4px solid #2b2b2b; font-family:'DM Serif Display', serif; font-size:18px; line-height:1.7; font-style:italic; color:#2d2a25; }} .cover-disclaimer strong {{ font-style:italic; }}
-    .cover-header {{ background:var(--ink); padding:52px 64px 60px; color:var(--paper); margin-top:32px; min-height:306px; position:relative; }} .cover-brand {{ min-height:194px; }} .cover-title-block {{ padding-top:0; min-width:0; }} .cover-doc-type {{ font-size:10px; letter-spacing:.42em; text-transform:uppercase; color:var(--gold); margin-bottom:28px; margin-left:0; }} .cover-title-row {{ display:flex; align-items:center; gap:18px; margin-bottom:14px; min-width:0; }} .cover-logo-wrap {{ flex:0 0 auto; display:flex; align-items:center; justify-content:flex-start; }} .cover-logo {{ width:auto; height:34px; object-fit:contain; display:block; border-radius:6px; }} .cover-title {{ font-family:'DM Serif Display', serif; font-size:58px; line-height:1; color:var(--paper); margin:0; max-width:760px; }} .cover-subtitle {{ font-family:'DM Serif Display', serif; font-size:24px; line-height:1.08; color:#8d9bb3; font-style:italic; white-space:normal; }} .cover-body {{ padding:48px 64px; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:28px; align-content:start; }}
+    .cover-header {{ background:var(--ink); padding:52px 64px 60px; color:var(--paper); margin-top:32px; min-height:306px; position:relative; }} .cover-brand {{ min-height:194px; }} .cover-title-block {{ padding-top:0; min-width:0; }} .cover-doc-type {{ font-size:10px; letter-spacing:.42em; text-transform:uppercase; color:var(--gold); margin-bottom:28px; margin-left:0; }} .cover-title-row {{ display:flex; align-items:flex-end; gap:20px; margin-bottom:14px; min-width:0; }} .cover-logo-wrap {{ flex:0 0 auto; display:flex; align-items:flex-end; justify-content:flex-start; }} .cover-logo {{ width:auto; height:52px; object-fit:contain; display:block; border-radius:8px; }} .cover-title {{ font-family:'DM Serif Display', serif; font-size:72px; line-height:1; color:var(--paper); margin:0; max-width:760px; }} .cover-subtitle {{ font-family:'DM Serif Display', serif; font-size:24px; line-height:1.08; color:#8d9bb3; font-style:italic; white-space:normal; }} .cover-body {{ padding:48px 64px; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:28px; align-content:start; }}
   .cover-meta-group h4, .cover-stack h4, h2, .ch-num, .glossary-term {{ font-family:'Syne', sans-serif; }} .cover-meta-group h4 {{ font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); margin-bottom:12px; border-bottom:1px solid var(--rule); padding-bottom:6px; }} .cover-meta-row {{ display:flex; justify-content:space-between; font-size:12px; padding:5px 0; border-bottom:1px solid var(--cream); gap:14px; }} .cover-meta-row span:first-child {{ color:var(--muted); }} .cover-stack {{ grid-column:1 / -1; background:var(--cream); padding:20px 24px; border-left:3px solid var(--teal); }} .tech-pills {{ display:flex; flex-wrap:wrap; gap:8px; }} .tech-pill {{ background:var(--ink); color:var(--gold-light); font-size:10px; padding:4px 12px; letter-spacing:.06em; }} .cover-footer {{ background:var(--cream); border-top:2px solid var(--rule); padding:20px 64px; display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--muted); letter-spacing:.05em; }} .confidential {{ background:var(--rust); color:#fff; padding:4px 12px; font-size:9px; letter-spacing:.15em; text-transform:uppercase; }}
     .ch-header {{ border-bottom:2px solid var(--ink); padding-bottom:20px; margin-bottom:40px; display:flex; justify-content:space-between; align-items:flex-end; gap:20px; }} .ch-title {{ font-family:'DM Serif Display', serif; font-size:32px; line-height:1.1; }} .ch-subtitle {{ font-size:10px; color:var(--muted); max-width:340px; text-align:right; line-height:1.5; }} .pg-num {{ position:absolute; bottom:20px; right:32px; font-size:10px; color:var(--muted); letter-spacing:.1em; }} .pg-watermark {{ position:absolute; bottom:20px; left:32px; font-size:9px; color:var(--rule); letter-spacing:.08em; text-transform:uppercase; }} .pg-timestamp {{ position:absolute; bottom:20px; left:50%; transform:translateX(-50%); font-size:9px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; }} h2 {{ font-size:13px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--teal); margin:32px 0 14px; padding-bottom:6px; border-bottom:1px solid var(--rule); }} p {{ color:#333; margin-bottom:12px; font-size:12.5px; line-height:1.7; }}
   .brd-table {{ width:100%; border-collapse:collapse; margin:18px 0 28px; font-size:11.5px; }} .brd-table thead tr {{ background:var(--ink); color:var(--paper); }} .brd-table thead th {{ padding:10px 14px; text-align:left; font-family:'Syne', sans-serif; font-size:9px; letter-spacing:.15em; text-transform:uppercase; font-weight:600; }} .brd-table tbody tr:nth-child(even) {{ background:var(--cream); }} .brd-table td {{ padding:9px 14px; border-bottom:1px solid var(--rule); vertical-align:top; line-height:1.5; }} .brd-table td:first-child {{ font-weight:500; color:var(--teal); }}
@@ -1770,10 +1789,10 @@ def render_brd_html(document: Dict[str, Any]) -> str:
         .cover-brand {{ min-height: 194px; }}
         .cover-title-block {{ padding-top: 0; min-width: 0; }}
         .cover-doc-type {{ font-size: 10px; letter-spacing: 0.42em; text-transform: uppercase; color: var(--gold); margin-bottom: 28px; margin-left: 0; }}
-        .cover-title-row {{ display: flex; align-items: center; gap: 18px; margin-bottom: 14px; min-width: 0; }}
-        .cover-logo-wrap {{ flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-start; }}
-        .cover-logo {{ width: auto; height: 34px; object-fit: contain; display: block; border-radius: 6px; }}
-        .cover-title {{ font-family: 'DM Serif Display', serif; font-size: 58px; line-height: 1; color: var(--paper); margin: 0; max-width: 760px; }}
+        .cover-title-row {{ display: flex; align-items: flex-end; gap: 20px; margin-bottom: 14px; min-width: 0; }}
+        .cover-logo-wrap {{ flex: 0 0 auto; display: flex; align-items: flex-end; justify-content: flex-start; }}
+        .cover-logo {{ width: auto; height: 52px; object-fit: contain; display: block; border-radius: 8px; }}
+        .cover-title {{ font-family: 'DM Serif Display', serif; font-size: 72px; line-height: 1; color: var(--paper); margin: 0; max-width: 760px; }}
         .cover-subtitle {{ font-family: 'DM Serif Display', serif; font-size: 24px; line-height: 1.08; color: #8d9bb3; font-style: italic; white-space: normal; }}
         .cover-body {{ padding: 48px 64px; flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-content: start; }}
     .cover-meta-group h4, .cover-stack h4, h2, .ch-num, .phase-num, .glossary-term {{ font-family: 'Syne', sans-serif; }}
