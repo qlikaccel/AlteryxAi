@@ -399,7 +399,7 @@ async def parse_loadscript_endpoint(request: dict):
     logger.info("[parse_loadscript_endpoint] Script length: %d characters", len(loadscript))
 
     try:
-        from app.services.loadscript_parser import LoadScriptParser
+        from app.utils.loadscript_parser import LoadScriptParser
         parser = LoadScriptParser(loadscript)
         result = parser.parse()
         return result
@@ -830,7 +830,7 @@ def _fetch_table_rows_for_cardinality(app_id: str, table_name: str, limit: int =
     if not app_id or not table_name:
         return []
     try:
-        from qlik_websocket_client import QlikWebSocketClient
+        from app.services.qlik_websocket_client import QlikWebSocketClient
 
         client = QlikWebSocketClient()
         result = client.get_table_data(app_id, table_name, limit=limit)

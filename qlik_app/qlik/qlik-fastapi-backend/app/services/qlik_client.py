@@ -1,5 +1,6 @@
 import os
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import requests
 from dotenv import load_dotenv
@@ -11,7 +12,7 @@ class QlikClient:
     def __init__(self, api_key: Optional[str] = None, tenant_url: Optional[str] = None):
         # ONLY use API Key authentication - NO OAuth fallback
         self.api_key = (api_key or os.getenv("QLIK_API_KEY") or "").strip()
-        self.tenant_url = (tenant_url or os.getenv("QLIK_TENANT_URL") or "").strip().rstrip("/")
+        self.tenant_url = self._resolve_tenant_url(tenant_url or os.getenv("QLIK_TENANT_URL") or "")
         if self.tenant_url:
             self.api_base_url = f"{self.tenant_url}/api/v1"
         else:
@@ -24,6 +25,31 @@ class QlikClient:
 
         self._last_auth_error: Optional[str] = None
         self.headers = self._build_headers(self.api_key)
+
+    def _resolve_tenant_url(self, raw_url: str) -> str:
+        """Resolve input tenant URL to an API-capable base origin."""
+        value = (raw_url or "").strip().rstrip("/")
+        if not value:
+            return ""
+
+        if not value.startswith(("http://", "https://")):
+            value = f"https://{value}"
+
+        parsed = urlparse(value)
+        host = (parsed.netloc or parsed.path or "").lower()
+        scheme = parsed.scheme or "https"
+
+        if host.startswith("www."):
+            host = host[4:]
+
+        # Alteryx cloud portal URLs are not direct Qlik API tenant hosts for current keys.
+        # Map them to configured Qlik tenant so existing API key can authenticate.
+        if host.endswith("alteryxcloud.com"):
+            fallback = (os.getenv("QLIK_TENANT_URL") or "").strip().rstrip("/")
+            if fallback:
+                return fallback
+
+        return f"{scheme}://{host}".rstrip("/")
 
     def _build_headers(self, bearer_token: str) -> Dict[str, str]:
         return {

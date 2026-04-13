@@ -238,7 +238,7 @@ async def download_mquery(
         logger.info(f"✅ Script fetched: {len(raw_script)} characters")
 
         try:
-            from app.services.loadscript_parser import LoadScriptParser
+            from app.utils.loadscript_parser import LoadScriptParser
             parser       = LoadScriptParser(raw_script)
             parse_result = parser.parse()
             logger.info(f"✅ Script parsed: {parse_result.get('summary', {}).get('tables_count', 0)} tables found")

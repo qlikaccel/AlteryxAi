@@ -3,8 +3,11 @@
 import "./ConnectPage.css";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { validateLogin } from "../../api/qlikApi";
 import { useWizard } from "../../context/WizardContext";
+
+const DEFAULT_TENANT_URL =
+  "https://us1.alteryxcloud.com/cloud-portal/?workspaceGid=01KNS7RVQS14ZM22MY51EZRGKJ";
+const OLD_TENANT_URL = "https://vtcej92i1jgxph5.in.qlikcloud.com/";
 
 export default function ConnectPage() {
   const [connectionMethod, setConnectionMethod] = useState<
@@ -28,7 +31,9 @@ export default function ConnectPage() {
     const savedConnectAsUser = sessionStorage.getItem("connect_as_user");
 
     if (savedUrl) {
-      setUrl(savedUrl);
+      setUrl(savedUrl === OLD_TENANT_URL ? DEFAULT_TENANT_URL : savedUrl);
+    } else {
+      setUrl(DEFAULT_TENANT_URL);
     }
 
     if (savedApiKey) {
@@ -50,10 +55,22 @@ export default function ConnectPage() {
     setLoading(false);
   }, []);
 
+  const normalizeTenantUrl = (input: string) => {
+    try {
+      const parsed = new URL(input.trim());
+      return parsed.origin;
+    } catch {
+      return "";
+    }
+  };
+
   const validateUrl = (input: string) => {
     try {
       const parsed = new URL(input);
-      return parsed.hostname.endsWith("qlikcloud.com");
+      return (
+        parsed.hostname.endsWith("alteryxcloud.com") ||
+        parsed.hostname.endsWith("qlikcloud.com")
+      );
     } catch {
       return false;
     }
@@ -78,9 +95,11 @@ export default function ConnectPage() {
   const { startTimer } = useWizard();
 
   const handleConnect = async () => {
+    const normalizedUrl = normalizeTenantUrl(url);
+
     if (!validateUrl(url)) {
       setError(
-        "Please enter a valid Qlik Sense Cloud URL (e.g., https://your-tenant.qlikcloud.com)"
+        "Please enter a valid Alteryx Cloud URL (e.g., https://us1.alteryxcloud.com/cloud-portal/?workspaceGid=...)"
       );
       return;
     }
@@ -109,36 +128,19 @@ export default function ConnectPage() {
     setLoading(true);
     setError("");
 
-    try {
-      await validateLogin(
-        url,
-        true,
-        "ponnuchamy.vellaikannu@sorimtechnologies.com",
-        "qlikCloud000"
-      );
+    // Save for this browser session and proceed directly to Alteryx discovery.
+    sessionStorage.setItem("tenant_url", normalizedUrl);
+    sessionStorage.setItem("connected", "true");
+    sessionStorage.setItem("connection_method", connectionMethod);
+    sessionStorage.setItem("qlik_api_key", apiKey.trim());
 
-      // Save for this browser session
-      sessionStorage.setItem("tenant_url", url);
-      sessionStorage.setItem("connected", "true");
-      sessionStorage.setItem("connection_method", connectionMethod);
-      sessionStorage.setItem("qlik_api_key", apiKey.trim());
-
-      if (cookie.trim()) {
-        sessionStorage.setItem("qlik_session_cookie", cookie.trim());
-      }
-
-      // Navigate to apps page
-      startTimer?.("/apps");
-      navigate("/apps");
-    } catch (err: any) {
-      setError(
-        err?.message ||
-        err.response?.data?.detail ||
-        "Connection failed. Please check your credentials and try again."
-      );
-    } finally {
-      setLoading(false);
+    if (cookie.trim()) {
+      sessionStorage.setItem("qlik_session_cookie", cookie.trim());
     }
+
+    startTimer?.("/apps");
+    navigate("/apps");
+    setLoading(false);
   };
 
   const isValidUrl = validateUrl(url);
@@ -153,9 +155,9 @@ export default function ConnectPage() {
       <div className="connect-card">
         <div className="card-header">
           <div className="card-header-text">
-            <h1>Connect to Qlik Cloud</h1>
+            <h1>Connect to Alteryx Cloud</h1>
             <p>
-              Enter your Qlik Cloud tenant URL and authenticate to begin the
+              Enter your Alteryx Cloud tenant URL and authenticate to begin the
               migration assessment. Your credentials are never stored — OAuth tokens
               are used for session-only access.
             </p>
@@ -209,7 +211,7 @@ export default function ConnectPage() {
           <input
             id="qlik-url"
             type="text"
-            placeholder="https://your-tenant.qlikcloud.com"
+            placeholder="https://us1.alteryxcloud.com/cloud-portal/?workspaceGid=..."
             value={url}
             onChange={(e) => {
               setUrl(e.target.value);
@@ -221,8 +223,7 @@ export default function ConnectPage() {
 
           {url && !isValidUrl && (
             <p className="field-error">
-              ⚠️ Please enter a valid Qlik Sense Cloud URL ending with
-              .qlikcloud.com
+              ⚠️ Please enter a valid Alteryx Cloud URL.
             </p>
           )}
         </div>
@@ -240,7 +241,7 @@ export default function ConnectPage() {
                 setError("");
               }}
               disabled={loading}
-              title="Generate from: Qlik Cloud Console → Admin → API Keys"
+              title="Generate from: Alteryx Cloud Console → Admin → API Keys"
             />
           </div>
         )}

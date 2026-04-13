@@ -23,6 +23,16 @@
   gap: 12px;
   flex-shrink: 0;
 }
+
+.brand-wordmark {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 40px;
+  font-weight: 800;
+  color: #ff6d2d;
+  line-height: 1;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
  
 .logo-image {
   height: 56px;
@@ -97,6 +107,11 @@
   .header {
     padding: 12px 16px;
   }
+
+  .brand-wordmark {
+    font-size: 30px;
+  }
+
   .header-right a {
     display: none;
   }

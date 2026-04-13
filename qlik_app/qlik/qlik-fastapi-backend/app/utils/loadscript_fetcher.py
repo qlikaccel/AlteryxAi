@@ -156,7 +156,7 @@ class LoadScriptFetcher:
         logger.info("=" * 80)
 
         try:
-            from qlik_websocket_client import QlikWebSocketClient
+            from app.services.qlik_websocket_client import QlikWebSocketClient
             ws = QlikWebSocketClient()
             result = ws.get_data_model(app_id)
 
@@ -219,7 +219,7 @@ class LoadScriptFetcher:
         # Method 1: WebSocket
         logger.info("📍 Step 4.1: Attempting to fetch via WebSocket (Engine API)...")
         try:
-            from qlik_websocket_client import QlikWebSocketClient
+            from app.services.qlik_websocket_client import QlikWebSocketClient
             ws_client = QlikWebSocketClient()
             script_result = ws_client._get_app_script_websocket(app_id)
             logger.info(
@@ -331,7 +331,7 @@ class LoadScriptFetcher:
 
         # Step 3: parse with injected map
         try:
-            from app.services.loadscript_parser import LoadScriptParser
+            from app.utils.loadscript_parser import LoadScriptParser
         except ImportError:
             logger.error("❌ loadscript_parser not found")
             return {

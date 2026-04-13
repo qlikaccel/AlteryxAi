@@ -1,5 +1,4 @@
 import "./Header.css";
-import qlikaiLogo from "../../assets/qlikai.png";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 
@@ -26,17 +25,11 @@ export default function Header() {
   return (
     <header className="header">
       <div className="header-left">
-        <div className="logo-section">
-          <img
-            src={qlikaiLogo}
-            alt="QlikAI Logo"
-            className="logo-image"
-          />
-        </div>
+        <div className="brand-wordmark">Alteryx</div>
 
         <div className="header-text">
           <p className="logo-subtitle">
-            QlikAI is an AI-powered analytics acceleration platform designed to transform how enterprises consume, understand, and act on QlikSense data. By leveraging advanced AI/LLM capabilities, QlikAI automatically summarizes complex dashboards, generates contextual insights, and enables seamless export of analytics into downstream platforms such as Power BI—reducing manual effort and accelerating decision-making.
+            Alteryx is an AI-powered analytics acceleration platform designed to transform how enterprises consume, understand, and act on enterprise analytics data. By leveraging advanced AI/LLM capabilities, Alteryx automatically summarizes complex dashboards, generates contextual insights, and enables seamless export of analytics into downstream platforms such as Power BI—reducing manual effort and accelerating decision-making.
           </p>
         </div>
       </div>

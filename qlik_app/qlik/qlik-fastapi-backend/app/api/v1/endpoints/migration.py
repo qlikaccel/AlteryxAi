@@ -375,7 +375,7 @@ async def fetch_loadscript_endpoint(
     logger.info("[fetch_loadscript_endpoint] App ID: %s", app_id)
 
     try:
-        from app.services.loadscript_fetcher import LoadScriptFetcher
+        from app.utils.loadscript_fetcher import LoadScriptFetcher
         fetcher = LoadScriptFetcher()
         conn_result = fetcher.test_connection()
         if conn_result.get("status") != "success":
@@ -399,7 +399,7 @@ async def parse_loadscript_endpoint(request: dict):
     logger.info("[parse_loadscript_endpoint] Script length: %d characters", len(loadscript))
 
     try:
-        from app.services.loadscript_parser import LoadScriptParser
+        from app.utils.loadscript_parser import LoadScriptParser
         parser = LoadScriptParser(loadscript)
         result = parser.parse()
         return result
@@ -573,14 +573,14 @@ async def full_pipeline(
     logger.info("[full_pipeline] app_id=%s table=%s", app_id, table_name or "(all)")
 
     try:
-        from app.services.loadscript_fetcher import LoadScriptFetcher
+        from app.utils.loadscript_fetcher import LoadScriptFetcher
         fetcher = LoadScriptFetcher()
         fetch_result = fetcher.fetch_loadscript(app_id)
         if fetch_result.get("status") not in ("success", "partial_success"):
             raise HTTPException(status_code=503, detail=f"Fetch failed: {fetch_result.get('message')}")
         loadscript = fetch_result.get("loadscript", "")
 
-        from app.services.loadscript_parser import LoadScriptParser
+        from app.utils.loadscript_parser import LoadScriptParser
         parse_result = LoadScriptParser(loadscript).parse()
         tables = parse_result.get("details", {}).get("tables", [])
 
@@ -830,7 +830,7 @@ def _fetch_table_rows_for_cardinality(app_id: str, table_name: str, limit: int =
     if not app_id or not table_name:
         return []
     try:
-        from qlik_websocket_client import QlikWebSocketClient
+        from app.services.qlik_websocket_client import QlikWebSocketClient
 
         client = QlikWebSocketClient()
         result = client.get_table_data(app_id, table_name, limit=limit)
@@ -1003,7 +1003,7 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
         # converter fixes, while raw_script lets publish use the latest backend
         # parser/converter logic and the real current SharePoint path.
         if raw_script.strip():
-            from app.services.loadscript_parser import LoadScriptParser
+            from app.utils.loadscript_parser import LoadScriptParser
             from app.services.mquery_converter import MQueryConverter
 
             parse_result = LoadScriptParser(raw_script).parse(
@@ -1253,7 +1253,7 @@ async def generate_pbit_endpoint(request: GeneratePbitRequest):
             if not tables_m:
                 raise HTTPException(status_code=400, detail="Could not parse table sections from combined_mquery.")
         else:
-            from app.services.loadscript_parser import LoadScriptParser
+            from app.utils.loadscript_parser import LoadScriptParser
             from app.services.mquery_converter import MQueryConverter
             parse_result = LoadScriptParser(raw_script).parse()
             tables = parse_result.get("details", {}).get("tables", [])

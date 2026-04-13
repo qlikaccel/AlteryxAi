@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import json
 import os
+from urllib.parse import urlparse
 
 router = APIRouter()
 
@@ -25,14 +26,22 @@ class LoginPayload(BaseModel):
 
 
 def normalize_tenant_url(url: str) -> str:
-    """Normalize URL by removing trailing slashes and www prefix"""
-    url = url.rstrip("/")
-    # Remove www. prefix if present
-    if url.startswith("https://www."):
-        url = "https://" + url[len("https://www."):]
-    elif url.startswith("http://www."):
-        url = "http://" + url[len("http://www."):]
-    return url
+    """Normalize a tenant URL to scheme://host (ignore path, query, and trailing slash)."""
+    value = (url or "").strip()
+    if not value:
+        return ""
+
+    if not value.startswith(("http://", "https://")):
+        value = f"https://{value}"
+
+    parsed = urlparse(value)
+    scheme = parsed.scheme or "https"
+    host = (parsed.netloc or parsed.path or "").lower()
+
+    if host.startswith("www."):
+        host = host[4:]
+
+    return f"{scheme}://{host}".rstrip("/")
 
 @router.post("/validate-login")
 def validate_login(payload: LoginPayload):

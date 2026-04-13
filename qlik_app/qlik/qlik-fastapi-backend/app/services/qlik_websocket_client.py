@@ -704,7 +704,7 @@ class QlikWebSocketClient:
                 if script_result.get("success") and script_result.get("script"):
                     script = script_result.get("script", "")
                     try:
-                        from qlik_script_parser import QlikScriptParser
+                        from app.services.qlik_script_parser import QlikScriptParser
                         # request up to offset+limit so we can slice the returned rows
                         table_preview = QlikScriptParser.get_table_preview(script, table_name, offset + (limit if limit and limit>0 else 0))
                         
