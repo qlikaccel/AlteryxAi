@@ -1,371 +1,358 @@
-.alx-wrap {
-  max-width: 1240px;
-  margin: 0 auto;
-  padding: 18px 14px 22px;
-  margin-bottom: 45px;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  color: #2d2d2d;
-}
-
-.alx-top-steps {
+.qlik-app-container {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
+  flex-direction: column;
+  height: 100vh;
+  background: #ffffff;
 }
 
-.alx-pill {
-  border: 1px solid #d8d8d8;
-  border-radius: 999px;
-  padding: 8px 14px;
-  font-size: 14px;
+/* ============= STEPPER NAVIGATION ============= */
+.qlik-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 20px 40px;
   background: #f5f5f5;
-  color: #5a5a5a;
+  border-bottom: 1px solid #e0e0e0;
 }
 
-.alx-pill.active {
-  background: #111;
-  color: #fff;
-  border-color: #111;
-}
-
-.alx-section-tag {
-  font-size: 12px;
-  color: #8b8b8b;
-  letter-spacing: 0.6px;
-  margin: 4px 0 10px;
-}
-
-.alx-surface {
-  background: #f4f4f2;
-  border: 1px solid #dbdbd8;
-  border-radius: 14px;
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  overflow: hidden;
-}
-
-.alx-sidebar {
-  background: #ecece9;
-  border-right: 1px solid #d5d5d2;
-  padding: 14px 10px;
+.qlik-step-item {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.alx-brand-box {
-  padding: 2px 8px 10px;
-  border-bottom: 1px solid #d5d5d2;
-}
-
-.alx-brand-box h3 {
-  margin: 0;
-  font-size: 28px;
-  color: #2b2b2b;
-}
-
-.alx-brand-box p {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: #7a7a7a;
-}
-
-.alx-nav-group {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.alx-group-title {
-  font-size: 11px;
-  color: #9c9c9c;
-  letter-spacing: 1px;
-}
-
-.alx-nav-item {
-  border: 1px solid transparent;
-  background: transparent;
-  border-radius: 8px;
-  text-align: left;
-  padding: 8px 10px;
-  color: #4f4f4f;
-  font-size: 16px;
-}
-
-.alx-nav-item.active {
-  background: #f8f8f6;
-  border-color: #d8d8d5;
-  color: #1e1e1e;
-  font-weight: 600;
-}
-
-.alx-upload-btn {
-  margin-top: auto;
-  border: 1px solid #d4d4d1;
-  background: #f6f6f4;
-  border-radius: 8px;
-  color: #4d4d4d;
-  padding: 10px;
-}
-
-.alx-main {
-  padding: 10px 18px 14px;
-}
-
-.alx-header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
-  border-bottom: 1px solid #ddddda;
-  padding-bottom: 10px;
+  padding: 0 16px;
+  position: relative;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s;
 }
 
-.alx-header-row h2 {
-  margin: 0;
-  font-size: 31px;
-  color: #1f1f1f;
+.qlik-step-item.active,
+.qlik-step-item.active-current {
+  opacity: 1;
 }
 
-.alx-header-row p {
-  margin: 2px 0 0;
-  font-size: 17px;
-  color: #7a7a7a;
+.qlik-step-item::after {
+  content: "";
+  position: absolute;
+  right: -12px;
+  width: 1px;
+  height: 24px;
+  background: #d0d0d0;
 }
 
-.alx-browse-btn {
-  border: 1px solid #1b1b1b;
-  background: #151515;
-  color: #fff;
-  border-radius: 12px;
-  padding: 8px 16px;
+.qlik-step-item:last-child::after {
+  display: none;
 }
 
-.alx-flow-row {
-  margin: 16px 0 12px;
+.qlik-step-icon {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 50%;
   display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.alx-step {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 92px;
-}
-
-.alx-step span {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  border: 1px solid #b8b8b8;
-  display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #efefed;
-  color: #5a5a5a;
-  font-size: 14px;
-}
-
-.alx-step.done span {
-  background: #d8ecff;
-  border-color: #5d9bd8;
-  color: #2566a8;
-}
-
-.alx-step small {
-  margin-top: 5px;
-  text-align: center;
-  color: #6c6c6c;
-  font-size: 12px;
-}
-
-.alx-line {
-  height: 1px;
-  background: #b9b9b9;
-  flex: 1;
-}
-
-.alx-dropzone {
-  border: 2px dashed #c7c7c5;
-  border-radius: 14px;
-  background: #f2f2ef;
-  padding: 22px 16px;
-  text-align: center;
-}
-
-.alx-dropzone h3 {
-  margin: 0;
-  font-size: 30px;
-  color: #2e2e2e;
-}
-
-.alx-dropzone h3 span {
-  margin-left: 6px;
-  background: #dbe8f8;
-  color: #225e9a;
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 12px;
-  vertical-align: middle;
-}
-
-.alx-dropzone p {
-  margin: 7px 0 0;
-  color: #6d6d6d;
-}
-
-.alx-drop-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 12px;
-}
-
-.alx-drop-actions button {
-  border: 1px solid #cacaca;
-  border-radius: 10px;
-  background: #f9f9f8;
-  padding: 8px 12px;
-}
-
-.alx-drop-actions em {
-  font-style: normal;
-  margin-left: 8px;
-  color: #1f66ad;
-  background: #dfeaf8;
-  border-radius: 5px;
-  padding: 1px 6px;
-  font-size: 11px;
-}
-
-.alx-grid-panels {
-  margin-top: 14px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.alx-panel {
-  border: 1px solid #d4d4d1;
-  border-radius: 14px;
-  background: #f6f6f4;
-  padding: 10px 12px;
-}
-
-.alx-panel-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.alx-panel-head h4 {
-  margin: 0;
-  font-size: 17px;
-}
-
-.alx-panel-head span {
-  font-size: 12px;
-  color: #4c7a39;
-  background: #dfedd8;
-  border-radius: 999px;
-  padding: 3px 8px;
-}
-
-.alx-panel ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.alx-panel li {
-  border-radius: 8px;
-  padding: 8px 10px;
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.alx-panel li.ok {
-  background: #efe5d3;
-  color: #4f3f24;
-}
-
-.alx-panel li.warn {
-  background: #f0dde0;
-  color: #6b3a45;
-}
-
-.alx-panel li strong {
-  font-size: 14px;
   font-weight: 600;
-}
-
-.alx-panel li small {
   font-size: 12px;
-  color: #6f6f6f;
+  background: #e8e8e8;
+  color: #666;
 }
 
-.alx-upload-row {
-  align-items: center;
+.qlik-step-item.active .qlik-step-icon {
+  background: #c0d9e8;
+  color: #0066cc;
 }
 
-.alx-upload-row div {
+.qlik-step-item.active-current .qlik-step-icon {
+  background: #7a4b9e;
+  color: white;
+}
+
+.qlik-step-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.state {
-  border-radius: 999px;
-  font-size: 12px;
-  padding: 3px 10px;
+.qlik-step-label {
   font-weight: 600;
-}
-
-.state.done {
-  background: #dcebd1;
-  color: #3d6f1d;
-}
-
-.state.review {
-  background: #f2e4c6;
-  color: #8a5f00;
-}
-
-.state.failed {
-  background: #f3d2d2;
-  color: #9f3131;
-}
-
-.alx-legend {
-  margin-top: 12px;
-  border-top: 1px solid #ddd;
-  padding-top: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
   font-size: 12px;
-  color: #7a7a7a;
+  color: #333;
 }
 
-@media (max-width: 980px) {
-  .alx-surface {
-    grid-template-columns: 1fr;
+
+/* ============= MAIN CONTENT ============= */
+.qlik-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 32px 40px;
+  overflow-y: auto;
+}
+
+.qlik-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+  gap: 20px;
+}
+
+.qlik-header-left {
+  flex: 0;
+}
+
+.qlik-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.qlik-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.qlik-search {
+  width: 280px;
+  padding: 8px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #333;
+  background: white;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.qlik-search::placeholder {
+  color: #999;
+}
+
+.qlik-search:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+}
+
+/* ============= WORKFLOWS GRID ============= */
+.qlik-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.qlik-card {
+  display: flex;
+  flex-direction: column;
+  background: #f0f5ff;
+  border: 1px solid #d0d9e8;
+  border-radius: 8px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.qlik-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #b0c4de;
+  transform: translateY(-2px);
+}
+
+.qlik-card-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 16px;
+  color: #0066cc;
+  opacity: 0.7;
+}
+
+.qlik-card-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.qlik-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 12px 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.qlik-card-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+
+.qlik-card-date {
+  color: #666;
+}
+
+.qlik-card-tools {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: #0066cc;
+  color: white;
+  border-radius: 50%;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.qlik-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #d0d9e8;
+}
+
+.qlik-card-star,
+.qlik-card-more {
+  background: transparent;
+  border: none;
+  color: #999;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  transition: color 0.2s;
+}
+
+.qlik-card-star:hover,
+.qlik-card-more:hover {
+  color: #0066cc;
+}
+
+/* ============= STATE DISPLAYS ============= */
+.qlik-loading,
+.qlik-error,
+.qlik-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  gap: 16px;
+}
+
+.qlik-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e0e0e0;
+  border-top: 3px solid #0066cc;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.qlik-loading p,
+.qlik-error p,
+.qlik-empty p {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+}
+
+.qlik-error p {
+  color: #d32f2f;
+  font-weight: 500;
+}
+
+.qlik-retry-btn {
+  margin-top: 12px;
+  padding: 8px 16px;
+  background: #0066cc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.qlik-retry-btn:hover {
+  background: #0052a3;
+}
+
+/* ============= RESPONSIVE DESIGN ============= */
+@media (max-width: 1024px) {
+  .qlik-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
   }
 
-  .alx-sidebar {
-    border-right: none;
-    border-bottom: 1px solid #d5d5d2;
+  .qlik-stepper {
+    padding: 16px 24px;
+    gap: 4px;
   }
 
-  .alx-grid-panels {
+  .qlik-step-item {
+    padding: 0 12px;
+  }
+
+  .qlik-content {
+    padding: 24px;
+  }
+
+  .qlik-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .qlik-search {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .qlik-grid {
     grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .qlik-stepper {
+    overflow-x: auto;
+    padding: 12px 16px;
+  }
+
+  .qlik-step-item {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .qlik-step-icon {
+    width: 24px;
+    height: 24px;
+    font-size: 10px;
+  }
+
+  .qlik-content {
+    padding: 16px;
+  }
+
+  .qlik-title {
+    font-size: 18px;
+  }
+
+  .qlik-search {
+    font-size: 12px;
+  }
+
+  .qlik-card {
+    padding: 16px;
   }
 }

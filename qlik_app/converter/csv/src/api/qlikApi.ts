@@ -71,6 +71,61 @@ export const validateLogin = async (
   }
 };
 
+// Alteryx Cloud login with fixed credentials
+export const alteryxLogin = async (baseUrl: string) => {
+  try {
+    const res = await axios.post(
+      `${BASE_URL}/alteryx-login`,
+      {
+        base_url: baseUrl,
+      },
+      {
+        timeout: REQUEST_TIMEOUT_MS,
+      }
+    );
+
+    return res.data;
+  } catch (error: any) {
+    const detail =
+      error?.response?.data?.detail ||
+      error?.message ||
+      "Alteryx authentication failed. Please try again.";
+
+    if (error?.code === "ECONNABORTED") {
+      throw new Error(
+        "Connection timed out after 10 seconds. Alteryx Cloud may be unreachable."
+      );
+    }
+
+    throw new Error(detail);
+  }
+};
+
+// Fetch Alteryx workflows
+export const fetchWorkflows = async (limit: number = 50, offset: number = 0) => {
+  try {
+    const res = await axios.get(`${BASE_URL}/workflows`, {
+      params: { limit, offset },
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+
+    return res.data;
+  } catch (error: any) {
+    const detail =
+      error?.response?.data?.detail ||
+      error?.message ||
+      "Failed to fetch workflows. Please try again.";
+
+    if (error?.code === "ECONNABORTED") {
+      throw new Error(
+        "Connection timed out after 10 seconds. The backend service may be unresponsive."
+      );
+    }
+
+    throw new Error(detail);
+  }
+};
+
 // Validate SharePoint URL - STRICT validation
 export const validateSharePointUrl = async (sharePointUrl: string) => {
   const res = await axios.post(`${BASE_URL}/validate-sharepoint-url`, {

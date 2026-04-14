@@ -1,4 +1,9 @@
 {
+  "accelerators@sorim.ai": {
+    "password": "@1tr3yx123",
+    "tenant": "https://us1.alteryxcloud.com",
+    "type": "alteryx"
+  },
   "ponnuchamy.vellaikannu@sorimtechnologies.com": {
     "password": "qlikCloud000",
     "tenant": "https://us1.alteryxcloud.com/cloud-portal/?workspaceGid=01KNS7RVQS14ZM22MY51EZRGKJ"

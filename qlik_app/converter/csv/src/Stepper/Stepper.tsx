@@ -131,7 +131,7 @@ import publishImg from "../assets/Publish.png";
 
 const steps = [
   { id: 1, label: "Connect", sub: "Connect to Alteryx Cloud", icon: connectImg, path: "/" },
-  { id: 2, label: "Discovery", sub: "Apps & Metadata", icon: discoveryImg, path: "/apps" },
+  { id: 2, label: "Discovery", sub: "Workflows & Metadata", icon: discoveryImg, path: "/apps" },
   { id: 3, label: "Summary", sub: "Assessment", icon: summaryImg, path: "/summary" },
   { id: 4, label: "Export", sub: "Build & Convert", icon: exportImg, path: "/export" },
   { id: 5, label: "Publish", sub: "Publish Results", icon: publishImg, path: "/publish" }

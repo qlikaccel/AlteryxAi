@@ -71,6 +71,7 @@ from pydantic import BaseModel
 # Project imports
 from app.schemas.auth_schema import LoginPayload, router as login_router, validate_login as validate_login_handler
 from app.api.v1.endpoints.migration import router as migration_router
+from app.api.v1.endpoints.workflows import router as workflows_router
 from app.services.mquery_converter import validate_sharepoint_url_strict
 from app.services.qlik_websocket_client import QlikWebSocketClient
 from app.services.qlik_client import QlikClient
@@ -151,6 +152,7 @@ app.add_middleware(
 
 app.include_router(login_router)
 app.include_router(migration_router)
+app.include_router(workflows_router)
 
 # ==================== DEPENDENCY INJECTION ====================
 # FIX 3+4: single definition of each dependency — no duplicates
