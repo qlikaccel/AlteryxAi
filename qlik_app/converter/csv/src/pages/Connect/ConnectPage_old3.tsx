@@ -139,8 +139,6 @@ export default function ConnectPage() {
       sessionStorage.setItem("alteryx_workspace_name", data.workspace_name);
       if (alteryxRefreshToken.trim()) {
         sessionStorage.setItem("alteryx_refresh_token", alteryxRefreshToken.trim());
-      } else if (data.refresh_token) {
-        sessionStorage.setItem("alteryx_refresh_token", data.refresh_token);
       }
       sessionStorage.setItem("connected", "true");
 
@@ -168,8 +166,8 @@ export default function ConnectPage() {
             onClick={() => { setPlatform("qlik"); setError(""); sessionStorage.setItem("platform", "qlik"); }}
             disabled={loading}
           >
-            {/* <span className="platform-logo qlik-logo">Q</span>
-            <span className="platform-label">Qlik Sense</span> */}
+            <span className="platform-logo qlik-logo">Q</span>
+            <span className="platform-label">Qlik Sense</span>
           </button>
           <button
             type="button"
@@ -188,7 +186,7 @@ export default function ConnectPage() {
             <h1>
               {platform === "qlik"
                 ? "Connect to Qlik Cloud"
-                : "Connect to Alteryx Cloud"}
+                : "Connect to Alteryx One"}
             </h1>
             <p>
               {platform === "qlik"

@@ -145,8 +145,10 @@ def alteryx_login(payload: AlteryxLoginPayload):
         user_config = USERS["accelerators@sorim.ai"]
         username = "accelerators@sorim.ai"
         password = user_config["password"]
+        api_token = user_config.get("alteryx_api_token")  # Get API token if available
         
         logger.info(f"Authenticating with fixed credentials: {username}")
+        logger.info(f"API token available: {bool(api_token)}")
         
         # Get Alteryx session manager and authenticate
         session_manager = get_alteryx_session_manager()
@@ -154,7 +156,8 @@ def alteryx_login(payload: AlteryxLoginPayload):
         result = session_manager.authenticate(
             base_url=base_url,
             username=username,
-            password=password
+            password=password,
+            api_token=api_token  # Pass API token
         )
         
         logger.info(f"Authentication result: {result}")

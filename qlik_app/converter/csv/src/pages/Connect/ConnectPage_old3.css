@@ -4,20 +4,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 20px;
+  padding: 8px 20px 18px;
 }
 
 .connect-card {
-  background: white;
-  border-radius: 14px;
+  background: #ffffff;
+  border-radius: 16px;
   padding: 14px 24px;
   width: 100%;
   max-width: 500px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+  border: 1px solid #ece6e3;
+  box-shadow: 0 16px 36px rgba(223, 101, 27, 0.12);
   animation: fadeIn 0.5s ease-out;
   margin-bottom: 16px;
   margin-top: 10px;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
  
 
@@ -72,7 +73,7 @@
   align-items: center;
   gap: 14px;
   padding-bottom: 8px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid #ece6e3;
   margin-bottom: 10px;
 }
 
@@ -109,12 +110,12 @@
   font-size: 18px;
   font-weight: 800;
   letter-spacing: 0.3px;
-  color: #0f172a;
+  color: #3730a3;
 }
 
 .card-header-text p {
   margin: 3px 0 0;
-  color: #475569;
+  color: #556174;
   font-size: 11px;
   line-height: 1.4;
 }
@@ -161,8 +162,8 @@ input[type="text"].invalid { border-color: #fc8181; background: #fff5f5; }
 .method-btn {
   padding: 6px 10px;
   border-radius: 8px;
-  border: 1.5px solid #e1e5e9;
-  background: #f8f9fa;
+  border: 1.5px solid #ffd8c4;
+  background: #fff7f2;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -175,19 +176,19 @@ input[type="text"].invalid { border-color: #fc8181; background: #fff5f5; }
 }
 
 .method-btn:not(.active):hover:not(:disabled) {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.08);
+  border-color: #ff6d2d;
+  box-shadow: 0 0 0 3px rgba(255, 109, 45, 0.15);
   background: white;
 }
 
-.method-btn.active:hover { background: #5b21b6; }
+.method-btn.active:hover { background: #dd5a20; }
 .method-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .method-btn.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #ff7a3d 0%, #ff5f1f 100%);
   color: white;
   border-color: transparent;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 6px 14px rgba(255, 109, 45, 0.35);
 }
 
 .method-btn .method-title { font-weight: 700; font-size: 12px; }
@@ -209,19 +210,18 @@ input[type="text"].invalid { border-color: #fc8181; background: #fff5f5; }
 .field-group input[type="password"] {
   width: 100%;
   padding: 8px 12px;
-  border: 1.5px solid #e1e5e9;
+  border: 1.5px solid #3730a3;
   border-radius: 8px;
   font-size: 13px;
   transition: all 0.2s ease;
   box-sizing: border-box;
-  background: #f7f8fb;
 }
+
 
 .field-group input[type="text"]:hover,
 .field-group input[type="password"]:hover {
-  border-color: #667eea;
+  border-color: #3730a3;
   background: white;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.08);
 }
 
 .field-group input[type="text"]::placeholder,
@@ -231,26 +231,6 @@ input[type="text"].invalid { border-color: #fc8181; background: #fff5f5; }
 .field-group input[type="password"].invalid { border-color: #fc8181; background: #fff5f5; }
 
 .field-error { margin: 4px 0 0; color: #b91c1c; font-size: 11px; }
-
-/* Hint text below inputs */
-.field-hint {
-  margin: 3px 0 0;
-  color: #6b7280;
-  font-size: 10.5px;
-  line-height: 1.4;
-}
-
-.field-hint a {
-  color: #667eea;
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.field-hint a:hover { text-decoration: underline; }
-
-/* Required / optional labels */
-.required-star { color: #e53e3e; margin-left: 2px; }
-.optional-label { font-weight: 400; color: #9ca3af; font-size: 10px; margin-left: 4px; }
 
 /* Checkbox */
 .checkbox-group { margin-top: 2px; margin-bottom: 8px; }
@@ -283,8 +263,8 @@ input[type="text"].invalid { border-color: #fc8181; background: #fff5f5; }
 }
 
 .checkbox input[type="checkbox"]:checked {
-  background: #667eea;
-  border-color: #667eea;
+  background: #3730a3;
+  border-color: #3730a3;
 }
 
 .checkbox input[type="checkbox"]:checked::after {
@@ -314,7 +294,7 @@ input[type="text"].invalid { border-color: #fc8181; background: #fff5f5; }
 
 .actions button {
   width: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  background: #3730a3;
   color: white !important;
   border: none !important;
   padding: 10px 0;
@@ -328,14 +308,12 @@ input[type="text"].invalid { border-color: #fc8181; background: #fff5f5; }
   justify-content: center;
   gap: 8px;
   letter-spacing: 0.3px;
-  box-shadow: 0 4px 14px rgba(102, 126, 234, 0.25);
   -webkit-appearance: none;
   appearance: none;
 }
 
 .actions button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.32);
 }
 
 .actions button:active:not(:disabled) { transform: translateY(0); }
@@ -363,67 +341,6 @@ input[type="text"].invalid { border-color: #fc8181; background: #fff5f5; }
   25% { transform: translateX(-4px); }
   75% { transform: translateX(4px); }
 }
-
-/* ── Platform Toggle ─────────────────────────────────────── */
-.platform-toggle {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 14px;
-  background: #f1f3f8;
-  border-radius: 10px;
-  padding: 4px;
-}
-
-.platform-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 7px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 13px;
-  font-weight: 600;
-  color: #64748b;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.platform-btn:hover:not(:disabled):not(.active) {
-  background: rgba(255,255,255,0.6);
-  color: #334155;
-}
-
-.platform-btn.active {
-  background: white;
-  color: #1e1b4b;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
-}
-
-.platform-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.platform-logo {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 800;
-  color: white;
-  flex-shrink: 0;
-  line-height: 1;
-}
-
-.qlik-logo  { background: linear-gradient(135deg, #009845 0%, #006e32 100%); }
-.alteryx-logo { background: linear-gradient(135deg, #0070c0 0%, #00477a 100%); }
-
-.platform-label { font-size: 12.5px; font-weight: 700; }
 
 @media (max-width: 640px) {
   .connect-card { padding: 16px 14px; margin: 10px; }

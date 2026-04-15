@@ -81,6 +81,7 @@ export const alteryxLogin = async (baseUrl: string) => {
       },
       {
         timeout: REQUEST_TIMEOUT_MS,
+        withCredentials: true,  // Include cookies in request
       }
     );
 
@@ -107,6 +108,7 @@ export const fetchWorkflows = async (limit: number = 50, offset: number = 0) => 
     const res = await axios.get(`${BASE_URL}/workflows`, {
       params: { limit, offset },
       timeout: REQUEST_TIMEOUT_MS,
+      withCredentials: true,  // Include cookies/session in request
     });
 
     return res.data;

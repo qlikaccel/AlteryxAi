@@ -50,6 +50,8 @@ from fastapi import FastAPI, Query, Depends, HTTPException, UploadFile, File, Fo
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, HTMLResponse, PlainTextResponse, StreamingResponse
 from typing import List, Dict, Any, Optional
+from routers.alteryx_router import router as alteryx_router
+
 import logging
 import base64
 import io
@@ -65,6 +67,7 @@ import matplotlib.patches as mpatches
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 import numpy as np
 
+
 # Pydantic
 from pydantic import BaseModel
 
@@ -72,6 +75,7 @@ from pydantic import BaseModel
 from app.schemas.auth_schema import LoginPayload, router as login_router, validate_login as validate_login_handler
 from app.api.v1.endpoints.migration import router as migration_router
 from app.api.v1.endpoints.workflows import router as workflows_router
+from app.api.v1.endpoints.workflows_html import router as workflows_html_router
 from app.services.mquery_converter import validate_sharepoint_url_strict
 from app.services.qlik_websocket_client import QlikWebSocketClient
 from app.services.qlik_client import QlikClient
@@ -98,6 +102,10 @@ from app.services.brd_generator import (
     merge_defaults,
     render_brd_html,
 )
+
+
+
+
 
 # Optional: new publisher (from powerbi_dataset_publisher.py)
 try:
@@ -153,6 +161,8 @@ app.add_middleware(
 app.include_router(login_router)
 app.include_router(migration_router)
 app.include_router(workflows_router)
+app.include_router(workflows_html_router)
+app.include_router(alteryx_router)
 
 # ==================== DEPENDENCY INJECTION ====================
 # FIX 3+4: single definition of each dependency — no duplicates

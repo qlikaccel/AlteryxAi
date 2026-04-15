@@ -179,8 +179,19 @@ def get_workflows(
         session = session_manager.get_session()
         base_url = session_manager.get_base_url()
         
-        if not session or not session.cookies:
-            logger.error("No active Alteryx session found")
+        logger.debug(f"Session manager state - base_url: {base_url}, has session: {bool(session)}")
+        logger.debug(f"Session cookies: {dict(session.cookies) if session else 'None'}")
+        logger.debug(f"Auth token available: {bool(session_manager._auth_token)}")
+        
+        # Check if we have either session cookies OR auth token available
+        has_session_cookies = session and bool(dict(session.cookies))
+        has_auth_token = session_manager._auth_token is not None
+        
+        logger.debug(f"Authentication status - has_cookies: {has_session_cookies}, has_token: {has_auth_token}, has_base_url: {bool(base_url)}")
+        
+        # Must have base URL and either cookies or token
+        if not has_auth_token and not has_session_cookies:
+            logger.error(f"No authentication found - no token and no cookies")
             raise HTTPException(
                 status_code=401,
                 detail="Not authenticated with Alteryx Cloud. Please login on the Connect page."
@@ -201,16 +212,23 @@ def get_workflows(
         logger.info(f"Using auth mode: {'Bearer token' if 'Bearer' in str(auth_headers) else 'Basic auth' if auth_headers else 'No explicit auth'}")
         
         # Try different API endpoints (Alteryx Designer Cloud APIs)
-        # The order is important - try most likely endpoints first
+        # Order is important - try most likely endpoints first
         possible_endpoints = [
-            # Alteryx Designer Cloud primary endpoints
-            f"{base_url}/api/v2/workflows",           # Most common for newer versions
-            f"{base_url}/api/v1/workflows",           # Fallback to v1
-            f"{base_url}/api/workflows",              # Generic API
-            f"{base_url}/designer/api/workflows",     # Designer endpoint
+            # Alteryx v4 APIs (most current)
+            f"{base_url}/api/v4/workflows",           # v4 workflows (preferred)
+            f"{base_url}/api/v4/recipes",            # v4 recipes
+            
+            # Alteryx v3/v2 APIs
+            f"{base_url}/api/v3/workflows",
+            f"{base_url}/api/v2/workflows",
+            f"{base_url}/api/v1/workflows",
+            
+            # SDK endpoints
+            f"{base_url}/api/workflows",
+            f"{base_url}/designer/api/workflows",
             f"{base_url}/api/designer/workflows",
             
-            # Additional fallbacks
+            # REST endpoints
             f"{base_url}/rest/workflows",
             f"{base_url}/workflows/list",
         ]
@@ -224,12 +242,15 @@ def get_workflows(
             try:
                 logger.info(f"Attempting to fetch workflows from: {url}")
                 
-                # Prepare headers with authorization
+                # Prepare headers with authorization - ALWAYS include auth headers
                 headers = {
                     "Accept": "application/json",
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
+                    "User-Agent": "Alteryx-Migration-Suite/1.0"
                 }
-                headers.update(auth_headers)  # Add auth headers
+                headers.update(auth_headers)  # Add auth headers (Bearer or Basic)
+                
+                logger.debug(f"Using headers: {list(headers.keys())}")
                 
                 resp = session.get(
                     url,
@@ -240,18 +261,20 @@ def get_workflows(
                 )
                 
                 logger.info(f"Response status from {url}: {resp.status_code}")
+                logger.debug(f"Response content-type: {resp.headers.get('content-type', 'unknown')}")
                 
                 # Check if response is JSON and successful
                 if resp.status_code == 200:
                     try:
                         data = resp.json()
                         logger.info(f"✓ Successfully retrieved JSON from {url}")
+                        logger.debug(f"Response type: {type(data).__name__}")
                         response = resp
                         workflows_url = url
                         break  # Found working endpoint
                     except Exception as json_err:
                         logger.warning(f"✗ Got {resp.status_code} but response is not JSON from {url}: {json_err}")
-                        logger.debug(f"Response text: {resp.text[:200]}")
+                        logger.debug(f"Response text (first 200 chars): {resp.text[:200]}")
                         last_error = f"Not JSON: {json_err}"
                         continue
                 elif resp.status_code == 401:

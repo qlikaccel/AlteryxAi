@@ -29,19 +29,22 @@ class AlteryxSessionManager:
         self, 
         base_url: str, 
         username: str, 
-        password: str
+        password: str,
+        api_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Authenticate with Alteryx Cloud using multiple strategies.
         
-        1. Try session-based auth at various endpoints
-        2. Extract auth token from response if available
-        3. Store credentials for backup basic auth on API calls
+        1. Use provided API token if available (preferred)
+        2. Try session-based auth at various endpoints
+        3. Extract auth token from response if available
+        4. Store credentials for backup basic auth on API calls
         
         Args:
             base_url: Alteryx Cloud base URL (e.g., https://us1.alteryxcloud.com)
             username: Username (e.g., accelerators@sorim.ai)
             password: Password
+            api_token: Optional pre-generated API token
             
         Returns:
             Dict with success status and message
@@ -54,6 +57,23 @@ class AlteryxSessionManager:
             self._base_url = base_url
             self._username = username
             self._password = password
+            
+            # If API token is provided, use it directly
+            if api_token:
+                logger.info(f"✓ Using provided API token for authentication")
+                self._auth_token = api_token
+                self._session_cookies = {}
+                
+                logger.info(f"✓ Auth token stored successfully in session manager")
+                logger.debug(f"✓ Token length: {len(api_token)} chars")
+                
+                return {
+                    "success": True,
+                    "message": f"Connected to {base_url} with API token",
+                    "base_url": base_url,
+                    "auth_mode": "bearer_token",
+                    "note": "Using Bearer token authentication"
+                }
             
             logger.info(f"Authenticating to Alteryx Cloud: {base_url}")
             
