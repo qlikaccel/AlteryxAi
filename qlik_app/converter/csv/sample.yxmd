@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AlteryxDocument yxmdVer="2022.1">
+  <Nodes>
+    <Node ToolID="1">
+      <GuiSettings Tool="AlteryxBasePluginsGui.DbFileInput.DbFileInput">
+        <Position x="54" y="54"/>
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <File>Sales_Data.csv</File>
+        </Configuration>
+      </Properties>
+    </Node>
+
+    <Node ToolID="2">
+      <GuiSettings Tool="AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect">
+        <Position x="200" y="54"/>
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <SelectFields>
+            <SelectField field="OrderID" selected="True"/>
+            <SelectField field="CustomerName" selected="True"/>
+            <SelectField field="Region" selected="True"/>
+            <SelectField field="Sales" selected="True"/>
+            <SelectField field="OrderDate" selected="True"/>
+          </SelectFields>
+        </Configuration>
+      </Properties>
+    </Node>
+
+    <Node ToolID="3">
+      <GuiSettings Tool="AlteryxBasePluginsGui.Filter.Filter">
+        <Position x="350" y="54"/>
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <Expression>[Region] = "South" AND [Sales] > 500</Expression>
+        </Configuration>
+      </Properties>
+    </Node>
+
+    <Node ToolID="4">
+      <GuiSettings Tool="AlteryxBasePluginsGui.Formula.Formula">
+        <Position x="500" y="54"/>
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <FormulaFields>
+            <FormulaField expression="[Sales] * 0.1" field="Tax"/>
+            <FormulaField expression="[Sales] + [Tax]" field="TotalAmount"/>
+          </FormulaFields>
+        </Configuration>
+      </Properties>
+    </Node>
+
+    <Node ToolID="5">
+      <GuiSettings Tool="AlteryxBasePluginsGui.Summarize.Summarize">
+        <Position x="650" y="54"/>
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <SummarizeFields>
+            <SummarizeField field="Region" action="GroupBy"/>
+            <SummarizeField field="TotalAmount" action="Sum" rename="TotalRevenue"/>
+            <SummarizeField field="OrderID" action="Count" rename="OrderCount"/>
+          </SummarizeFields>
+        </Configuration>
+      </Properties>
+    </Node>
+
+    <Node ToolID="6">
+      <GuiSettings Tool="AlteryxBasePluginsGui.Sort.Sort">
+        <Position x="800" y="54"/>
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <SortInfo field="TotalRevenue" order="Descending"/>
+        </Configuration>
+      </Properties>
+    </Node>
+
+  </Nodes>
+</AlteryxDocument>

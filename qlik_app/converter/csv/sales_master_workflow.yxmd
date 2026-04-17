@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<AlteryxDocument yxmdVer="2022.1">
+  <Nodes>
+
+    <!-- Input Data -->
+    <Node ToolID="1">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.DbFileInput.DbFileInput">
+        <Position x="100" y="100" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <File RecordLimit="" SearchSubDirs="False" FileFormat="0">C:\Data\Sales_Master.csv</File>
+          <FormatSpecificOptions>
+            <FirstRowData>True</FirstRowData>
+            <Delimeter>,</Delimeter>
+            <QuoteChar>"</QuoteChar>
+            <CodePage>65001</CodePage>
+          </FormatSpecificOptions>
+        </Configuration>
+      </Properties>
+    </Node>
+
+    <!-- Browse Tool -->
+    <Node ToolID="2">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
+        <Position x="300" y="100" />
+      </GuiSettings>
+      <Properties />
+    </Node>
+
+  </Nodes>
+
+  <Connections>
+    <Connection>
+      <Origin ToolID="1" Connection="Output"/>
+      <Destination ToolID="2" Connection="Input"/>
+    </Connection>
+  </Connections>
+
+</AlteryxDocument>

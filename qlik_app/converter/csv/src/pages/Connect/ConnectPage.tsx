@@ -6,6 +6,7 @@ import { useWizard } from "../../context/WizardContext";
 export default function ConnectPage() {
   // ── Alteryx state ────────────────────────────────────────────────────────
   const [alteryxWorkspaceName, setAlteryxWorkspaceName] = useState("");
+  const [workspaceTouched, setWorkspaceTouched] = useState(false);
 
   // ── Shared state ─────────────────────────────────────────────────────────
   const [error, setError] = useState("");
@@ -20,40 +21,26 @@ export default function ConnectPage() {
     if (savedAlteryxWorkspace) setAlteryxWorkspaceName(savedAlteryxWorkspace);
   }, []);
 
-  const canConnectAlteryx = alteryxWorkspaceName.trim().length > 0;
+  const trimmedWorkspaceName = alteryxWorkspaceName.trim();
+  const isWorkspaceNameValid = /^[^-]+-[^-]+-[^-]+-(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{4}$/.test(trimmedWorkspaceName);
+  const canConnectAlteryx = isWorkspaceNameValid;
 
   const handleConnect = async () => {
     if (!canConnectAlteryx) return;
     setLoading(true);
     setError("");
     try {
-      const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-      const payload: Record<string, unknown> = {
-        access_token: "",
-        workspace_name: alteryxWorkspaceName.trim(),
-      };
-      const res = await fetch(`${BASE_URL}/api/alteryx/validate-auth`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Alteryx connection failed.");
-
+      const workspace = alteryxWorkspaceName.trim();
       sessionStorage.setItem("platform", "alteryx");
-      sessionStorage.setItem("alteryx_access_token", data.access_token);
-      sessionStorage.setItem("alteryx_workspace_id", data.workspace_id);
-      sessionStorage.setItem("alteryx_workspace_name", data.workspace_name);
-      if (data.refresh_token) {
-        sessionStorage.setItem("alteryx_refresh_token", data.refresh_token);
-      }
+      sessionStorage.setItem("alteryx_workspace_name", workspace);
       sessionStorage.setItem("connected", "true");
 
-      startTimer?.("/apps");
-      navigate("/apps");
+      // Temporarily bypass access token validation and proceed directly.
+      // The actual token-based validation will be implemented later.
+      startTimer?.("/convert");
+      navigate("/convert");
     } catch (err: any) {
-      setError(err?.message || "Connection failed. Please check your token and try again.");
+      setError(err?.message || "Unable to continue. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -78,12 +65,19 @@ export default function ConnectPage() {
             type="text"
             placeholder="e.g. sorim-alteryx-trial-2hcg"
             value={alteryxWorkspaceName}
-            onChange={(e) => { setAlteryxWorkspaceName(e.target.value); setError(""); }}
+            onChange={(e) => {
+              setAlteryxWorkspaceName(e.target.value);
+              setError("");
+            }}
+            onBlur={() => setWorkspaceTouched(true)}
             disabled={loading}
           />
-          <p className="field-hint">
+          {/* <p className="field-hint">
             Visible in the top-right corner of Alteryx One
-          </p>
+          </p> */}
+          {workspaceTouched && trimmedWorkspaceName && !isWorkspaceNameValid && (
+            <p className="field-error">Enter a valid workspace name. The last segment must be exactly 4 alphanumeric characters with both letters and numbers.</p>
+          )}
         </div>
 
         {error && (

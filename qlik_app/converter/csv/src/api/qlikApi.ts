@@ -5,7 +5,7 @@ import axios from "axios";
 
 // Use environment variable for production (set by Render), fallback to localhost for dev
 const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-const REQUEST_TIMEOUT_MS = 10000;
+const REQUEST_TIMEOUT_MS = 30000;
 // const BASE_URL = import.meta.env.VITE_API_URL || "https://qlikai-app-ltmrv.ondigitalocean.app"
 
 // Helper to get auth headers from sessionStorage
@@ -133,6 +133,58 @@ export const validateSharePointUrl = async (sharePointUrl: string) => {
   const res = await axios.post(`${BASE_URL}/validate-sharepoint-url`, {
     sharepoint_url: sharePointUrl,
   });
+  return res.data;
+};
+
+export type AlteryxConvertApproach = "rule-based" | "llm";
+
+const convertTimeoutMs = (_approach: AlteryxConvertApproach) => {
+  return 0; // disable timeout for all conversion modes
+};
+
+export const convertAlteryxWorkflow = async (file: File, approach: AlteryxConvertApproach) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await axios.post(`${BASE_URL}/api/convert/${approach}`, formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+    timeout: convertTimeoutMs(approach),
+  });
+
+  return res.data;
+};
+
+export const uploadCsvPreview = async (yxmdFile: File, csvFile: File) => {
+  const formData = new FormData();
+  formData.append("file", yxmdFile);
+  formData.append("csv", csvFile);
+
+  const res = await axios.post(`${BASE_URL}/api/upload`, formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+    timeout: 60000,
+  });
+
+  return res.data;
+};
+
+export const publishMQuery = async (combinedMQuery: string, datasetName: string) => {
+  const res = await axios.post(
+    `${BASE_URL}/api/migration/publish-mquery`,
+    {
+      combined_mquery: combinedMQuery,
+      dataset_name: datasetName,
+    },
+    {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      timeout: 120000,
+    }
+  );
   return res.data;
 };
 

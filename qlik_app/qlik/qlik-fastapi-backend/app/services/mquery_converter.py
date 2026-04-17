@@ -36,6 +36,7 @@ CHANGES FROM ORIGINAL
 
 from __future__ import annotations
 import re
+import csv
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -91,15 +92,16 @@ _DEFAULT_M_TYPE_FOR_TABLE = "text"
 # ─────────────────────────────────────────────────────────────────────────────
 
 _NAME_TO_M_TYPE: List[tuple] = [
-    (re.compile(r"_date$|^date$|_dt$|_timestamp$", re.I),                       "type date"),
-    (re.compile(r"_datetime$|_created_at$|_updated_at$|_modified_at$", re.I),   "type datetime"),
+    (re.compile(r"_date$|^date$|date$|_dt$|_timestamp$", re.I),                       "type date"),
+    (re.compile(r"_datetime$|datetime$|_created_at$|_updated_at$|_modified_at$", re.I),   "type datetime"),
+    (re.compile(r"(^id$|_id$)", re.I),                                               "Int64.Type"),
     (re.compile(r"^hours_|_hours$|^hrs_|_hrs$|hoursworked|^avghours$|^totalhours$|^avghrs$|^totalhrs$", re.I), "type number"),
-    (re.compile(r"_cost$|_fee$|_bill$|_price$|_rate$|_salary$", re.I),         "type number"),
-    (re.compile(r"_covered$|_expense$|_revenue$|_income$|_tax$|_discount$", re.I), "type number"),
-    (re.compile(r"_amount$", re.I),                                             "type number"),
-    (re.compile(r"_days$|_years$|_count$|_qty$|_quantity$", re.I),              "Int64.Type"),
-    (re.compile(r"_pct$|_percent$|_ratio$|_score$|_weight$", re.I),             "type number"),
-    (re.compile(r"^is_|^has_|^can_|^was_|_flag$|_bool$", re.I),                "type logical"),
+    (re.compile(r"_cost$|_fee$|_bill$|_price$|_rate$|_salary$", re.I),              "type number"),
+    (re.compile(r"_covered$|_expense$|_revenue$|_income$|_tax$|_discount$", re.I),   "type number"),
+    (re.compile(r"_amount$|amount$", re.I),                                          "type number"),
+    (re.compile(r"_days$|_years$|_count$|_qty$|_quantity$|days$|years$|count$|qty$|quantity$", re.I), "Int64.Type"),
+    (re.compile(r"_pct$|_percent$|_ratio$|_score$|_weight$", re.I),                  "type number"),
+    (re.compile(r"^is_|^has_|^can_|^was_|_flag$|_bool$", re.I),                     "type logical"),
 ]
 
 
@@ -1226,6 +1228,20 @@ class MQueryConverter:
         List.Transform(Columns, each {{_, type text}})
     )"""
 
+    def _prepare_schema_step(self, table: Dict[str, Any], fields: List[Dict[str, Any]], previous_step: str, table_name: str, use_as_is: bool = False):
+        if use_as_is:
+            base_transform, transform_final = self._apply_types_as_is(fields, previous_step)
+        else:
+            base_transform, transform_final = self._apply_types(fields, previous_step, table_name)
+        if not base_transform.strip():
+            base_transform, transform_final = self._build_explicit_schema_step(table_name, previous_step)
+            logger.debug(
+                "[_prepare_schema_step] Table '%s': inserted early schema step for '%s'",
+                table_name,
+                previous_step,
+            )
+        return base_transform, transform_final
+
     def _apply_types_as_is(self, fields: List[Dict], previous_step: str):
         pairs = []
         seen_cols = set()
@@ -1349,7 +1365,7 @@ class MQueryConverter:
         """
         SMART 1: For LOAD * tables, infer actual columns from CSV preview.
         Reads first row to extract real column names dynamically.
-        Returns list of {"colname", type text} pairs for M Query.
+        Returns list of column names.
         """
         source_path = table.get("source_path", "")
         if not source_path:
@@ -1375,11 +1391,53 @@ class MQueryConverter:
                         "[_infer_columns_from_csv_preview] Table '%s': Inferred %d columns from CSV",
                         table.get("name", "Unknown"), len(cols)
                     )
-                    return [f'{{"{c}", type text}}' for c in cols]
+                    return cols
         except Exception as e:
             logger.debug("[_infer_columns_from_csv_preview] CSV preview failed: %s", e)
-        
+
+        try:
+            from pathlib import Path
+            clean_path = base_path.strip().strip('"').strip("'")
+            full_path = f"{clean_path}/{source_path}"
+            if Path(full_path).exists():
+                with open(full_path, newline='', encoding='utf-8') as f:
+                    reader = csv.reader(f)
+                    header = next(reader, [])
+                    cols = [c.strip() for c in header if c.strip()]
+                    if cols:
+                        logger.info(
+                            "[_infer_columns_from_csv_preview] Table '%s': Inferred %d columns from CSV via csv.reader",
+                            table.get("name", "Unknown"), len(cols)
+                        )
+                        return cols
+        except Exception as e:
+            logger.debug("[_infer_columns_from_csv_preview] csv.reader preview failed: %s", e)
+
         return []
+
+    def _infer_schema_from_csv_preview(self, table: Dict[str, Any], base_path: str, previous_step: str = "Headers") -> tuple[str, str]:
+        cols = self._infer_columns_from_csv_preview(table, base_path)
+        if not cols:
+            return "", previous_step
+
+        pairs = ",\n        ".join(
+            f'{{"{c}", {_infer_type_from_name(c)}}}'
+            for c in cols
+        )
+        transform = (
+            f",\n"
+            f"    TypedTable = Table.TransformColumnTypes(\n"
+            f"        {previous_step},\n"
+            f"        {{\n"
+            f"        {pairs}\n"
+            f"        }}\n"
+            f"    )"
+        )
+        logger.info(
+            "[_infer_schema_from_csv_preview] Table '%s': injected inferred schema for %d columns",
+            table.get("name", "Unknown"), len(cols)
+        )
+        return transform, "TypedTable"
     
     def _infer_resident_schema(self, table: Dict[str, Any]) -> List[str]:
         """
@@ -2237,7 +2295,7 @@ class MQueryConverter:
             enc_map = {"UTF-8": 65001, "UTF8": 65001, "UTF-16": 1200, "UTF16": 1200}
             encoding = enc_map.get(enc_str.upper().replace("-", ""), encoding)
 
-        base_transform, transform_final = self._apply_types(fields, "Headers", table_name)
+        base_transform, transform_final = self._prepare_schema_step(table, fields, "Headers", table_name)
         extra_transform, extra_final = self._apply_all_transformations(table, transform_final or "Headers")
         combined_transform = base_transform + extra_transform
         final = extra_final or transform_final or "Headers"
@@ -2273,7 +2331,7 @@ class MQueryConverter:
         if _is_sharepoint_url(base_path):
             opts["table_name"] = table.get("name", "Table")
             site_url, folder_path, filename = self._get_sharepoint_parts(base_path, path, opts)
-            sp_transform, sp_final = self._apply_types_as_is(fields, "Headers")
+            sp_transform, sp_final = self._prepare_schema_step(table, fields, "Headers", table_name, use_as_is=True)
             extra_sp_transform, extra_sp_final = self._apply_all_transformations(table, sp_final or "Headers")
             combined_sp_transform = sp_transform + extra_sp_transform
             final_sp = extra_sp_final or sp_final or "Headers"
@@ -2297,7 +2355,7 @@ class MQueryConverter:
                 transform_step=combined_sp_transform, final_step=final_sp or "Headers",
             )
         elif _is_s3_url(base_path):
-            sp_transform, sp_final = self._apply_types_as_is(fields, "Headers")
+            sp_transform, sp_final = self._prepare_schema_step(table, fields, "Headers", table_name, use_as_is=True)
             extra_sp_transform, extra_sp_final = self._apply_all_transformations(table, sp_final or "Headers")
             combined_sp_transform = sp_transform + extra_sp_transform
             final_sp = extra_sp_final or sp_final or "Headers"
@@ -2317,7 +2375,7 @@ class MQueryConverter:
                             delimiter=delimiter, encoding=encoding,
                             transform_step=combined_sp_transform, final_step=final_sp)
         elif _is_azure_blob_url(base_path):
-            sp_transform, sp_final = self._apply_types_as_is(fields, "Headers")
+            sp_transform, sp_final = self._prepare_schema_step(table, fields, "Headers", table_name, use_as_is=True)
             extra_sp_transform, extra_sp_final = self._apply_all_transformations(table, sp_final or "Headers")
             combined_sp_transform = sp_transform + extra_sp_transform
             final_sp = extra_sp_final or sp_final or "Headers"
@@ -2368,13 +2426,18 @@ class MQueryConverter:
         else:
             # ✅ FIX 4: Ensure fallback for LOAD * tables in local file path too
             if not combined_transform.strip() and (final or "Headers") == "Headers":
-                # No schema generated — inject dynamic fallback
-                combined_transform = self._apply_dynamic_schema("Headers")
-                final = "TypedTable"
-                logger.info(
-                    "[_m_csv] '%s': No transformations - injected dynamic fallback schema (local file)",
-                    table_name
-                )
+                # No schema generated — attempt local CSV preview first, then fallback to dynamic text schema.
+                preview_transform, preview_final = self._infer_schema_from_csv_preview(table, base_path)
+                if preview_transform:
+                    combined_transform = preview_transform
+                    final = preview_final
+                else:
+                    combined_transform = self._apply_dynamic_schema("Headers")
+                    final = "TypedTable"
+                    logger.info(
+                        "[_m_csv] '%s': No transformations - injected dynamic fallback schema (local file)",
+                        table_name
+                    )
             
             if base_path.strip().startswith("["):
                 path_expr = f"{base_path} & \"/{path}\""
@@ -2432,7 +2495,7 @@ class MQueryConverter:
         sheet  = table.get("options", {}).get("sheet", "Sheet1")
         fields = table["fields"]
         table_name = table.get("name", "")
-        base_transform, transform_final = self._apply_types(fields, "Headers", table_name)
+        base_transform, transform_final = self._prepare_schema_step(table, fields, "Headers", table_name)
         extra_transform, extra_final = self._apply_all_transformations(table, transform_final or "Headers")
         combined_transform = base_transform + extra_transform
         final = extra_final or transform_final or "Headers"
@@ -2462,7 +2525,7 @@ class MQueryConverter:
             opts = table.get("options", {})
             opts["table_name"] = table.get("name", "Table")
             site_url, folder_path, filename = self._get_sharepoint_parts(base_path, path, opts)
-            sp_transform, sp_final = self._apply_types_as_is(fields, "Headers")
+            sp_transform, sp_final = self._prepare_schema_step(table, fields, "Headers", table_name, use_as_is=True)
             extra_sp_transform, extra_sp_final = self._apply_all_transformations(table, sp_final or "Headers")
             combined_sp_transform = sp_transform + extra_sp_transform
             final_sp = extra_sp_final or sp_final or "Headers"
@@ -2571,7 +2634,7 @@ class MQueryConverter:
         csv_path = re.sub(r"\.qvd$", ".csv", path, flags=re.IGNORECASE)
         fields   = table["fields"]
         table_name = table.get("name", "")
-        base_transform, transform_final = self._apply_types(fields, "Headers", table_name)
+        base_transform, transform_final = self._prepare_schema_step(table, fields, "Headers", table_name)
         extra_transform, extra_final = self._apply_all_transformations(table, transform_final or "Headers")
         combined_transform = base_transform + extra_transform
         final = extra_final or transform_final or "Headers"
@@ -2601,7 +2664,7 @@ class MQueryConverter:
             opts = table.get("options", {})
             opts["table_name"] = table.get("name", "Table")
             site_url, folder_path, filename = self._get_sharepoint_parts(base_path, csv_path, opts)
-            sp_transform, sp_final = self._apply_types_as_is(fields, "Headers")
+            sp_transform, sp_final = self._prepare_schema_step(table, fields, "Headers", table_name, use_as_is=True)
             extra_sp_transform, extra_sp_final = self._apply_all_transformations(table, sp_final or "Headers")
             combined_sp_transform = sp_transform + extra_sp_transform
             final_sp = extra_sp_final or sp_final or "Headers"
@@ -2676,7 +2739,7 @@ class MQueryConverter:
         delimiter = opts.get("delimiter", ",")
         encoding  = 65001
         table_name = table.get("name", "")
-        base_transform, transform_final = self._apply_types(fields, "Headers", table_name)
+        base_transform, transform_final = self._prepare_schema_step(table, fields, "Headers", table_name)
         extra_transform, extra_final = self._apply_all_transformations(table, transform_final or "Headers")
         combined_transform = base_transform + extra_transform
         last_step = extra_final or transform_final or "Headers"
@@ -2792,7 +2855,7 @@ class MQueryConverter:
         else:
             select_step = ""
             intermediate = source_reference
-        base_transform, transform_final = self._apply_types(fields, intermediate, table_name)
+        base_transform, transform_final = self._prepare_schema_step(table, fields, intermediate, table_name)
         extra_transform, extra_final = self._apply_all_transformations(table, transform_final or intermediate)
         combined_transform = select_step + base_transform + extra_transform
         final = extra_final or transform_final or intermediate
@@ -2859,7 +2922,7 @@ class MQueryConverter:
             select_step = ""
             intermediate = combined_step
 
-        base_transform, transform_final = self._apply_types(fields, intermediate, table_name)
+        base_transform, transform_final = self._prepare_schema_step(table, fields, intermediate, table_name)
         extra_transform, extra_final = self._apply_all_transformations(table, transform_final or intermediate)
         combined_transform = base_transform + select_step + extra_transform
         final = extra_final or transform_final or intermediate

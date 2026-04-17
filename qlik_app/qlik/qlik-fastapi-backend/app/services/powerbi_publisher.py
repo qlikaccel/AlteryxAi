@@ -70,7 +70,29 @@ def publish_semantic_model(
         return {"success": False, "error": "POWERBI_WORKSPACE_ID not set"}
     if db_connection_string:
         tables_m = _rewrite_for_db_connect(tables_m, db_connection_string)
-    token = access_token or _acquire_sp_token()
+
+    token = access_token or ""
+    auth_error = ""
+    if not token:
+        token, auth_error = _acquire_sp_token()
+
+    if not token:
+        cached_token = get_cached_user_token()
+        if cached_token:
+            logger.info("[Auth] Using cached user token")
+            token = cached_token
+
+    if not token and _powerbi_sp_configured():
+        return {
+            "success": False,
+            "error": (
+                "Power BI service principal authentication failed. "
+                "Check POWERBI_CLIENT_ID, POWERBI_CLIENT_SECRET, POWERBI_TENANT_ID, "
+                "and verify the app registration has the required permissions. "
+                + (f"Details: {auth_error}" if auth_error else "")
+            ),
+        }
+
     return _Publisher(workspace_id=workspace_id, access_token=token).publish(
         dataset_name, tables_m, relationships, data_source_path,
         qlik_fields_map=qlik_fields_map or {},
@@ -81,9 +103,17 @@ def publish_semantic_model(
 # Auth
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _powerbi_sp_configured() -> bool:
+    return bool(
+        os.getenv("POWERBI_TENANT_ID", "")
+        and os.getenv("POWERBI_CLIENT_ID", "")
+        and os.getenv("POWERBI_CLIENT_SECRET", "")
+    )
+
+
 def _acquire_sp_token(
     scope: str = "https://analysis.windows.net/powerbi/api/.default",
-) -> str:
+) -> (str, str):
     try:
         import msal
         tenant_id     = os.getenv("POWERBI_TENANT_ID", "")
@@ -91,7 +121,7 @@ def _acquire_sp_token(
         client_secret = os.getenv("POWERBI_CLIENT_SECRET", "")
         if not all([tenant_id, client_id, client_secret]):
             logger.warning("[Auth] SP credentials missing from environment")
-            return ""
+            return "", "SP credentials missing from environment"
         app = msal.ConfidentialClientApplication(
             client_id,
             authority=f"https://login.microsoftonline.com/{tenant_id}",
@@ -101,12 +131,13 @@ def _acquire_sp_token(
         token = result.get("access_token", "")
         if token:
             logger.info("[Auth] SP token acquired: %s", scope)
-        else:
-            logger.warning("[Auth] SP token failed: %s", result.get("error_description"))
-        return token
+            return token, ""
+        error_description = result.get("error_description") or result.get("error") or "SP token acquisition failed"
+        logger.warning("[Auth] SP token failed: %s", error_description)
+        return "", error_description
     except Exception as exc:
         logger.warning("[Auth] SP token error: %s", exc)
-        return ""
+        return "", str(exc)
 
 
 def initiate_device_code_flow() -> Dict[str, Any]:

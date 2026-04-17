@@ -996,7 +996,7 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
 
     # ── Step 2: Parse M Query / LoadScript into table list ───────────────────
     try:
-        from pbit_generator import parse_combined_mquery
+        from app.services.pbit_generator import parse_combined_mquery
 
         # Prefer regenerating from raw_script whenever it is available.
         # The frontend may carry an older combined_mquery string produced before

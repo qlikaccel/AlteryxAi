@@ -385,6 +385,112 @@ def test_resident_schema_injection_preserves_numeric_types_for_hour_fields():
     assert '{"total_days", Int64.Type}' in m_expression
 
 
+def test_camel_case_column_name_type_inference_for_qlik_fields_map():
+    converter = MQueryConverter()
+    converter.all_tables_list = {
+        "SalesTable": {
+            "options": {
+                "qlik_columns": ["CustomerID", "SalesAmount", "TotalQuantity", "OrderDate"]
+            }
+        }
+    }
+    converter.qlik_fields_map = {
+        "SalesTable": ["CustomerID", "SalesAmount", "TotalQuantity", "OrderDate"]
+    }
+
+    schema_step, final_step = converter._build_explicit_schema_step("SalesTable", "Headers")
+
+    assert '{"CustomerID", Int64.Type}' in schema_step
+    assert '{"SalesAmount", type number}' in schema_step
+    assert '{"TotalQuantity", Int64.Type}' in schema_step
+    assert '{"OrderDate", type date}' in schema_step
+    assert final_step == "TypedTable"
+
+
+def test_csv_schema_is_injected_before_filter_operations():
+    converter = MQueryConverter()
+    table = {
+        "name": "Sales",
+        "source_type": "csv",
+        "source_path": "sales.csv",
+        "fields": [
+            {"name": "SalesAmount", "expression": "SalesAmount", "type": "number"},
+            {"name": "Region", "expression": "Region", "type": "string"},
+        ],
+        "options": {
+            "where_condition": "[SalesAmount] > 1000"
+        },
+    }
+
+    m_expression, _ = converter._m_csv(table, "C:/data", None)
+    assert "TypedTable" in m_expression
+    assert "Table.SelectRows" in m_expression
+    assert m_expression.index("TypedTable") < m_expression.index("Table.SelectRows")
+
+
+def test_camel_case_column_name_type_inference_for_qlik_fields_map():
+    converter = MQueryConverter()
+    converter.all_tables_list = {
+        "SalesTable": {
+            "options": {
+                "qlik_columns": ["CustomerID", "SalesAmount", "TotalQuantity", "OrderDate"]
+            }
+        }
+    }
+    converter.qlik_fields_map = {
+        "SalesTable": ["CustomerID", "SalesAmount", "TotalQuantity", "OrderDate"]
+    }
+
+    schema_step, final_step = converter._build_explicit_schema_step("SalesTable", "Headers")
+
+    assert '{"CustomerID", Int64.Type}' in schema_step
+    assert '{"SalesAmount", type number}' in schema_step
+    assert '{"TotalQuantity", Int64.Type}' in schema_step
+    assert '{"OrderDate", type date}' in schema_step
+    assert final_step == "TypedTable"
+
+
+def test_csv_schema_is_injected_before_filter_operations():
+    converter = MQueryConverter()
+    table = {
+        "name": "Sales",
+        "source_type": "csv",
+        "source_path": "sales.csv",
+        "fields": [
+            {"name": "SalesAmount", "expression": "SalesAmount", "type": "number"},
+            {"name": "Region", "expression": "Region", "type": "string"},
+        ],
+        "options": {
+            "where_condition": "[SalesAmount] > 1000"
+        },
+    }
+
+    m_expression, _ = converter._m_csv(table, "C:/data", None)
+    assert "TypedTable" in m_expression
+    assert "Table.SelectRows" in m_expression
+    assert m_expression.index("TypedTable") < m_expression.index("Table.SelectRows")
+
+
+def test_csv_preview_fallback_infers_schema_for_local_files(tmp_path):
+    csv_path = tmp_path / "sales.csv"
+    csv_path.write_text("CustomerID,SalesAmount,Quantity\n1,100,2\n", encoding="utf-8")
+
+    converter = MQueryConverter()
+    table = {
+        "name": "Sales",
+        "source_type": "csv",
+        "source_path": str(csv_path.name),
+        "fields": [],
+        "options": {}
+    }
+
+    m_expression, _ = converter._m_csv(table, str(tmp_path), None)
+    assert "TypedTable" in m_expression
+    assert '{"CustomerID", Int64.Type}' in m_expression or '{"CustomerID", type number}' in m_expression
+    assert '{"SalesAmount", type number}' in m_expression
+    assert '{"Quantity", Int64.Type}' in m_expression
+
+
 def test_alias_preserving_transform_is_emitted():
     converter = MQueryConverter()
     table = {

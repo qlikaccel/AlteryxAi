@@ -54,6 +54,7 @@ export default function SummaryPage() {
   // ──────────────────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<"sourceTypes" | "summary" | "appSpec" | "mquery" | "er">("sourceTypes");
   const [sourceTypesTab, setSourceTypesTab] = useState<"database" | "scripts" | "csv" | null>(null);
+  const [mqueryTab, setMqueryTab] = useState<"script" | "generated">("script");
 
   // LoadScript and MQuery Display States
   const [loadscript, setLoadscript] = useState<string>("");
@@ -560,6 +561,7 @@ export default function SummaryPage() {
       const convertResult = await convertResponse.json();
       if (convertResult.status !== "success" && convertResult.status !== "partial_success") throw new Error(convertResult.message || "Failed to convert to M Query");
       setMquery(convertResult.m_query || "");
+      setMqueryTab("generated");
     } catch (error: any) {
       setLoadscriptError(error.message || "Failed to convert to M Query");
     } finally { setConvertingToMquery(false); }
@@ -1244,7 +1246,24 @@ export default function SummaryPage() {
 
                     {loadscriptError && <div className="error-message">⚠️ {loadscriptError}</div>}
 
-                    <div className="loadscript-displays">
+                    <div className="summary-tab-bar" style={{ marginBottom: 18 }}>
+                      <button
+                        type="button"
+                        className={`tab-button ${mqueryTab === "script" ? "active" : ""}`}
+                        onClick={() => setMqueryTab("script")}
+                      >
+                        📜 Alteryx Script
+                      </button>
+                      <button
+                        type="button"
+                        className={`tab-button ${mqueryTab === "generated" ? "active" : ""}`}
+                        onClick={() => setMqueryTab("generated")}
+                      >
+                        🧩 Generated MQuery
+                      </button>
+                    </div>
+
+                    {mqueryTab === "script" && (
                       <div className="display-section loadscript-display">
                         <h4>Qlik LoadScript</h4>
                         {!loadscript && <div className="empty-display">Select a table to auto-load its LoadScript</div>}
@@ -1253,7 +1272,7 @@ export default function SummaryPage() {
                             <div className="script-content"><pre>{loadscript}</pre></div>
 
                             {isCsvLoadscript && (
-                              <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "10px", padding: "10px 12px", background: isValidUrl ? "#ecfdf5" : "#fef2f2", borderRadius: "6px", border: isValidUrl ? "1px solid #86efac" : "1px solid #fecaca", position: "relative" }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "10px", padding: "10px 12px", background: isValidUrl ? "#ecfdf5" : "#fef2f2", borderRadius: "6px", border: isValidUrl ? "1px solid #86efac" : "1px solid #fecaca" }}>
                                 <label style={{ fontSize: "12px", fontWeight: 600, color: "#0369a1" }}>
                                   📁 Data Source Path <span style={{ fontWeight: 400, color: "#64748b" }}>(required for CSV)</span>
                                 </label>
@@ -1319,7 +1338,9 @@ export default function SummaryPage() {
                           </>
                         )}
                       </div>
+                    )}
 
+                    {mqueryTab === "generated" && (
                       <div className="display-section mquery-display">
                         <h4>Generated M Query</h4>
                         {!mquery && !convertingToMquery && <div className="empty-display">M Query will appear here after conversion</div>}
@@ -1328,7 +1349,16 @@ export default function SummaryPage() {
                             <div className="script-content"><pre>{mquery}</pre></div>
                             <div className="mquery-button-group">
                               <button
-                                onClick={() => { const element = document.createElement("a"); const file = new Blob([mquery], { type: "text/plain" }); element.href = URL.createObjectURL(file); element.download = `${selectedTable || "query"}_mquery.m`; document.body.appendChild(element); element.click(); document.body.removeChild(element); }}
+                                onClick={() => {
+                                  const element = document.createElement("a");
+                                  const file = new Blob([mquery], { type: "text/plain" });
+                                  element.href = URL.createObjectURL(file);
+                                  element.download = `${selectedTable || "query"}_mquery.m`;
+                                  document.body.appendChild(element);
+                                  element.click();
+                                  document.body.removeChild(element);
+                                  URL.revokeObjectURL(element.href);
+                                }}
                                 className="download-btn"
                               >
                                 ⬇️ Download M Query
@@ -1345,7 +1375,7 @@ export default function SummaryPage() {
                           </>
                         )}
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               )}
