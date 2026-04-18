@@ -73,9 +73,11 @@ from pydantic import BaseModel
 
 # Project imports
 from app.schemas.auth_schema import LoginPayload, router as login_router, validate_login as validate_login_handler
-from app.api.v1.endpoints.migration import router as migration_router
+# REMOVED: migration_router - not used by Connect/Discovery pages
+# from app.api.v1.endpoints.migration import router as migration_router
 from app.api.v1.endpoints.workflows import router as workflows_router
-from app.api.v1.endpoints.workflows_html import router as workflows_html_router
+# REMOVED: workflows_html_router - not used by Connect/Discovery pages
+# from app.api.v1.endpoints.workflows_html import router as workflows_html_router
 from app.services.mquery_converter import validate_sharepoint_url_strict
 from app.services.qlik_websocket_client import QlikWebSocketClient
 from app.services.qlik_client import QlikClient
@@ -158,13 +160,70 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ==================== BACKGROUND TOKEN REFRESH ====================
+# Periodically refresh tokens to keep them fresh (30-second interval)
+
+_token_refresh_thread = None
+_token_refresh_stop = False
+
+
+def _background_token_refresher():
+    """Background thread: refresh tokens every 30 seconds (lightweight)."""
+    from app.utils.token_manager import TokenManager
+    import time
+    
+    logger.info("🔄 Background token refresher started (30-sec interval)")
+    
+    while not _token_refresh_stop:
+        try:
+            time.sleep(30)  # Check every 30 seconds
+            
+            # Try to load stored tokens
+            stored = TokenManager._load_tokens_from_storage()
+            access_token = stored.get("access_token")
+            refresh_token = stored.get("refresh_token")
+            expires_at = stored.get("expires_at")
+            
+            if not access_token or not refresh_token:
+                continue  # No stored tokens, skip
+            
+            # Check if token is expiring soon (< 60 seconds)
+            if expires_at and time.time() < expires_at - 60:
+                continue  # Token still good, no refresh needed
+            
+            logger.info("🔄 [Background] Token expiring soon, refreshing...")
+            try:
+                new_access, new_refresh = TokenManager.refresh_token(refresh_token, max_retries=2)
+                logger.info("✅ [Background] Token refreshed successfully")
+            except Exception as e:
+                logger.warning(f"⚠️  [Background] Token refresh failed: {e}")
+                continue
+        
+        except Exception as e:
+            logger.error(f"❌ [Background] Unexpected error: {e}")
+            continue
+
+
+@app.on_event("startup")
+def start_background_token_refresh():
+    """Start background token refresh on app startup."""
+    global _token_refresh_thread
+    _token_refresh_thread = threading.Thread(target=_background_token_refresher, daemon=True)
+    _token_refresh_thread.start()
+    logger.info("✅ Background token refresh thread started")
+
+
 # ✅ Add the import here, with the other project imports (after app is defined)
 from routers.alteryx_router import router as alteryx_router
 
 app.include_router(login_router)
-app.include_router(migration_router)
 app.include_router(workflows_router)
-app.include_router(workflows_html_router)
+# REMOVED: migration_router - not used by Connect/Discovery pages only
+# from app.api.v1.endpoints.migration import router as migration_router
+# app.include_router(migration_router)
+# REMOVED: workflows_html_router - not used by Connect/Discovery pages only
+# from app.api.v1.endpoints.workflows_html import router as workflows_html_router
+# app.include_router(workflows_html_router)
 app.include_router(alteryx_router)   # ✅ added here
 
 # ==================== DEPENDENCY INJECTION ====================

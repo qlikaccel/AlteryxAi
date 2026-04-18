@@ -47,13 +47,19 @@ class TokenManager:
         return {}
     
     @staticmethod
-    def _save_tokens_to_storage(access_token: str, refresh_token: Optional[str]) -> None:
+    def _save_tokens_to_storage(access_token: str, refresh_token: Optional[str], expires_in: Optional[int] = None) -> None:
         """Save tokens to persistent storage with metadata."""
         try:
+            # Calculate expires_at: now + expires_in - 60 second buffer
+            expires_at = None
+            if expires_in:
+                expires_at = time.time() + expires_in - 60
+            
             data = {
                 "access_token": access_token,
                 "refresh_token": refresh_token,
                 "timestamp": time.time(),
+                "expires_at": expires_at,
                 "access_token_exp": TokenManager._get_token_expiry(access_token),
                 "refresh_token_exp": TokenManager._get_token_expiry(refresh_token),
             }
@@ -78,9 +84,9 @@ class TokenManager:
     def get_valid_tokens() -> Tuple[str, Optional[str]]:
         """
         Get valid tokens, trying multiple sources in order:
-        1. Persistent storage (recently refreshed tokens)
-        2. Environment variables (.env file)
-        3. Raise error if none found
+        1. Persistent storage (recently refreshed tokens) - BOTH tokens from storage
+        2. Environment variables (access only, refresh MUST be from storage)
+        3. Raise error if no refresh token found
         """
         logger.info("🔍 Checking for valid tokens...")
         
@@ -90,24 +96,27 @@ class TokenManager:
             access = stored["access_token"]
             refresh = stored["refresh_token"]
             
-            if not TokenManager._is_token_expired(access, buffer=30):
-                logger.info("✅ Using access token from storage")
-                return access, refresh
-            else:
-                logger.info("⏰ Stored access token expired, will refresh")
-                return access, refresh
+            logger.info("✅ Using tokens from persistent storage")
+            return access, refresh
         
-        # 2. Fall back to environment variables
-        access = os.getenv("ALTERYX_ACCESS_TOKEN", "")
-        refresh = os.getenv("ALTERYX_REFRESH_TOKEN", "")
+        # 2. Fallback: Use env access token ONLY if storage unavailable
+        # BUT refresh_token MUST come from storage (never from env)
+        access_env = os.getenv("ALTERYX_ACCESS_TOKEN", "")
+        refresh_stored = stored.get("refresh_token")
         
-        if not access and not refresh:
-            error = "❌ No tokens found. Set ALTERYX_REFRESH_TOKEN in .env"
-            logger.error(error)
-            raise ValueError(error)
+        if not refresh_stored:
+            # If no refresh token in storage, try env (legacy support)
+            refresh_env = os.getenv("ALTERYX_REFRESH_TOKEN", "")
+            if not refresh_env:
+                error = "❌ No refresh token found. Set ALTERYX_REFRESH_TOKEN in .env or login via OAuth"
+                logger.error(error)
+                raise ValueError(error)
+            logger.info("✅ Using tokens from environment variables (legacy)")
+            return access_env, refresh_env
         
-        logger.info("✅ Using tokens from environment variables")
-        return access, refresh
+        # Use env access token + stored refresh token
+        logger.info("✅ Using access token from env + refresh token from storage")
+        return access_env or "", refresh_stored
     
     @staticmethod
     def _is_token_expired(token: Optional[str], buffer: int = 30) -> bool:
@@ -164,12 +173,13 @@ class TokenManager:
                         body = resp.json()
                         new_access = body.get("access_token", "")
                         new_refresh = body.get("refresh_token")
+                        expires_in = body.get("expires_in")
                         
                         if new_access:
                             logger.info(f"✅ Token refresh successful on attempt {attempt}")
                             
-                            # Persist the new tokens
-                            TokenManager._save_tokens_to_storage(new_access, new_refresh)
+                            # Persist the new tokens (including both access and refresh)
+                            TokenManager._save_tokens_to_storage(new_access, new_refresh, expires_in)
                             
                             return new_access, new_refresh
                         else:
@@ -224,14 +234,28 @@ class TokenManager:
     def get_fresh_access_token(current_access: str, refresh_token: str) -> Tuple[str, Optional[str]]:
         """
         Get a fresh access token if needed.
+        ALWAYS loads latest refresh_token from storage (not parameter).
+        
         Returns: (access_token, refresh_token)
         """
-        if not TokenManager._is_token_expired(current_access, buffer=30):
-            logger.debug("✅ Current access token is still valid")
-            return current_access, refresh_token
+        # Check expires_at from storage
+        stored = TokenManager._load_tokens_from_storage()
+        expires_at = stored.get("expires_at")
         
-        logger.info("🔄 Access token expired, refreshing...")
-        return TokenManager.refresh_token(refresh_token)
+        # Use stored refresh_token, fallback to parameter if not available
+        latest_refresh = stored.get("refresh_token") or refresh_token
+        
+        # Check if token is still valid using expires_at
+        if expires_at and time.time() < expires_at:
+            logger.debug(f"✅ Access token still valid for {expires_at - time.time():.0f}s")
+            return current_access, latest_refresh
+        
+        # Token expired or expiring soon - refresh it
+        logger.info("🔄 Token expired or expiring, refreshing...")
+        if not latest_refresh:
+            raise ValueError("No refresh token available for token refresh")
+        
+        return TokenManager.refresh_token(latest_refresh)
     
     @staticmethod
     def validate_refresh_token(refresh_token: str) -> bool:

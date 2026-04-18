@@ -1,3 +1,19 @@
+/* ============================================================================
+   DISCOVERY PAGE STYLES (AppsPage)
+   Clean, well-aligned layout for workflows and apps discovery
+   ============================================================================ */
+
+/* ── MAIN CONTAINER ─────────────────────────────────────────────────────── */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 28px 40px;
+  background: #ffffff;
+  min-height: 100vh;
+  overflow-y: auto;
+}
+
 .qlik-app-container {
   display: flex;
   flex-direction: column;
@@ -5,307 +21,448 @@
   background: #ffffff;
 }
 
-/* ============= STEPPER NAVIGATION ============= */
-.qlik-stepper {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 20px 40px;
-  background: #f5f5f5;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.qlik-step-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  position: relative;
-  cursor: pointer;
-  opacity: 0.5;
-  transition: opacity 0.2s;
-}
-
-.qlik-step-item.active,
-.qlik-step-item.active-current {
-  opacity: 1;
-}
-
-.qlik-step-item::after {
-  content: "";
-  position: absolute;
-  right: -12px;
-  width: 1px;
-  height: 24px;
-  background: #d0d0d0;
-}
-
-.qlik-step-item:last-child::after {
-  display: none;
-}
-
-.qlik-step-icon {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 12px;
-  background: #e8e8e8;
-  color: #666;
-}
-
-.qlik-step-item.active .qlik-step-icon {
-  background: #c0d9e8;
-  color: #0066cc;
-}
-
-.qlik-step-item.active-current .qlik-step-icon {
-  background: #7a4b9e;
-  color: white;
-}
-
-.qlik-step-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.qlik-step-label {
-  font-weight: 600;
-  font-size: 12px;
-  color: #333;
-}
-
-
-/* ============= MAIN CONTENT ============= */
-.qlik-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 32px 40px;
-  overflow-y: auto;
-}
-
+/* ── HEADER SECTION ─────────────────────────────────────────────────────── */
 .qlik-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 28px;
-  gap: 20px;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* Header left section */
+.qlik-header-left-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 300px;
 }
 
 .qlik-header-left {
-  flex: 0;
-}
-
-.qlik-title {
-  font-size: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
   font-weight: 600;
-  color: #333;
-  margin: 0;
+  color: #1f2937;
 }
 
+/* Platform badge */
+.platform-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.alteryx-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+/* Workspace pill */
+.workspace-pill {
+  display: inline-flex;
+  align-items: center;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  color: #0369a1;
+  border-radius: 16px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Business doc button */
+.business-doc-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #6b7280;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.business-doc-icon-btn:hover:not(:disabled) {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+  color: #374151;
+}
+
+.business-doc-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.business-doc-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.business-doc-spinner {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #e5e7eb;
+  border-top-color: #0066cc;
+  border-radius: 50%;
+  animation: spin-icon 0.8s linear infinite;
+}
+
+@keyframes spin-icon {
+  to { transform: rotate(360deg); }
+}
+
+/* Header right section */
 .qlik-header-right {
   display: flex;
   align-items: center;
   gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
-.qlik-search {
-  width: 280px;
-  padding: 8px 12px;
-  border: 1px solid #d0d0d0;
-  border-radius: 4px;
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Search box */
+.apps-search {
+  padding: 8px 14px;
   font-size: 13px;
-  color: #333;
-  background: white;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.qlik-search::placeholder {
-  color: #999;
-}
-
-.qlik-search:focus {
+  color: #1f2937;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
   outline: none;
+  transition: all 0.2s ease;
+  min-width: 200px;
+}
+
+.apps-search::placeholder {
+  color: #9ca3af;
+}
+
+.apps-search:focus {
   border-color: #0066cc;
   box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+  background: #ffffff;
 }
 
-/* ============= WORKFLOWS GRID ============= */
-.qlik-grid {
+/* Analysis time badge */
+.timer-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: #f0f4ff;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1d4ed8;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── ERROR BANNER ───────────────────────────────────────────────────────── */
+.error-banner {
+  padding: 12px 16px;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ── CARD CONTAINER ────────────────────────────────────────────────────── */
+.card-container {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
+  animation: fadeIn 0.3s ease;
 }
 
-.qlik-card {
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Individual card */
+.app-card {
   display: flex;
   flex-direction: column;
-  background: #f0f5ff;
-  border: 1px solid #d0d9e8;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 20px;
-  cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  overflow: hidden;
 }
 
-.qlik-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  border-color: #b0c4de;
+.app-card:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
   transform: translateY(-2px);
 }
 
-.qlik-card-icon {
+/* Card center (icon area) */
+.card-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 70px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  background: #f8f9fa;
+  border: 1px solid #e5e7eb;
+}
+
+.card-center img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  padding: 6px;
+}
+
+/* Qlik image */
+.qlik-img {
   width: 48px;
   height: 48px;
-  margin-bottom: 16px;
-  color: #0066cc;
-  opacity: 0.7;
+  opacity: 0.8;
 }
 
-.qlik-card-icon svg {
+/* Alteryx workflow icon */
+.alteryx-workflow-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 112, 192, 0.15);
+  background: #ffffff;
+  border: 1px solid #dbeafe;
+}
+
+.alteryx-workflow-icon svg {
   width: 100%;
   height: 100%;
+  display: block;
 }
 
-.qlik-card-title {
+/* Alteryx card styling */
+.app-card.alteryx-card {
+  border-color: #bae6fd;
+  background: #ffffff;
+}
+
+.app-card.alteryx-card:hover {
+  border-color: #0ea5e9;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(0, 149, 218, 0.15);
+}
+
+/* Card footer */
+.card-footer {
+  display: flex;
+  /* flex-direction: column; */
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
+  flex: 1;
+  justify-content: space-between;
+}
+
+.footer-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.app-label {
   font-size: 14px;
   font-weight: 600;
-  color: #333;
-  margin: 0 0 12px 0;
+  color: #1f2937;
   line-height: 1.4;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.qlik-card-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+.last-modified {
   font-size: 12px;
+  color: #9ca3af;
 }
 
-.qlik-card-date {
-  color: #666;
+/* Right actions */
+.right-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
-.qlik-card-tools {
+.badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  background: #0066cc;
-  color: white;
-  border-radius: 50%;
-  font-weight: 600;
+  padding: 4px 10px;
+  background: #f0f4ff;
+  border: 1px solid #dbeafe;
+  border-radius: 4px;
   font-size: 11px;
+  font-weight: 600;
+  color: #1d4ed8;
+  min-width: 28px;
 }
 
-.qlik-card-footer {
+.fav-icon {
+  font-size: 18px;
+  cursor: pointer;
+  transition: transform 0.2s ease, color 0.2s ease;
+  color: #d1d5db;
+  padding: 4px 6px;
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid #d0d9e8;
+  align-items: center;
+  justify-content: center;
 }
 
-.qlik-card-star,
-.qlik-card-more {
-  background: transparent;
-  border: none;
-  color: #999;
+.fav-icon:hover {
+  color: #f59e0b;
+  transform: scale(1.1);
+}
+
+.dot-menu {
   font-size: 16px;
   cursor: pointer;
+  color: #d1d5db;
   padding: 4px 6px;
-  transition: color 0.2s;
+  transition: color 0.2s ease;
 }
 
-.qlik-card-star:hover,
-.qlik-card-more:hover {
-  color: #0066cc;
+.dot-menu:hover {
+  color: #9ca3af;
 }
 
-/* ============= STATE DISPLAYS ============= */
-.qlik-loading,
-.qlik-error,
-.qlik-empty {
+/* ── EMPTY STATE ────────────────────────────────────────────────────────── */
+.empty-state {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 300px;
+  padding: 80px 20px;
+  color: #9ca3af;
   gap: 16px;
+  min-height: 400px;
 }
 
-.qlik-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid #e0e0e0;
-  border-top: 3px solid #0066cc;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+.empty-icon {
+  font-size: 56px;
+  opacity: 0.7;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.qlik-loading p,
-.qlik-error p,
-.qlik-empty p {
+.empty-state p {
   font-size: 14px;
-  color: #666;
+  text-align: center;
   margin: 0;
+  color: #6b7280;
+  max-width: 400px;
+  line-height: 1.6;
 }
 
-.qlik-error p {
-  color: #d32f2f;
-  font-weight: 500;
+.empty-state strong {
+  color: #1f2937;
+  font-weight: 600;
 }
 
-.qlik-retry-btn {
-  margin-top: 12px;
-  padding: 8px 16px;
-  background: #0066cc;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.2s;
+/* ── DISABLED STATE ────────────────────────────────────────────────────── */
+.app-card.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
-.qlik-retry-btn:hover {
-  background: #0052a3;
+.app-card.disabled:hover {
+  transform: none;
+  box-shadow: none;
 }
 
-/* ============= RESPONSIVE DESIGN ============= */
+/* Platform badge in header */
+.platform-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 6px;
+}
+
+.alteryx-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+/* Workspace pill */
+.workspace-pill {
+  display: inline-block;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  color: #0369a1;
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  margin-left: 8px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ── RESPONSIVE DESIGN ──────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
-  .qlik-grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  .wrap {
+    padding: 20px 28px;
+    gap: 20px;
+  }
+
+  .card-container {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 16px;
-  }
-
-  .qlik-stepper {
-    padding: 16px 24px;
-    gap: 4px;
-  }
-
-  .qlik-step-item {
-    padding: 0 12px;
-  }
-
-  .qlik-content {
-    padding: 24px;
   }
 
   .qlik-header {
@@ -313,214 +470,128 @@
     align-items: flex-start;
   }
 
-  .qlik-search {
+  .qlik-header-right {
     width: 100%;
+    justify-content: space-between;
+  }
+
+  .apps-search {
+    flex: 1;
+    min-width: 180px;
   }
 }
 
-@media (max-width: 640px) {
-  .qlik-grid {
+@media (max-width: 768px) {
+  .wrap {
+    padding: 16px 20px;
+    gap: 16px;
+  }
+
+  .card-container {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+  }
+
+  .qlik-header {
+    padding-bottom: 12px;
+    gap: 12px;
+  }
+
+  .qlik-header-left-group {
+    width: 100%;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .qlik-header-right {
+    width: 100%;
+  }
+
+  .tools {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .apps-search {
+    width: 100%;
+  }
+
+  .timer-badge {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .app-card {
+    padding: 16px;
+  }
+
+  .card-center {
+    height: 50px;
+    margin-bottom: 12px;
+  }
+
+  .qlik-img {
+    width: 40px;
+    height: 40px;
+  }
+
+  .alteryx-workflow-icon {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+@media (max-width: 480px) {
+  .wrap {
+    padding: 12px 16px;
+    gap: 12px;
+  }
+
+  .card-container {
     grid-template-columns: 1fr;
     gap: 12px;
   }
 
-  .qlik-stepper {
-    overflow-x: auto;
-    padding: 12px 16px;
+  .qlik-header-left {
+    font-size: 14px;
   }
 
-  .qlik-step-item {
-    padding: 0 8px;
-    font-size: 12px;
-  }
-
-  .qlik-step-icon {
-    width: 24px;
-    height: 24px;
+  .platform-badge {
     font-size: 10px;
   }
 
-  .qlik-content {
-    padding: 16px;
+  .workspace-pill {
+    font-size: 10px;
   }
 
-  .qlik-title {
-    font-size: 18px;
-  }
-
-  .qlik-search {
+  .apps-search {
     font-size: 12px;
+    padding: 6px 10px;
   }
 
-  .qlik-card {
-    padding: 16px;
+  .timer-badge {
+    font-size: 10px;
+  }
+
+  .app-card {
+    padding: 14px;
+  }
+
+  .app-label {
+    font-size: 13px;
+  }
+
+  .last-modified {
+    font-size: 11px;
+  }
+
+  .right-actions {
+    gap: 6px;
+  }
+
+  .badge {
+    padding: 3px 8px;
+    font-size: 10px;
   }
 }
-
-
-
-
-/* ── Append to AppsPage.css ──────────────────────────────────────────────── */
-
-/* Platform badge in header */
-.platform-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 20px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-right: 6px;
-}
-
-.alteryx-badge {
-  background: #dbeafe;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
-}
-
-/* Workspace pill */
-.workspace-pill {
-  display: inline-block;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
-  color: #0369a1;
-  border-radius: 20px;
-  padding: 2px 10px;
-  font-size: 10.5px;
-  font-weight: 600;
-  margin-left: 8px;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
-}
-
-/* Alteryx workflow card overrides */
-.app-card.alteryx-card {
-  border-color: rgba(0, 112, 192, 0.25);
-  background: rgba(219, 234, 254, 0.6);
-}
-
-.app-card.alteryx-card:hover {
-  border-color: rgba(0, 112, 192, 0.6);
-  background: rgba(219, 234, 254, 1);
-  box-shadow: 0 20px 34px rgba(0, 70, 140, 0.18);
-}
-
-/* Alteryx workflow icon */
-.alteryx-workflow-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 112, 192, 0.3);
-}
-
-.alteryx-workflow-icon svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* Empty state */
-.empty-state {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  color: #64748b;
-  gap: 12px;
-}
-
-.empty-state .empty-icon { font-size: 48px; }
-.empty-state p { font-size: 14px; text-align: center; margin: 0; }
-
-
-
-
-/* ── Append to AppsPage.css ──────────────────────────────────────────────── */
-
-/* Platform badge in header */
-.platform-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 20px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-right: 6px;
-}
-
-.alteryx-badge {
-  background: #dbeafe;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
-}
-
-/* Workspace pill */
-.workspace-pill {
-  display: inline-block;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
-  color: #0369a1;
-  border-radius: 20px;
-  padding: 2px 10px;
-  font-size: 10.5px;
-  font-weight: 600;
-  margin-left: 8px;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
-}
-
-/* Alteryx workflow card overrides */
-.app-card.alteryx-card {
-  border-color: rgba(0, 112, 192, 0.25);
-  background: rgba(219, 234, 254, 0.6);
-}
-
-.app-card.alteryx-card:hover {
-  border-color: rgba(0, 112, 192, 0.6);
-  background: rgba(219, 234, 254, 1);
-  box-shadow: 0 20px 34px rgba(0, 70, 140, 0.18);
-}
-
-/* Alteryx workflow icon */
-.alteryx-workflow-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 112, 192, 0.3);
-}
-
-.alteryx-workflow-icon svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* Empty state */
-.empty-state {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  color: #64748b;
-  gap: 12px;
-}
-
-.empty-state .empty-icon { font-size: 48px; }
-.empty-state p { font-size: 14px; text-align: center; margin: 0; }

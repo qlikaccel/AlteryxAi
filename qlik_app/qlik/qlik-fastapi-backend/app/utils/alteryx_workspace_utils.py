@@ -100,11 +100,19 @@ def is_token_expired(token: str, buffer_seconds: int = 30) -> bool:
 def ensure_fresh_token(session: AlteryxSession) -> str:
     """
     Ensure we have a valid access token.
+    Always uses the latest refresh token from storage, not session.
     Uses TokenManager for persistence and retry logic.
     """
+    # Try to load latest stored refresh token (in case it was rotated)
+    stored = TokenManager._load_tokens_from_storage()
+    refresh_to_use = stored.get("refresh_token") or session.refresh_token
+    
+    if not refresh_to_use:
+        raise ValueError("No refresh token available for token refresh")
+    
     fresh_access, fresh_refresh = TokenManager.get_fresh_access_token(
         session.access_token,
-        session.refresh_token
+        refresh_to_use
     )
     
     # Update session with fresh tokens

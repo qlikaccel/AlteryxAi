@@ -162,12 +162,13 @@ export default function AppsPage() {
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
 
-  const openSummary = (id: string, name?: string) => {
-    sessionStorage.setItem("appSelected", id);
-    sessionStorage.setItem("appName", name || id);
-    startTimer?.("/summary");
-    nav("/summary", { state: { appId: id, appName: name } });
-  };
+  // Note: openSummary removed - Summary page no longer exists
+  // const openSummary = (id: string, name?: string) => {
+  //   sessionStorage.setItem("appSelected", id);
+  //   sessionStorage.setItem("appName", name || id);
+  //   startTimer?.("/summary");
+  //   nav("/summary", { state: { appId: id, appName: name } });
+  // };
 
   const getRelativeTime = (dateStr?: string) => {
     if (!dateStr) return "Updated —";
@@ -318,10 +319,10 @@ export default function AppsPage() {
               <div
                 key={app.id}
                 className={`app-card ${isDisabled ? "disabled" : ""}`}
-                onClick={() => { if (!isDisabled) openSummary(app.id, app.name); }}
+                // onClick handler removed - Summary page no longer exists
                 role="button"
-                aria-disabled={isDisabled}
-                title={isDisabled ? "No tables available" : "Open summary"}
+                aria-disabled={true}
+                title="Discovery view - select workflows"
               >
                 <div className="card-center">
                   <img src="/qlik-chart.png" className="qlik-img" alt="qlik" />
@@ -358,9 +359,9 @@ export default function AppsPage() {
             <div
               key={wf.id}
               className="app-card alteryx-card"
-              onClick={() => openSummary(wf.id, wf.name)}
+              // onClick handler removed - Summary page no longer exists
               role="button"
-              title="Open workflow summary"
+              title="Discovery view - select workflows"
             >
               <div className="card-center">
                 <div className="alteryx-workflow-icon">
@@ -378,9 +379,7 @@ export default function AppsPage() {
                   <span className="last-modified">{getRelativeTime(wf.lastModifiedDate)}</span>
                 </div>
                 <div className="right-actions">
-                  {wf.runCount !== undefined && (
-                    <span className="badge" title="Run count">{wf.runCount}</span>
-                  )}
+                  
                   <span className="fav-icon" onClick={(e) => { e.stopPropagation(); toggleFav(wf.id); }}>
                     {favourites.includes(wf.id) ? "★" : "☆"}
                   </span>
