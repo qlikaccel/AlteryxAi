@@ -1,5 +1,9 @@
 import "./AppsPage.css";
 import { useEffect, useState } from "react";
+<<<<<<< HEAD
+=======
+import { downloadBusinessSpecificDoc, fetchApps, fetchTables } from "../api/qlikApi";
+>>>>>>> 6d2e72c938931eed8df7a976210f62eda7ecc146
 import { useNavigate } from "react-router-dom";
 import { useWizard } from "../context/WizardContext";
 import LoadingOverlay from "../components/LoadingOverlay/LoadingOverlay";
@@ -13,7 +17,12 @@ export default function AppsPage() {
   const platform = sessionStorage.getItem("platform") || "alteryx_upload";
   const [workflows, setWorkflows] = useState<AlteryxWorkflow[]>([]);
   const [loading, setLoading] = useState(true);
+<<<<<<< HEAD
   const [pageError, setPageError] = useState<string | null>(null);
+=======
+  const [brdDownloading, setBrdDownloading] = useState(false);
+  const [appsError, setAppsError] = useState<string | null>(null);
+>>>>>>> 6d2e72c938931eed8df7a976210f62eda7ecc146
   const [favourites, setFavourites] = useState<string[]>([]);
   const [pageLoadTime, setPageLoadTime] = useState<string | null>(null);
   const [query, setQuery] = useState("");
