@@ -82,11 +82,48 @@ class QlikWebSocketClient:
         Receive response from WebSocket, handling OnConnected and other system messages
         """
         start_time = time.time()
+        skipped_frames = 0
         
         while time.time() - start_time < timeout:
             try:
                 response = self.ws.recv()
-                response_data = json.loads(response)
+                if response is None:
+                    skipped_frames += 1
+                    continue
+
+                if isinstance(response, bytes):
+                    response = response.decode("utf-8", errors="replace")
+
+                if not isinstance(response, str):
+                    skipped_frames += 1
+                    print(f"   Skipping non-text WebSocket frame: {type(response).__name__}")
+                    continue
+
+                raw_response = response.strip()
+                if not raw_response:
+                    skipped_frames += 1
+                    if skipped_frames <= 3:
+                        print("   Received empty WebSocket frame from Qlik Engine")
+
+                    if not getattr(self.ws, "connected", True):
+                        raise ConnectionError(
+                            "Qlik WebSocket closed before returning a JSON-RPC response. "
+                            "Verify the API key has access to this app and that the app id is correct."
+                        )
+                    continue
+
+                try:
+                    response_data = json.loads(raw_response)
+                except json.JSONDecodeError as exc:
+                    skipped_frames += 1
+                    preview = raw_response[:200].replace("\n", "\\n")
+                    print(f"   Skipping non-JSON WebSocket frame: {exc}; preview={preview!r}")
+                    if skipped_frames >= 10:
+                        raise ValueError(
+                            "Qlik WebSocket returned repeated non-JSON frames instead of JSON-RPC responses. "
+                            "Verify tenant URL, API key permissions, and app access."
+                        ) from exc
+                    continue
                 
                 # Check if this is a system message (OnConnected, etc.)
                 if 'method' in response_data:

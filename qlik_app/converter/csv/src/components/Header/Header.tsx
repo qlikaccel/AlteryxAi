@@ -64,10 +64,11 @@ export default function Header() {
   const [userInfo, setUserInfo] = useState<any>(null);
  
   useEffect(() => {
-    // Check for user info in session
-    const tenantUrl = sessionStorage.getItem("tenant_url");
-    if (tenantUrl) {
-      setUserInfo({ tenant: tenantUrl });
+    const workspaceName = sessionStorage.getItem("alteryx_workspace_name");
+    const username = sessionStorage.getItem("alteryx_username");
+    const batchId = sessionStorage.getItem("alteryx_batch_id");
+    if (workspaceName || username || batchId) {
+      setUserInfo({ name: username || workspaceName || "Bulk upload" });
     }
   }, []);
  

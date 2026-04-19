@@ -63,6 +63,69 @@ def _is_applymap_dimension_table(table_obj: Dict[str, Any]) -> bool:
     opts = table_obj.get("options") if isinstance(table_obj, dict) else None
     return isinstance(opts, dict) and bool(opts.get("is_applymap_dimension"))
 
+
+def _parse_combined_mquery_fallback(combined_m: str) -> List[Dict[str, Any]]:
+    """
+    Parse simple combined Power Query sections without the legacy pbit_generator module.
+
+    Supports sections like:
+      TableName =
+      let
+        ...
+      in
+        FinalStep
+    """
+    text = (combined_m or "").strip()
+    if not text:
+        return []
+
+    # Only split on non-indented top-level table definitions. Alteryx-generated
+    # M commonly contains internal steps such as "    SelectedFields_2 = let ...";
+    # those are not publishable tables and must remain inside the parent query.
+    pattern = re.compile(
+        r'(?ms)^((?:#?"[^"]+")|(?:[A-Za-z_][\w .\-]*))\s*=\s*(let\b.*?)(?=^(?:(?:#?"[^"]+")|(?:[A-Za-z_][\w .\-]*))\s*=\s*let\b|\Z)'
+    )
+    tables: List[Dict[str, Any]] = []
+    for match in pattern.finditer(text):
+        raw_name = match.group(1).strip()
+        name = raw_name.lstrip("#").strip('"').strip()
+        expr = match.group(2).strip()
+        lowered = expr.lower()
+        if "csv.document" in lowered or "sharepoint.files" in lowered:
+            source_type = "csv"
+        elif "excel.workbook" in lowered:
+            source_type = "excel"
+        elif "odbc.datasource" in lowered or "sql.database" in lowered:
+            source_type = "database"
+        elif "web.contents" in lowered or "json.document" in lowered:
+            source_type = "api"
+        else:
+            source_type = "unknown"
+        tables.append({
+            "name": name,
+            "source_type": source_type,
+            "m_expression": expr,
+            "fields": [],
+            "options": {},
+            "source_path": "",
+        })
+
+    if tables:
+        return tables
+
+    # Last-resort single table if the caller sent a bare let/in expression.
+    if text.lower().startswith("let"):
+        return [{
+            "name": "AlteryxOutput",
+            "source_type": "unknown",
+            "m_expression": text,
+            "fields": [],
+            "options": {},
+            "source_path": "",
+        }]
+
+    return []
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/migration", tags=["Migration"])
@@ -988,15 +1051,16 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
         )
         qlik_fields_map = _build_qlik_fields_map(request.app_id)
     else:
-        logger.warning(
-            "[publish_mquery] No app_id or qlik_fields_map provided. "
-            "LOAD * tables will publish with 0 columns until first refresh. "
-            "Pass app_id in the request to fix this automatically."
+        logger.info(
+            "[publish_mquery] No Qlik app_id/field map supplied; parsing caller-provided M Query directly."
         )
 
     # ── Step 2: Parse M Query / LoadScript into table list ───────────────────
     try:
-        from pbit_generator import parse_combined_mquery
+        try:
+            from pbit_generator import parse_combined_mquery  # type: ignore
+        except ModuleNotFoundError:
+            parse_combined_mquery = _parse_combined_mquery_fallback
 
         # Prefer regenerating from raw_script whenever it is available.
         # The frontend may carry an older combined_mquery string produced before

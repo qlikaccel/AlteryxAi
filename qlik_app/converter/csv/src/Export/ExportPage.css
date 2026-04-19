@@ -684,3 +684,89 @@
   font-size: 14px;
   color: #1b5e20;
 }
+.export-wrap {
+  width: min(1100px, calc(100vw - 48px));
+  margin: 0 auto;
+  padding: 28px 0 52px;
+}
+
+.export-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  padding: 26px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(0, 112, 192, 0.16), transparent 36%),
+    linear-gradient(135deg, #f8fbff 0%, #eef7ff 100%);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+}
+
+.export-header h1 {
+  margin: 6px 0 10px;
+  color: #102033;
+}
+
+.export-header p {
+  max-width: 760px;
+  color: #475569;
+  line-height: 1.65;
+}
+
+.export-header button,
+.export-actions button {
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.export-header button {
+  background: #e8f2fb;
+  color: #075985;
+}
+
+.export-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 0 14px;
+  color: #334155;
+  font-weight: 800;
+}
+
+.mquery-preview {
+  overflow: auto;
+  min-height: 360px;
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: #0f172a;
+  color: #dbeafe;
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.export-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.export-actions button {
+  background: #0070c0;
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(0, 112, 192, 0.24);
+}
+
+@media (max-width: 760px) {
+  .export-wrap {
+    width: min(100% - 28px, 1100px);
+  }
+
+  .export-header {
+    flex-direction: column;
+  }
+}

@@ -1,0 +1,140 @@
+{
+  "name": "sales_1M_workflow",
+  "compatibilityLevel": 1550,
+  "model": {
+    "culture": "en-US",
+    "dataAccessOptions": {
+      "legacyRedirects": true,
+      "returnErrorValuesAsNull": true
+    },
+    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+    "sourceQueryCulture": "en-US",
+    "tables": [
+      {
+        "name": "sales_1M_workflow",
+        "columns": [
+          {
+            "name": "Region",
+            "dataType": "string",
+            "sourceColumn": "Region",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "ProductCategory",
+            "dataType": "string",
+            "sourceColumn": "ProductCategory",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "TotalSales",
+            "dataType": "string",
+            "sourceColumn": "TotalSales",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "TotalQuantity",
+            "dataType": "string",
+            "sourceColumn": "TotalQuantity",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "AvgSalesPerUnit",
+            "dataType": "string",
+            "sourceColumn": "AvgSalesPerUnit",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "sales_1M_workflow-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_data_1M.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_data_1M.csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text})),",
+                "    Checkpoint_1 = ChangedTypes,",
+                "    SelectedFields_2 = let cols = Table.ColumnNames(Checkpoint_1), ops = {{\"CustomerID\", Int64.Type}, {\"CustomerName\", type text}, {\"Region\", type text}, {\"City\", type text}, {\"ProductCategory\", type text}, {\"ProductName\", type text}, {\"Quantity\", Int64.Type}, {\"UnitPrice\", type number}, {\"SalesAmount\", type number}, {\"Discount\", type number}, {\"OrderDate\", type date}, {\"Status\", type text}, {\"PaymentMethod\", type text}}, TypedColumns = Table.TransformColumnTypes(Checkpoint_1, List.Select(ops, each List.Contains(cols, _{0}))) in Table.SelectColumns(TypedColumns, {\"CustomerID\", \"CustomerName\", \"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"}, MissingField.UseNull),",
+                "    FilteredRows_3 = Table.SelectRows(SelectedFields_2, each [SalesAmount] > 1000 and [Region] = \"North\"),",
+                "    GroupedData_4 = Table.Group(FilteredRows_3, {\"Region\", \"ProductCategory\"}, {{\"TotalSales\", each List.Sum([SalesAmount]), type number}, {\"TotalQuantity\", each List.Sum([Quantity]), type number}}),",
+                "    Calculated_AvgSalesPerUnit_5 = Table.AddColumn(GroupedData_4, \"AvgSalesPerUnit\", each if [TotalQuantity] = 0 then null else [TotalSales] / [TotalQuantity], type number),",
+                "    Checkpoint_6 = Calculated_AvgSalesPerUnit_5",
+                "in",
+                "    Checkpoint_6"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "relationships": [],
+    "expressions": [
+      {
+        "name": "DataSourcePath",
+        "kind": "m",
+        "expression": [
+          "\"https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx\""
+        ],
+        "annotations": [
+          {
+            "name": "IsParameterQuery",
+            "value": "True"
+          },
+          {
+            "name": "IsParameterQueryRequired",
+            "value": "False"
+          },
+          {
+            "name": "PBI_QueryOrder",
+            "value": "0"
+          }
+        ]
+      }
+    ],
+    "annotations": [
+      {
+        "name": "PBIDesktopVersion",
+        "value": "2.130.930.0"
+      },
+      {
+        "name": "createdBy",
+        "value": "QlikAI_Accelerator"
+      }
+    ]
+  }
+}

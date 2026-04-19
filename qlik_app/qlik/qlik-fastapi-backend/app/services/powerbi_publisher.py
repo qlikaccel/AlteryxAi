@@ -291,6 +291,32 @@ def _extract_fields_from_m(expr: str) -> list:
     }
     fields = []
 
+    # Grouped Alteryx workflows reduce the schema after Select/TransformColumnTypes.
+    # Detect final output first so Power BI receives grouped keys, aggregations,
+    # and formula columns instead of pre-aggregation source fields.
+    final_group_match = re.search(r'Table\.Group\s*\(\s*[^,]+\s*,\s*\{([^}]*)\}', expr, re.DOTALL)
+    if final_group_match:
+        for col_ref in re.finditer(r'"([^"]+)"', final_group_match.group(1)):
+            col_name = col_ref.group(1).strip()
+            if col_name and col_name not in [f["name"] for f in fields]:
+                fields.append({"name": col_name, "type": "string"})
+        for agg_ref in re.finditer(r'\{\s*"([^"]+)"\s*,\s*each\s+(?:List\.|Table\.)', expr):
+            col_name = agg_ref.group(1).strip()
+            if col_name and col_name not in [f["name"] for f in fields]:
+                fields.append({"name": col_name, "type": _infer_type_from_name(col_name)})
+        for add_ref in re.finditer(
+            r'Table\.AddColumn\s*\(\s*[^,]+\s*,\s*"([^"]+)"\s*,.*?,\s*(type\s+\w+|Int64\.Type|\w+(?:\.\w+)*)\s*\)',
+            expr,
+            re.DOTALL,
+        ):
+            col_name = add_ref.group(1).strip()
+            if col_name and col_name not in [f["name"] for f in fields]:
+                col_type_raw = add_ref.group(2).strip()
+                fields.append({"name": col_name, "type": M_TYPE_MAP.get(col_type_raw, M_TYPE_MAP.get(col_type_raw.lower(), _infer_type_from_name(col_name)))})
+        if fields:
+            logger.info("[Extract] Final grouped output schema: %d cols", len(fields))
+            return fields
+
     # Pattern A: Table.TransformColumnTypes
     transform_block = re.search(
         r"Table\.TransformColumnTypes\s*\(.*?,\s*\{(.*?)\}\s*\)",
@@ -374,7 +400,32 @@ def _extract_fields_from_m(expr: str) -> list:
             logger.info("[Extract] ✅ Extracted %d columns from PromoteHeaders+TransformColumnTypes", len(fields))
             return fields
 
-        # Priority 2: Table.AddColumn steps (e.g. derived/resident tables)
+        # Priority 2: final grouped schemas. Grouped Alteryx workflows often
+        # return GroupBy columns + aggregation columns + later Formula columns.
+        group_match = re.search(r'Table\.Group\s*\(\s*[^,]+\s*,\s*\{([^}]*)\}', expr, re.DOTALL)
+        if group_match:
+            for col_ref in re.finditer(r'"([^"]+)"', group_match.group(1)):
+                col_name = col_ref.group(1).strip()
+                if col_name and col_name not in [f["name"] for f in fields]:
+                    fields.append({"name": col_name, "type": "string"})
+            for agg_ref in re.finditer(r'\{\s*"([^"]+)"\s*,\s*each\s+(?:List\.|Table\.)', expr):
+                col_name = agg_ref.group(1).strip()
+                if col_name and col_name not in [f["name"] for f in fields]:
+                    fields.append({"name": col_name, "type": _infer_type_from_name(col_name)})
+            for add_ref in re.finditer(
+                r'Table\.AddColumn\s*\(\s*[^,]+\s*,\s*"([^"]+)"\s*,.*?,\s*(type\s+\w+|Int64\.Type|\w+(?:\.\w+)*)\s*\)',
+                expr,
+                re.DOTALL,
+            ):
+                col_name = add_ref.group(1).strip()
+                if col_name and col_name not in [f["name"] for f in fields]:
+                    col_type_raw = add_ref.group(2).strip()
+                    fields.append({"name": col_name, "type": M_TYPE_MAP.get(col_type_raw, M_TYPE_MAP.get(col_type_raw.lower(), _infer_type_from_name(col_name)))})
+            if fields:
+                logger.info("[Extract] Extracted %d columns from Table.Group/AddColumn output", len(fields))
+                return fields
+
+        # Priority 3: Table.AddColumn steps (e.g. derived/resident tables)
         for m_add in re.finditer(
             r'Table\.AddColumn\s*\(\s*\S+\s*,\s*"([^"]+)"',
             expr,
@@ -425,6 +476,19 @@ def _extract_fields_from_m(expr: str) -> list:
             col_name = col_ref.group(1).strip()
             if col_name:
                 fields.append({"name": col_name, "type": "string"})
+        for agg_ref in re.finditer(r'\{\s*"([^"]+)"\s*,\s*each\s+(?:List\.|Table\.)', expr):
+            col_name = agg_ref.group(1).strip()
+            if col_name and col_name not in [f["name"] for f in fields]:
+                fields.append({"name": col_name, "type": _infer_type_from_name(col_name)})
+        for add_ref in re.finditer(
+            r'Table\.AddColumn\s*\(\s*[^,]+\s*,\s*"([^"]+)"\s*,.*?,\s*(type\s+\w+|Int64\.Type|\w+(?:\.\w+)*)\s*\)',
+            expr,
+            re.DOTALL,
+        ):
+            col_name = add_ref.group(1).strip()
+            if col_name and col_name not in [f["name"] for f in fields]:
+                col_type_raw = add_ref.group(2).strip()
+                fields.append({"name": col_name, "type": M_TYPE_MAP.get(col_type_raw, M_TYPE_MAP.get(col_type_raw.lower(), _infer_type_from_name(col_name)))})
         if fields:
             logger.debug("[Extract] Pattern E (Group): %d cols", len(fields))
             return fields
@@ -757,7 +821,7 @@ class _Publisher:
         relationships: List[Dict[str, Any]],
         data_source_path: str,
     ) -> str:
-        from mquery_converter import MQueryConverter
+        from app.services.mquery_converter import MQueryConverter
         converter = MQueryConverter()
         # Supply real Qlik column names so resolve_output_columns works for LOAD * tables
         if getattr(self, "qlik_fields_map", {}):
