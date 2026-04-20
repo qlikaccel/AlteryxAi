@@ -6,14 +6,8 @@ import { useWizard } from "../../context/WizardContext";
 export default function ConnectPage() {
   const [connectMode, setConnectMode] = useState<"upload" | "cloud">("upload");
   const [alteryxWorkspaceName, setAlteryxWorkspaceName] = useState("");
-  const [alteryxUsername, setAlteryxUsername] = useState("");
-  const [alteryxAccessToken, setAlteryxAccessToken] = useState("");
-  const [alteryxRefreshToken, setAlteryxRefreshToken] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [workspaceTouched, setWorkspaceTouched] = useState(false);
-  const [usernameTouched, setUsernameTouched] = useState(false);
-  const [accessTouched, setAccessTouched] = useState(false);
-  const [refreshTouched, setRefreshTouched] = useState(false);
 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -23,25 +17,15 @@ export default function ConnectPage() {
 
   useEffect(() => {
     const savedWorkspace = sessionStorage.getItem("alteryx_workspace_name");
-    const savedUsername = sessionStorage.getItem("alteryx_username");
-    const savedAccessToken = sessionStorage.getItem("alteryx_access_token");
-    const savedRefreshToken = sessionStorage.getItem("alteryx_refresh_token");
 
     if (savedWorkspace) setAlteryxWorkspaceName(savedWorkspace);
-    if (savedUsername) setAlteryxUsername(savedUsername);
-    if (savedAccessToken) setAlteryxAccessToken(savedAccessToken);
-    if (savedRefreshToken) setAlteryxRefreshToken(savedRefreshToken);
   }, []);
 
   const trimmedWorkspaceName = alteryxWorkspaceName.trim();
-  const trimmedUsername = alteryxUsername.trim();
-  const trimmedAccessToken = alteryxAccessToken.trim();
-  const trimmedRefreshToken = alteryxRefreshToken.trim();
 
   const isWorkspaceNameValid =
     /^[^-]+-[^-]+-[^-]+-(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{4}$/.test(trimmedWorkspaceName);
-  const canConnectAlteryx =
-    isWorkspaceNameValid && Boolean(trimmedAccessToken) && Boolean(trimmedRefreshToken);
+  const canConnectAlteryx = isWorkspaceNameValid;
   const canUploadPackages = Boolean(selectedFiles?.length);
 
   const handleConnect = async () => {
@@ -53,10 +37,7 @@ export default function ConnectPage() {
     try {
       const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
       const payload: Record<string, unknown> = {
-        access_token: trimmedAccessToken,
-        refresh_token: trimmedRefreshToken,
         workspace_name: trimmedWorkspaceName,
-        username: trimmedUsername || undefined,
       };
 
       const res = await fetch(`${BASE_URL}/api/alteryx/validate-auth`, {
@@ -72,9 +53,6 @@ export default function ConnectPage() {
       sessionStorage.setItem("alteryx_access_token", data.access_token);
       sessionStorage.setItem("alteryx_workspace_id", data.workspace_id);
       sessionStorage.setItem("alteryx_workspace_name", data.workspace_name);
-      if (trimmedUsername) {
-        sessionStorage.setItem("alteryx_username", trimmedUsername);
-      }
       if (data.refresh_token) {
         sessionStorage.setItem("alteryx_refresh_token", data.refresh_token);
       }
@@ -149,7 +127,7 @@ export default function ConnectPage() {
             disabled={loading}
           >
             <span className="method-title">Cloud API</span>
-            <span className="method-subtitle">OAuth tokens</span>
+            <span className="method-subtitle">Workspace + stored OAuth</span>
           </button>
         </div>
 
@@ -183,69 +161,6 @@ export default function ConnectPage() {
 
         {connectMode === "cloud" && (
           <>
-            <div className="field-group">
-          <label htmlFor="alteryx-username">
-            Username <span className="optional-label">optional</span>
-          </label>
-          <input
-            id="alteryx-username"
-            type="text"
-            placeholder="your.name@example.com"
-            value={alteryxUsername}
-            onChange={(e) => {
-              setAlteryxUsername(e.target.value);
-              setError("");
-            }}
-            onBlur={() => setUsernameTouched(true)}
-            disabled={loading}
-          />
-          {usernameTouched && trimmedUsername && !trimmedUsername.includes("@") && (
-            <p className="field-error">Username should usually be an email address.</p>
-          )}
-        </div>
-
-        <div className="field-group">
-          <label htmlFor="alteryx-access-token">
-            Access Token <span className="required-star">*</span>
-          </label>
-          <input
-            id="alteryx-access-token"
-            type="password"
-            placeholder="Paste access token from Alteryx One"
-            value={alteryxAccessToken}
-            onChange={(e) => {
-              setAlteryxAccessToken(e.target.value);
-              setError("");
-            }}
-            onBlur={() => setAccessTouched(true)}
-            disabled={loading}
-          />
-          {accessTouched && !trimmedAccessToken && (
-            <p className="field-error">Enter the Alteryx access token.</p>
-          )}
-        </div>
-
-        <div className="field-group">
-          <label htmlFor="alteryx-refresh-token">
-            Refresh Token <span className="required-star">*</span>
-          </label>
-          <input
-            id="alteryx-refresh-token"
-            type="password"
-            placeholder="Paste refresh token from Alteryx One"
-            value={alteryxRefreshToken}
-            onChange={(e) => {
-              setAlteryxRefreshToken(e.target.value);
-              setError("");
-            }}
-            onBlur={() => setRefreshTouched(true)}
-            disabled={loading}
-          />
-          {refreshTouched && !trimmedRefreshToken && (
-            <p className="field-error">Enter the Alteryx refresh token.</p>
-          )}
-        </div>
-
         <div className="field-group">
           <label htmlFor="alteryx-workspace">
             Workspace Name <span className="required-star">*</span>
@@ -267,6 +182,9 @@ export default function ConnectPage() {
               Enter a valid workspace name. The last segment must be exactly 4 alphanumeric characters with both letters and numbers.
             </p>
           )}
+          <p className="field-hint">
+            Access and refresh tokens are loaded from the backend .env, matching the working Cloud API flow. Rotated tokens are persisted after login.
+          </p>
         </div>
           </>
         )}

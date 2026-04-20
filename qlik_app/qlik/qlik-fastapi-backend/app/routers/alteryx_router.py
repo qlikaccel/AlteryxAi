@@ -3,6 +3,7 @@
 import logging
 import os
 import requests
+import re
 from fastapi import APIRouter, File, HTTPException, Header, Query, Response, UploadFile
 from fastapi.responses import HTMLResponse
 from typing import Any, Optional
@@ -15,6 +16,8 @@ from app.utils.alteryx_workspace_utils import (
     ALTERYX_BASE_URL,
     list_alteryx_workflows,
     persist_alteryx_tokens,
+    get_alteryx_token_diagnostics,
+    ensure_fresh_token,
     looks_like_access_token,
     looks_like_refresh_token,
     is_token_expired,
@@ -35,6 +38,11 @@ router = APIRouter(prefix="/api/alteryx", tags=["Alteryx"])
 logger = logging.getLogger(__name__)
 
 MAX_BULK_UPLOAD_BYTES = 250 * 1024 * 1024
+
+
+@router.get("/diagnostics/tokens")
+def alteryx_token_diagnostics():
+    return get_alteryx_token_diagnostics()
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -68,6 +76,13 @@ class AlteryxBulkUploadResponse(BaseModel):
     summary: dict[str, Any]
     workflows: list[dict[str, Any]]
     rejected: list[dict[str, str]]
+
+
+class CloudWorkflowMaterializeRequest(BaseModel):
+    workflow_id: str
+    workflow_name: Optional[str] = None
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None
 
 
 def extract_workflow_items(payload: Any) -> list[dict]:
@@ -110,6 +125,90 @@ def _find_batch_workflow(batch_id: str, workflow_id: str) -> dict[str, Any]:
     raise HTTPException(status_code=404, detail=f"Alteryx workflow not found in batch: {workflow_id}")
 
 
+def _safe_filename(name: str, extension: str = ".yxzp") -> str:
+    base = re.sub(r"[^A-Za-z0-9_.-]+", "_", (name or "alteryx_workflow").strip()).strip("._")
+    if not base:
+        base = "alteryx_workflow"
+    if not base.lower().endswith((".yxmd", ".yxmc", ".yxwz", ".yxzp", ".zip")):
+        base += extension
+    return base
+
+
+def _download_cloud_workflow_artifact(session: AlteryxSession, workflow_id: str, workspace_id: Optional[str] = None) -> tuple[str, bytes, str]:
+    """Try known Alteryx Cloud/Server package endpoints and return a workflow artifact."""
+    token = ensure_fresh_token(session)
+    workspace_params = {"workspaceId": workspace_id} if workspace_id else {}
+    candidates: list[tuple[str, dict[str, Any]]] = [
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/package", {}),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/download", {}),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/export", {}),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}", {"includeXml": "true"}),
+        (f"{ALTERYX_BASE_URL}/v3/workflows/{workflow_id}/package", {}),
+        (f"{ALTERYX_BASE_URL}/v1/workflows/{workflow_id}/package", {}),
+        (f"{ALTERYX_BASE_URL}/admin/v1/{workflow_id}/package", {}),
+        (f"{ALTERYX_BASE_URL}/v4/workflows/{workflow_id}/package", workspace_params),
+        (f"{ALTERYX_BASE_URL}/api/v1/workflows/{workflow_id}/package", workspace_params),
+    ]
+
+    last_error = ""
+    for url, params in candidates:
+        try:
+            print(f"  Trying workflow package endpoint: {url}")
+            resp = requests.get(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                params=params,
+                timeout=30,
+            )
+            if resp.status_code == 401 and session.refresh_token:
+                new_access, new_refresh = ensure_fresh_token(session), session.refresh_token
+                token = new_access
+                if new_refresh:
+                    session.refresh_token = new_refresh
+                resp = requests.get(
+                    url,
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    params=params,
+                    timeout=30,
+                )
+            if resp.status_code >= 400:
+                last_error = f"{resp.status_code} {resp.text[:200]}"
+                print(f"  Failed package endpoint: {last_error}")
+                continue
+
+            content_type = resp.headers.get("content-type", "").lower()
+            content = resp.content or b""
+            text = resp.text if "json" in content_type or content[:1] in (b"{", b"[") else ""
+
+            if content[:2] == b"PK":
+                return "cloud_workflow.yxzp", content, url
+            if content.lstrip().startswith(b"<?xml") or b"<AlteryxDocument" in content[:5000]:
+                return "cloud_workflow.yxmd", content, url
+            if text:
+                data = resp.json()
+                for key in ("xml", "workflowXml", "workflow_xml", "content", "fileContent", "definition"):
+                    value = data.get(key) if isinstance(data, dict) else None
+                    if isinstance(value, str) and ("<AlteryxDocument" in value or value.lstrip().startswith("<?xml")):
+                        return "cloud_workflow.yxmd", value.encode("utf-8"), url
+                last_error = f"JSON response did not contain workflow XML. Keys: {list(data.keys()) if isinstance(data, dict) else 'array'}"
+                print(f"  {last_error}")
+                continue
+
+            last_error = f"Unsupported package response content-type={content_type}, bytes={len(content)}"
+            print(f"  {last_error}")
+        except Exception as exc:
+            last_error = str(exc)
+            print(f"  Exception while downloading package: {last_error}")
+
+    raise ValueError(
+        "Unable to download the full Alteryx workflow package/XML from Cloud. "
+        f"Tried {len(candidates)} candidate endpoints. Last error: {last_error}"
+    )
+
+
 # ── Validate auth ─────────────────────────────────────────────────────────────
 
 @router.post("/validate-auth", response_model=AlteryxAuthResponse)
@@ -135,7 +234,7 @@ def validate_alteryx_auth(config: AlteryxAuthRequest):
         "🔎 /api/alteryx/validate-auth payload tokens | "
         f"access={_mask_token(access_token)} | refresh={_mask_token(refresh_token)}"
     )
-    if not access_token or not refresh_token:
+    if False and (not access_token or not refresh_token):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -145,15 +244,15 @@ def validate_alteryx_auth(config: AlteryxAuthRequest):
             ),
         )
 
-    if looks_like_refresh_token(access_token) and looks_like_access_token(refresh_token):
+    if access_token and refresh_token and looks_like_refresh_token(access_token) and looks_like_access_token(refresh_token):
         print("🔁 Detected swapped Alteryx tokens; using refresh field as access token and access field as refresh token.")
         access_token, refresh_token = refresh_token, access_token
-    elif not looks_like_access_token(access_token):
+    elif access_token and not looks_like_access_token(access_token):
         raise HTTPException(
             status_code=400,
             detail="The Access Token field does not look like an Alteryx access token. Please paste the access token, not the refresh token.",
         )
-    elif not looks_like_refresh_token(refresh_token):
+    elif refresh_token and not looks_like_refresh_token(refresh_token):
         raise HTTPException(
             status_code=400,
             detail="The Refresh Token field does not look like an Alteryx refresh token. Please paste the refresh token, not the access token.",
@@ -161,7 +260,7 @@ def validate_alteryx_auth(config: AlteryxAuthRequest):
 
     try:
         print(f"\n🔵 Validating Alteryx auth for workspace: {workspace_name}")
-        if is_token_expired(access_token) and not refresh_token:
+        if access_token and is_token_expired(access_token) and not refresh_token:
             raise ValueError(
                 f"The provided Alteryx access token is expired ({token_expiry_summary(access_token)}) "
                 "and no refresh token was provided."
@@ -233,6 +332,57 @@ async def bulk_upload_alteryx_workflows(
         workflows=result["workflows"],
         rejected=result["rejected"],
     )
+
+
+@router.post("/workflows/materialize")
+def materialize_cloud_workflow(config: CloudWorkflowMaterializeRequest):
+    """
+    Download a Cloud workflow artifact, ingest it as a normal Alteryx batch,
+    and return the parsed workflow so the existing Summary/Scripts/Publish flow can be reused.
+    """
+    workflow_id = (config.workflow_id or "").strip()
+    if not workflow_id:
+        raise HTTPException(status_code=400, detail="workflow_id is required.")
+
+    workspace_name = (config.workspace_name or os.getenv("ALTERYX_WORKSPACE_NAME", "")).strip()
+    access_token = os.getenv("ALTERYX_ACCESS_TOKEN", "")
+    refresh_token = os.getenv("ALTERYX_REFRESH_TOKEN")
+    session = AlteryxSession(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        workspace_name=workspace_name or None,
+        workspace_id=config.workspace_id or os.getenv("ALTERYX_WORKSPACE_ID", None),
+    )
+
+    try:
+        artifact_name, artifact_bytes, source_endpoint = _download_cloud_workflow_artifact(
+            session=session,
+            workflow_id=workflow_id,
+            workspace_id=config.workspace_id or session.workspace_id,
+        )
+        artifact_name = _safe_filename(config.workflow_name or artifact_name, os.path.splitext(artifact_name)[1] or ".yxzp")
+        result = ingest_uploaded_files([(artifact_name, artifact_bytes)])
+        workflows = result.get("workflows", [])
+        if not workflows:
+            rejected = result.get("rejected", [])
+            reason = rejected[0].get("reason") if rejected else "Downloaded artifact did not contain a parseable workflow."
+            raise ValueError(reason)
+
+        persist_alteryx_tokens(session.access_token, session.refresh_token)
+        return {
+            "success": True,
+            "source": "cloud_download",
+            "source_endpoint": source_endpoint,
+            "artifact_name": artifact_name,
+            "batch_id": result["batch_id"],
+            "workflow": workflows[0],
+            "workflows": workflows,
+            "summary": result.get("summary", {}),
+            "rejected": result.get("rejected", []),
+        }
+    except Exception as exc:
+        print(f"❌ Cloud workflow materialization failed: {exc}")
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/batches/{batch_id}")

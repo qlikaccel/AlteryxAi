@@ -6,6 +6,7 @@ import LoadingOverlay from "../components/LoadingOverlay/LoadingOverlay";
 import {
   fetchAlteryxWorkflows,
   fetchUploadedAlteryxWorkflows,
+  materializeCloudAlteryxWorkflow,
 } from "../api/alteryxApi";
 import type { AlteryxWorkflow } from "../api/alteryxApi";
 
@@ -67,12 +68,46 @@ export default function AppsPage() {
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
 
-  const openSummary = (workflow: AlteryxWorkflow) => {
+  const openSummary = async (workflow: AlteryxWorkflow) => {
     sessionStorage.setItem("appSelected", workflow.id);
     sessionStorage.setItem("appName", workflow.name);
     sessionStorage.setItem("alteryx_workflow_id", workflow.id);
     sessionStorage.setItem("alteryx_workflow_name", workflow.name);
     sessionStorage.setItem("alteryx_selected_workflow", JSON.stringify(workflow));
+
+    if (platform !== "alteryx_upload") {
+      setLoading(true);
+      setPageError(null);
+      try {
+        const materialized = await materializeCloudAlteryxWorkflow({
+          workflow_id: workflow.id,
+          workflow_name: workflow.name,
+          workspace_id: sessionStorage.getItem("alteryx_workspace_id") || undefined,
+          workspace_name: sessionStorage.getItem("alteryx_workspace_name") || undefined,
+        });
+        const parsedWorkflow = materialized.workflow || materialized.workflows?.[0];
+        if (!parsedWorkflow?.id || !materialized.batch_id) {
+          throw new Error("Cloud workflow package was downloaded, but no parseable workflow was found.");
+        }
+        sessionStorage.setItem("platform", "alteryx_upload");
+        sessionStorage.setItem("alteryx_batch_id", materialized.batch_id);
+        sessionStorage.setItem("alteryx_batch_summary", JSON.stringify(materialized.summary || {}));
+        sessionStorage.setItem("alteryx_workflow_id", parsedWorkflow.id);
+        sessionStorage.setItem("alteryx_workflow_name", parsedWorkflow.name || workflow.name);
+        sessionStorage.setItem("alteryx_selected_workflow", JSON.stringify(parsedWorkflow));
+        sessionStorage.setItem("alteryx_cloud_source_workflow_id", workflow.id);
+        sessionStorage.setItem("alteryx_cloud_artifact_name", materialized.artifact_name || "");
+        startTimer?.("/summary");
+        nav("/summary", { state: { workflowId: parsedWorkflow.id, workflowName: parsedWorkflow.name || workflow.name } });
+      } catch (err: any) {
+        setLoading(false);
+        setPageError(err?.message || "Unable to download the full workflow package from Alteryx Cloud.");
+        startTimer?.("/summary");
+        nav("/summary", { state: { workflowId: workflow.id, workflowName: workflow.name, cloudMaterializeError: err?.message } });
+      }
+      return;
+    }
+
     startTimer?.("/summary");
     nav("/summary", { state: { workflowId: workflow.id, workflowName: workflow.name } });
   };

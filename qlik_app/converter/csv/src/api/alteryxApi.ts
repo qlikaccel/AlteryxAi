@@ -231,6 +231,26 @@ export async function fetchAlteryxWorkflows(workspaceId: string, accessToken: st
   return (data.workflows || []).map(normalizeWorkflow);
 }
 
+export async function materializeCloudAlteryxWorkflow(payload: {
+  workflow_id: string;
+  workflow_name?: string;
+  workspace_id?: string;
+  workspace_name?: string;
+}): Promise<any> {
+  const res = await fetch(`${BASE_URL}/api/alteryx/workflows/materialize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.detail || `Failed to download workflow package (${res.status})`);
+  }
+
+  return data;
+}
+
 export function normalizeWorkflow(workflow: any): AlteryxWorkflow {
   return {
     ...workflow,

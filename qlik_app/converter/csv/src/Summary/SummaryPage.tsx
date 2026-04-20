@@ -9,8 +9,8 @@ import {
 import type { AlteryxWorkflow } from "../api/alteryxApi";
 import { useWizard } from "../context/WizardContext";
 
-const DEFAULT_SHAREPOINT_URL = "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx";
-const DEFAULT_FILE_NAME = "sales_data_1M.csv";
+const DEFAULT_SHAREPOINT_URL = sessionStorage.getItem("alteryx_sharepoint_url") || "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx";
+const DEFAULT_FILE_NAME = sessionStorage.getItem("alteryx_file_name") || "sales_data_1M.csv";
 
 type SummaryTab = "sourceTypes" | "summary" | "brd" | "diagram";
 
@@ -85,6 +85,8 @@ export default function SummaryPage() {
 
   const workflowId = (location.state as any)?.workflowId || sessionStorage.getItem("alteryx_workflow_id") || "";
   const batchId = sessionStorage.getItem("alteryx_batch_id") || "";
+  const platform = sessionStorage.getItem("platform") || "alteryx_upload";
+  const isCloudApiWorkflow = platform !== "alteryx_upload" && !batchId;
 
   const [workflow, setWorkflow] = useState<AlteryxWorkflow | null>(readStoredWorkflow());
   const [analysis, setAnalysis] = useState<any>(null);
@@ -97,7 +99,44 @@ export default function SummaryPage() {
   const [brdLoading, setBrdLoading] = useState(false);
 
   useEffect(() => {
-    if (!workflowId || !batchId) {
+    if (!workflowId) {
+      navigate("/apps");
+      return;
+    }
+
+    if (isCloudApiWorkflow) {
+      const storedWorkflow = readStoredWorkflow();
+      const materializeError = (location.state as any)?.cloudMaterializeError;
+      if (!storedWorkflow) {
+        navigate("/apps");
+        return;
+      }
+
+      setWorkflow(storedWorkflow);
+      setAnalysis({
+        summary: {
+          bullets: [
+            "Workflow metadata was retrieved from Alteryx Cloud successfully.",
+            materializeError
+              ? `The app attempted to download the full workflow package/XML but Alteryx Cloud did not return a parseable artifact: ${materializeError}`
+              : "Full tool-level parsing requires the workflow XML/package content, which the current Cloud API response does not include.",
+            "Use Bulk Upload with the .yxmd/.yxzp export to convert and publish this workflow until a full workflow download endpoint is wired.",
+          ],
+        },
+        mquery: null,
+        diagram: {
+          mermaid: "graph LR\n  Cloud[Alteryx Cloud workflow metadata] --> Export[Export .yxmd/.yxzp]\n  Export --> Convert[Parse and convert]\n  Convert --> PowerBI[Publish to Power BI]",
+        },
+      });
+      sessionStorage.removeItem("migration_mquery");
+      const elapsed = stopTimer?.("/summary");
+      setPageLoadTime(elapsed ?? null);
+      setLoading(false);
+      setError("");
+      return;
+    }
+
+    if (!batchId) {
       navigate("/apps");
       return;
     }
@@ -124,7 +163,7 @@ export default function SummaryPage() {
         setPageLoadTime(elapsed ?? null);
         setLoading(false);
       });
-  }, [batchId, fileName, navigate, sharePointUrl, stopTimer, workflowId]);
+  }, [batchId, fileName, isCloudApiWorkflow, navigate, sharePointUrl, stopTimer, workflowId]);
 
   const assessment = useMemo(() => {
     const totalTools = workflow?.toolCount ?? 0;
@@ -142,6 +181,8 @@ export default function SummaryPage() {
   const generationReason = generation.routing_reason || "Low-complexity workflow with supported deterministic tool mappings.";
   const generationIndicators = generation.complexity_indicators || [];
   const generationStatus = generation.llm_status || "not_required";
+  const canConvertAndPublish = Boolean(batchId && analysis?.mquery?.combined_mquery);
+  const sourceDetails = workflow?.dataSources || [];
 
   const downloadBrd = async () => {
     if (!batchId || !workflowId) return;
@@ -163,6 +204,10 @@ export default function SummaryPage() {
   };
 
   const continueToExport = () => {
+    if (!canConvertAndPublish) {
+      setError("This Cloud API workflow contains metadata only. Please use Bulk Upload with the exported .yxmd/.yxzp file to parse, convert, and publish it.");
+      return;
+    }
     sessionStorage.setItem("summaryComplete", "true");
     sessionStorage.setItem("summaryActiveTab", "mquery");
     navigate("/export");
@@ -209,18 +254,53 @@ export default function SummaryPage() {
         <div className="timer-badge">Analysis Time: {pageLoadTime || "00m : 00s : 00ms"}</div>
       </div>
 
-      <div className="source-config alteryx-source-config">
-        <label>
-          Data Source Path
-          <input value={sharePointUrl} onChange={(event) => setSharePointUrl(event.target.value)} />
-        </label>
-        <label>
-          File name
-          <input value={fileName} onChange={(event) => setFileName(event.target.value)} />
-        </label>
-      </div>
+      {!isCloudApiWorkflow && (
+        <div className="source-config alteryx-source-config">
+          <label>
+            Data Source Path
+            <input value={sharePointUrl} onChange={(event) => setSharePointUrl(event.target.value)} />
+          </label>
+          <label>
+            File name
+            <input value={fileName} onChange={(event) => setFileName(event.target.value)} />
+          </label>
+        </div>
+      )}
+
+      {isCloudApiWorkflow && (
+        <div className="cloud-metadata-notice">
+          <strong>Cloud workflow opened from Alteryx metadata.</strong>
+          <span>
+            The workflow list API confirmed access and returned this workflow, but it did not return the full
+            workflow XML needed for tool mapping, M Query generation, BRD, and Power BI publishing. Use the
+            Bulk Upload path with the exported .yxmd/.yxzp package for the migration-ready flow.
+          </span>
+        </div>
+      )}
 
       {activeTab === "sourceTypes" && (
+        isCloudApiWorkflow ? (
+          <section className="assessment-panel cloud-workflow-panel">
+            <h2>Cloud Workflow Metadata</h2>
+            <p>
+              The Alteryx Cloud API returned the workflow list record, so discovery is connected. This response does
+              not include the workflow XML/package content required to parse tools, generate M Query, build the BRD,
+              or publish to Power BI.
+            </p>
+            <div className="cloud-workflow-facts">
+              <div><span>Workflow ID</span><strong>{workflow.id}</strong></div>
+              <div><span>Workflow Name</span><strong>{workflow.name}</strong></div>
+              <div><span>Last Modified</span><strong>{workflow.lastModifiedDate || "Not returned by Cloud API"}</strong></div>
+              <div><span>Run Count</span><strong>{workflow.runCount ?? "Not returned by Cloud API"}</strong></div>
+              <div><span>Credential Type</span><strong>{workflow.credentialType || "Not returned by Cloud API"}</strong></div>
+              <div><span>Worker Tag</span><strong>{workflow.workerTag || "Not returned by Cloud API"}</strong></div>
+            </div>
+            <div className="cloud-next-step">
+              <strong>Migration-ready next step</strong>
+              <span>Export this workflow from Alteryx as .yxmd/.yxzp and use Bulk Upload. That path provides the XML needed for Scripts, Summary, BRD, validation, and Power BI publishing.</span>
+            </div>
+          </section>
+        ) : (
         <section className="source-type-grid">
           <article className="source-type-card muted">
             <div className="source-card-head">
@@ -255,6 +335,7 @@ export default function SummaryPage() {
             <button onClick={continueToExport}>Go to Export</button>
           </article>
         </section>
+        )
       )}
 
       {activeTab === "summary" && (
@@ -263,7 +344,7 @@ export default function SummaryPage() {
           <div className="alteryx-exec-copy">
             <h2>Executive Summary</h2>
             <ul>
-              {(analysis?.summary?.bullets || []).map((item: string) => <li key={item}>{item}</li>)}
+              {(analysis?.summary?.bullets || ["Workflow metadata loaded. Upload the exported workflow package to generate a full executive summary."]).map((item: string) => <li key={item}>{item}</li>)}
             </ul>
           </div>
           <div className="metric-grid alteryx-metrics">
@@ -289,32 +370,47 @@ export default function SummaryPage() {
       {activeTab === "brd" && (
         <section className="assessment-panel alteryx-brd-panel">
           <h2>Workflow BRD</h2>
-          <p>
-            The BRD is generated for this selected Alteryx workflow, not the legacy Qlik application. It includes
-            source inventory, conversion scope, tool mapping, workflow diagram, generated M Query, acceptance
-            criteria, and validation/reconciliation requirements.
-          </p>
-          <div className="mapping-table-wrap">
-            <div className={`generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
-              <span>{generationLabel}</span>
-              <strong>{generationMethod === "llm" ? `Complex workflow route (${generationStatus})` : "Simple workflow route"}</strong>
-            </div>
-            <table>
-              <thead><tr><th>Alteryx Tool</th><th>Power Query Mapping</th><th>Status</th></tr></thead>
-              <tbody>
-                {conversionSteps.slice(0, 14).map((step: any) => (
-                  <tr key={`${step.node_id}-${step.tool}`}>
-                    <td>{step.tool}</td>
-                    <td>{step.m_function}</td>
-                    <td>{step.mapped ? "Mapped" : "Manual review"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <button className="primary-summary-action" onClick={downloadBrd} disabled={brdLoading}>
-            {brdLoading ? "Generating BRD..." : "Download Workflow BRD"}
-          </button>
+          {isCloudApiWorkflow ? (
+            <>
+              <p>
+                BRD generation needs the workflow package XML. The Cloud workflow list API returned only metadata for
+                this workflow, so the accelerator cannot produce tool mapping, M Query, or validation criteria yet.
+              </p>
+              <div className="cloud-next-step">
+                <strong>Use Bulk Upload for BRD</strong>
+                <span>Upload the exported .yxmd/.yxzp file for this workflow, then this tab will generate the full workflow-specific BRD.</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>
+                The BRD is generated for this selected Alteryx workflow, not the legacy Qlik application. It includes
+                source inventory, conversion scope, tool mapping, workflow diagram, generated M Query, acceptance
+                criteria, and validation/reconciliation requirements.
+              </p>
+              <div className="mapping-table-wrap">
+                <div className={`generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
+                  <span>{generationLabel}</span>
+                  <strong>{generationMethod === "llm" ? `Complex workflow route (${generationStatus})` : "Simple workflow route"}</strong>
+                </div>
+                <table>
+                  <thead><tr><th>Alteryx Tool</th><th>Power Query Mapping</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {conversionSteps.slice(0, 14).map((step: any) => (
+                      <tr key={`${step.node_id}-${step.tool}`}>
+                        <td>{step.tool}</td>
+                        <td>{step.m_function}</td>
+                        <td>{step.mapped ? "Mapped" : "Manual review"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button className="primary-summary-action" onClick={downloadBrd} disabled={brdLoading}>
+                {brdLoading ? "Generating BRD..." : "Download Workflow BRD"}
+              </button>
+            </>
+          )}
         </section>
       )}
 
@@ -328,7 +424,10 @@ export default function SummaryPage() {
           </p>
           <pre className="diagram-preview">{analysis?.diagram?.mermaid}</pre>
           <div className="pill-list">
-            {(workflow.workflowEdges || []).slice(0, 12).map((edge: any, index: number) => (
+            {sourceDetails.length > 0 && sourceDetails.slice(0, 12).map((source: any, index: number) => (
+              <span key={`source-${index}`}>{source.fileName || source.path || source.connection || source.type || "Data source"}</span>
+            ))}
+            {sourceDetails.length === 0 && (workflow.workflowEdges || []).slice(0, 12).map((edge: any, index: number) => (
               <span key={`${edge.from}-${edge.to}-${index}`}>Tool {edge.from} to Tool {edge.to}</span>
             ))}
           </div>
@@ -337,8 +436,12 @@ export default function SummaryPage() {
 
       <div className="summary-actions">
         <button onClick={() => navigate("/apps")}>Back to workflows</button>
-        <button onClick={downloadBrd} disabled={brdLoading}>{brdLoading ? "Generating BRD..." : "Download BRD"}</button>
-        <button onClick={continueToExport}>Continue to Power BI Conversion</button>
+        {!isCloudApiWorkflow && (
+          <>
+            <button onClick={downloadBrd} disabled={brdLoading}>{brdLoading ? "Generating BRD..." : "Download BRD"}</button>
+            <button onClick={continueToExport} disabled={!canConvertAndPublish}>Continue to Power BI Conversion</button>
+          </>
+        )}
       </div>
     </div>
   );

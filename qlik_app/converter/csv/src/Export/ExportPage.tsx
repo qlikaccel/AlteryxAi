@@ -7,6 +7,8 @@ export default function ExportPage() {
   const navigate = useNavigate();
   const workflowId = sessionStorage.getItem("alteryx_workflow_id") || "";
   const batchId = sessionStorage.getItem("alteryx_batch_id") || "";
+  const platform = sessionStorage.getItem("platform") || "alteryx_upload";
+  const isCloudApiWorkflow = platform !== "alteryx_upload" && !batchId;
   const workflowName = sessionStorage.getItem("alteryx_workflow_name") || "Alteryx workflow";
   const sharePointUrl = sessionStorage.getItem("alteryx_sharepoint_url") || "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx";
   const fileName = sessionStorage.getItem("alteryx_file_name") || "sales_data_1M.csv";
@@ -20,6 +22,11 @@ export default function ExportPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (isCloudApiWorkflow) {
+      setLoading(false);
+      return;
+    }
+
     if (!batchId || !workflowId) {
       navigate("/apps");
       return;
@@ -43,7 +50,7 @@ export default function ExportPage() {
       })
       .catch((err: any) => setError(err?.message || "Failed to generate Power Query"))
       .finally(() => setLoading(false));
-  }, [batchId, fileName, navigate, sharePointUrl, workflowId, workflowName]);
+  }, [batchId, fileName, isCloudApiWorkflow, navigate, sharePointUrl, workflowId, workflowName]);
 
   const continueToPublish = () => {
     sessionStorage.setItem("exportComplete", "true");
@@ -53,6 +60,24 @@ export default function ExportPage() {
 
   if (loading) {
     return <div className="export-wrap"><p>Generating Power Query from Alteryx workflow...</p></div>;
+  }
+
+  if (isCloudApiWorkflow) {
+    return (
+      <div className="export-wrap">
+        <div className="export-header">
+          <div>
+            <p className="eyebrow">Power BI Conversion</p>
+            <h1>{workflowName}</h1>
+            <p>
+              Scripts cannot be generated from the Cloud workflow list record because Alteryx returned metadata only.
+              Upload the exported .yxmd/.yxzp package through Bulk Upload to generate Power Query M and publish to Power BI.
+            </p>
+          </div>
+          <button onClick={() => navigate("/summary")}>Back to assessment</button>
+        </div>
+      </div>
+    );
   }
 
   if (error) {
@@ -71,7 +96,7 @@ export default function ExportPage() {
           <p className="eyebrow">Power BI Conversion</p>
           <h1>{workflowName}</h1>
           <p>
-            Generated Power Query uses the SharePoint CSV source <strong>{fileName}</strong>.
+            Generated Power Query uses the configured data source <strong>{fileName}</strong>.
             The same mapper can emit connector stubs for CSV, Excel, database, and API inputs detected in Alteryx.
           </p>
           <div className={`export-generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
