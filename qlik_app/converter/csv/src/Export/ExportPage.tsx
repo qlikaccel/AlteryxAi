@@ -12,6 +12,7 @@ export default function ExportPage() {
   const fileName = sessionStorage.getItem("alteryx_file_name") || "sales_data_1M.csv";
   const [mquery, setMquery] = useState(sessionStorage.getItem("migration_mquery") || "");
   const [datasetName, setDatasetName] = useState(sessionStorage.getItem("migration_dataset_name") || workflowName);
+  const [dataSourcePath, setDataSourcePath] = useState(sessionStorage.getItem("migration_data_source_path") || sharePointUrl);
   const [generationMethod, setGenerationMethod] = useState(sessionStorage.getItem("migration_generation_method") || "rule_based");
   const [generationLabel, setGenerationLabel] = useState(sessionStorage.getItem("migration_generation_label") || "Rule-based mapping");
   const [generationReason, setGenerationReason] = useState(sessionStorage.getItem("migration_generation_reason") || "Low-complexity workflow with supported deterministic tool mappings.");
@@ -33,6 +34,7 @@ export default function ExportPage() {
         setGenerationLabel(data.generation_label || "Rule-based mapping");
         setGenerationReason(data.routing_reason || "Low-complexity workflow with supported deterministic tool mappings.");
         setGenerationStatus(data.llm_status || "not_required");
+        setDataSourcePath(data.data_source_path || sharePointUrl);
         sessionStorage.setItem("migration_mquery", data.combined_mquery || "");
         sessionStorage.setItem("migration_dataset_name", data.dataset_name || workflowName);
         sessionStorage.setItem("migration_data_source_path", data.data_source_path || sharePointUrl);
@@ -68,11 +70,13 @@ export default function ExportPage() {
     <div className="export-wrap">
       <div className="export-header">
         <div>
-          <p className="eyebrow">Power BI Conversion</p>
+          
           <h1>{workflowName}</h1>
           <p>
             Generated Power Query uses the SharePoint CSV source <strong>{fileName}</strong>.
-            The same mapper can emit connector stubs for CSV, Excel, database, and API inputs detected in Alteryx.
+          </p>
+          <p className="data-source-path">
+            Data Source Path: <strong>{dataSourcePath}</strong>
           </p>
           <div className={`export-generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
             <span>{generationLabel}</span>
@@ -80,7 +84,7 @@ export default function ExportPage() {
             <em>{generationMethod === "llm" ? `LLM status: ${generationStatus}` : "Rule engine used"}</em>
           </div>
         </div>
-        <button onClick={() => navigate("/summary")}>Back to assessment</button>
+        {/* <button onClick={() => navigate("/summary")}>Back to assessment</button> */}
       </div>
 
       <pre className="mquery-preview">{mquery}</pre>
