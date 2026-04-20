@@ -714,6 +714,44 @@
   line-height: 1.65;
 }
 
+.export-generation-badge {
+  display: inline-grid;
+  gap: 5px;
+  max-width: 760px;
+  margin-top: 10px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid rgba(6, 95, 70, 0.14);
+}
+
+.export-generation-badge.llm {
+  background: #f5f3ff;
+  color: #5b21b6;
+  border-color: rgba(91, 33, 182, 0.16);
+}
+
+.export-generation-badge span {
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.export-generation-badge strong {
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.export-generation-badge em {
+  color: inherit;
+  font-size: 0.82rem;
+  font-style: normal;
+  font-weight: 800;
+  opacity: 0.78;
+}
+
 .export-header button,
 .export-actions button {
   border: 0;

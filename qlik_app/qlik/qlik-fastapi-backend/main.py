@@ -3507,7 +3507,7 @@ async def list_powerbi_datasets():
 async def download_pdf(payload: dict = Body(...)):
     """
     Generate and download Validation & Reconciliation PDF report
-    Compares Qlik Sense and Power BI metrics
+    Compares Alteryx and Power BI metrics
     """
     try:
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
@@ -3623,7 +3623,7 @@ async def download_pdf(payload: dict = Body(...)):
         # Set proper PDF metadata with title (no unicode chars in filename metadata)
         pdf_title = f"Validation & Reconciliation Report "
         # {table_name}
-        pdf_author = "Qlik to Power BI Migration Tool"
+        pdf_author = "Alteryx to Power BI Migration Tool"
         pdf_subject = f"Data Migration Report for {app_name}"
        
         doc = SimpleDocTemplate(
@@ -3682,7 +3682,7 @@ async def download_pdf(payload: dict = Body(...)):
         <b>Application:</b> {app_name}<br/>
         <b>Publishing Method:</b> {publishing_method_display} | <b>Tables Deployed:</b> {tables_deployed}<br/>
         <b>Table:</b> {table_name}<br/>
-        <b>Source System:</b> Qlik Sense Cloud | <b>Target System:</b> Power BI Cloud<br/>
+        <b>Source System:</b> Alteryx Workflow Output | <b>Target System:</b> Power BI Cloud<br/>
         <b>Status:</b> {migration_status}
         """
         elements.append(Paragraph(header_info, normal_style))
@@ -3710,7 +3710,7 @@ async def download_pdf(payload: dict = Body(...)):
         elements.append(Spacer(1, 0.05 * inch))
         
         # Build table with proper formatting
-        table_data = [["Metric", "Qlik Sense", "Power BI", "Variance", "Status"]]
+        table_data = [["Metric", "Alteryx", "Power BI", "Variance", "Status"]]
         
         for m in all_metrics:
             # Format metric name
@@ -3788,7 +3788,7 @@ async def download_pdf(payload: dict = Body(...)):
         elements.append(Paragraph("DIFFERENCE DETAILS", heading_style))
         elements.append(Spacer(1, 0.08 * inch))
         
-        diff_table_data = [["Metric", "Qlik Sense", "Power BI", "Variance"]]
+        diff_table_data = [["Metric", "Alteryx", "Power BI", "Variance"]]
         
         for d in all_metrics:
             if d["metric"] == "total_records":
@@ -3845,7 +3845,7 @@ async def download_pdf(payload: dict = Body(...)):
             elements.append(Paragraph("The following metrics show discrepancies:", normal_style))
             elements.append(Spacer(1, 0.08 * inch))
             
-            diff_table_data = [["Metric", "Qlik Sense", "Power BI", "Difference", "% Variance"]]
+            diff_table_data = [["Metric", "Alteryx", "Power BI", "Difference", "% Variance"]]
             
             for d in differences:
                 metric_name = str(d["metric"]).replace('_', ' ').title()

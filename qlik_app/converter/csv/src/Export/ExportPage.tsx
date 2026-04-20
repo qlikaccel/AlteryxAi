@@ -12,6 +12,10 @@ export default function ExportPage() {
   const fileName = sessionStorage.getItem("alteryx_file_name") || "sales_data_1M.csv";
   const [mquery, setMquery] = useState(sessionStorage.getItem("migration_mquery") || "");
   const [datasetName, setDatasetName] = useState(sessionStorage.getItem("migration_dataset_name") || workflowName);
+  const [generationMethod, setGenerationMethod] = useState(sessionStorage.getItem("migration_generation_method") || "rule_based");
+  const [generationLabel, setGenerationLabel] = useState(sessionStorage.getItem("migration_generation_label") || "Rule-based mapping");
+  const [generationReason, setGenerationReason] = useState(sessionStorage.getItem("migration_generation_reason") || "Low-complexity workflow with supported deterministic tool mappings.");
+  const [generationStatus, setGenerationStatus] = useState(sessionStorage.getItem("migration_llm_status") || "not_required");
   const [loading, setLoading] = useState(!mquery);
   const [error, setError] = useState("");
 
@@ -25,9 +29,17 @@ export default function ExportPage() {
       .then((data) => {
         setMquery(data.combined_mquery || "");
         setDatasetName(data.dataset_name || workflowName);
+        setGenerationMethod(data.generation_method || "rule_based");
+        setGenerationLabel(data.generation_label || "Rule-based mapping");
+        setGenerationReason(data.routing_reason || "Low-complexity workflow with supported deterministic tool mappings.");
+        setGenerationStatus(data.llm_status || "not_required");
         sessionStorage.setItem("migration_mquery", data.combined_mquery || "");
         sessionStorage.setItem("migration_dataset_name", data.dataset_name || workflowName);
         sessionStorage.setItem("migration_data_source_path", data.data_source_path || sharePointUrl);
+        sessionStorage.setItem("migration_generation_method", data.generation_method || "rule_based");
+        sessionStorage.setItem("migration_generation_label", data.generation_label || "Rule-based mapping");
+        sessionStorage.setItem("migration_generation_reason", data.routing_reason || "");
+        sessionStorage.setItem("migration_llm_status", data.llm_status || "not_required");
       })
       .catch((err: any) => setError(err?.message || "Failed to generate Power Query"))
       .finally(() => setLoading(false));
@@ -62,6 +74,11 @@ export default function ExportPage() {
             Generated Power Query uses the SharePoint CSV source <strong>{fileName}</strong>.
             The same mapper can emit connector stubs for CSV, Excel, database, and API inputs detected in Alteryx.
           </p>
+          <div className={`export-generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
+            <span>{generationLabel}</span>
+            <strong>{generationReason}</strong>
+            <em>{generationMethod === "llm" ? `LLM status: ${generationStatus}` : "Rule engine used"}</em>
+          </div>
         </div>
         <button onClick={() => navigate("/summary")}>Back to assessment</button>
       </div>

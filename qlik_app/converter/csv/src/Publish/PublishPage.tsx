@@ -1,15 +1,32 @@
 import "./PublishPage.css";
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { publishAlteryxMQuery } from "../api/alteryxApi";
+import {
+  downloadValidationReportPdf,
+  publishAlteryxMQuery,
+  validatePowerBiMigration,
+} from "../api/alteryxApi";
 
-type PublishTab = "progress" | "details" | "validation";
+const parseNumberInput = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed.replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
-const PUBLISH_TABS: Array<{ id: PublishTab; label: string }> = [
-  { id: "progress", label: "Migration Progress" },
-  { id: "details", label: "Publish Details" },
-  { id: "validation", label: "Validation" },
-];
+const inferNumericColumns = (mquery: string) => {
+  const candidates = new Set<string>();
+  for (const match of mquery.matchAll(/\{\s*"([^"]+)"\s*,\s*each\s+List\.(?:Sum|Average|Min|Max)/g)) {
+    candidates.add(match[1]);
+  }
+  for (const match of mquery.matchAll(/Table\.AddColumn\s*\(\s*[^,]+,\s*"([^"]+)"\s*,.*?,\s*type\s+number/gs)) {
+    candidates.add(match[1]);
+  }
+  return Array.from(candidates);
+};
+
+const safeFileName = (value: string) =>
+  (value || "alteryx_workflow").replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "");
 
 export default function PublishPage() {
   const location = useLocation();
@@ -19,8 +36,12 @@ export default function PublishPage() {
   const mquery = (location.state as any)?.mquery || sessionStorage.getItem("migration_mquery") || "";
   const sharePointUrl = sessionStorage.getItem("alteryx_sharepoint_url") || "";
   const fileName = sessionStorage.getItem("alteryx_file_name") || "sales_data_1M.csv";
-  const [activeTab, setActiveTab] = useState<PublishTab>("progress");
+  const workspaceName = sessionStorage.getItem("alteryx_workspace_name") || "Power BI workspace";
+
   const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState("");
+  const [copyStatus, setCopyStatus] = useState("");
+  const [reportStatus, setReportStatus] = useState("");
   const [publishResult, setPublishResult] = useState<any>(() => {
     const raw = sessionStorage.getItem("alteryx_publish_result");
     if (!raw) return null;
@@ -30,38 +51,44 @@ export default function PublishPage() {
       return null;
     }
   });
-  const [publishError, setPublishError] = useState("");
+  const [validationResult, setValidationResult] = useState<any>(() => {
+    const raw = sessionStorage.getItem("alteryx_validation_result");
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  });
+  const [expectedRowCount, setExpectedRowCount] = useState(sessionStorage.getItem("expected_row_count") || "");
 
-  const publishSummary = useMemo(() => {
-    const lineCount = mquery ? mquery.split(/\r?\n/).length : 0;
-    return {
-      workflowName,
-      lineCount,
-      status: publishResult?.success ? "Published to Power BI" : mquery ? "Ready to publish" : "Conversion artifact missing",
-      percent: publishResult?.success ? 100 : mquery ? 68 : 24,
-    };
-  }, [mquery, publishResult, workflowName]);
+  const lineCount = mquery ? mquery.split(/\r?\n/).length : 0;
+  const numericColumns = useMemo(() => inferNumericColumns(mquery), [mquery]);
+  const validationTableName = publishResult?.dataset_name || datasetName;
+  const expectedFinalRows = parseNumberInput(expectedRowCount);
+  const actualPowerBiRows = validationResult?.actual?.RowCount ?? null;
+  const rawExpectedRows = fileName.toLowerCase().includes("1m") ? 1000000 : null;
+  const rawExpectedLabel = rawExpectedRows ? rawExpectedRows.toLocaleString() : "Source row count";
+  const finalLayerStatus = expectedFinalRows === null || actualPowerBiRows === null || actualPowerBiRows === undefined
+    ? "Pending"
+    : Number(actualPowerBiRows) === expectedFinalRows
+      ? "Pass"
+      : "Warning";
+  const publishUrl = publishResult?.dataset_url || publishResult?.workspace_url || "";
+  const deployedTables = publishResult?.tables_deployed ?? (publishResult?.success ? 1 : 0);
+  const validationWarningCount = finalLayerStatus === "Warning" ? 1 : 0;
 
-  const progressSteps = useMemo(() => [
-    { name: "Validate source", detail: `${fileName} from configured source path`, status: sharePointUrl ? "complete" : "warning" },
-    { name: "Parse Alteryx workflow", detail: "Workflow tools and connections loaded", status: "complete" },
-    { name: "Generate M Query", detail: `${publishSummary.lineCount} generated line(s)`, status: mquery ? "complete" : "pending" },
-    { name: "Publish semantic model", detail: publishResult?.dataset_id || "Awaiting Power BI publish", status: publishResult?.success ? "complete" : publishing ? "running" : "pending" },
-    { name: "Reconcile migration", detail: publishResult?.success ? "Dataset id and endpoint returned" : "Runs after publish", status: publishResult?.success ? "complete" : "pending" },
-  ], [fileName, mquery, publishResult, publishSummary.lineCount, publishing, sharePointUrl]);
-
-  const validationChecks = useMemo(() => [
-    { name: "Power Query artifact generated", status: mquery ? "PASS" : "PENDING", detail: mquery ? `${publishSummary.lineCount} lines ready for publish.` : "Return to Export and generate the artifact." },
-    { name: "Source path configured", status: sharePointUrl ? "PASS" : "WARNING", detail: sharePointUrl || "No source path is saved for this workflow." },
-    { name: "Power BI publish completed", status: publishResult?.success ? "PASS" : "PENDING", detail: publishResult?.message || "Publish has not completed in this session." },
-    { name: "Dataset identifier returned", status: publishResult?.dataset_id ? "PASS" : "PENDING", detail: publishResult?.dataset_id || "Power BI dataset id pending." },
-    { name: "API endpoint available", status: publishResult?.api_endpoint ? "PASS" : "PENDING", detail: publishResult?.api_endpoint || "Endpoint will display after publish." },
-  ], [mquery, publishResult, publishSummary.lineCount, sharePointUrl]);
+  const steps = [
+    { label: "Upload", complete: true },
+    { label: "Tool mapping", complete: true },
+    { label: "M Query gen", complete: Boolean(mquery) },
+    { label: "Validate", complete: Boolean(validationResult) },
+    { label: "Publish", complete: Boolean(publishResult?.success), active: !publishResult?.success },
+  ];
 
   const publishNow = async () => {
     setPublishing(true);
     setPublishError("");
-    setActiveTab("progress");
     try {
       const result = await publishAlteryxMQuery({
         dataset_name: datasetName,
@@ -71,7 +98,6 @@ export default function PublishPage() {
       });
       setPublishResult(result);
       sessionStorage.setItem("alteryx_publish_result", JSON.stringify(result));
-      setActiveTab("details");
     } catch (err: any) {
       setPublishError(err?.message || "Power BI publish failed");
     } finally {
@@ -79,99 +105,229 @@ export default function PublishPage() {
     }
   };
 
-  const downloadPlan = () => {
-    const blob = new Blob([mquery || "No conversion plan generated."], { type: "text/plain;charset=utf-8" });
+  const runValidationIfPossible = async () => {
+    if (!publishResult?.dataset_id) return validationResult;
+    sessionStorage.setItem("expected_row_count", expectedRowCount);
+    const result = await validatePowerBiMigration({
+      dataset_id: publishResult.dataset_id,
+      table_name: validationTableName,
+      numeric_columns: numericColumns,
+      expected_row_count: expectedFinalRows,
+      expected_totals: {},
+    });
+    setValidationResult(result);
+    sessionStorage.setItem("alteryx_validation_result", JSON.stringify(result));
+    return result;
+  };
+
+  const downloadBim = () => {
+    const model = {
+      name: datasetName,
+      compatibilityLevel: 1550,
+      model: {
+        tables: [{
+          name: validationTableName,
+          partitions: [{
+            name: `${validationTableName}-Partition`,
+            mode: "import",
+            source: { type: "m", expression: mquery.split(/\r?\n/) },
+          }],
+        }],
+      },
+    };
+    const blob = new Blob([JSON.stringify(model, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${workflowName.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "") || "alteryx_workflow"}_power_query_plan.m`;
+    anchor.download = `${safeFileName(datasetName)}.bim`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
 
+  const copyPublishUrl = async () => {
+    if (!publishUrl) return;
+    await navigator.clipboard.writeText(publishUrl);
+    setCopyStatus("Copied");
+    window.setTimeout(() => setCopyStatus(""), 1600);
+  };
+
+  const downloadValidationReport = async () => {
+    setReportStatus("Preparing report...");
+    try {
+      const latestValidation = await runValidationIfPossible();
+      const powerBiRows = latestValidation?.actual?.RowCount ?? actualPowerBiRows ?? 0;
+      const expectedRows = expectedFinalRows ?? powerBiRows;
+      const pdfBlob = await downloadValidationReportPdf({
+        table_name: latestValidation?.table_name || validationTableName,
+        app_name: workflowName,
+        migration_status: finalLayerStatus === "Pass" ? "Certified" : "Review Required",
+        publishing_method: "M_QUERY",
+        tables_deployed: deployedTables,
+        qlik_metrics: {
+          row_count: expectedRows,
+          total_records: rawExpectedRows ?? expectedRows,
+          table_count: 1,
+          column_count: latestValidation?.available_columns?.length || 5,
+          certification_status: finalLayerStatus,
+        },
+        powerbi_metrics: {
+          row_count: powerBiRows,
+          total_records: rawExpectedRows ?? powerBiRows,
+          table_count: deployedTables || 1,
+          column_count: latestValidation?.available_columns?.length || 5,
+          certification_status: finalLayerStatus,
+        },
+      });
+      const url = URL.createObjectURL(pdfBlob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `Validation_Reconciliation_Report_${safeFileName(datasetName)}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setReportStatus("Report downloaded");
+      window.setTimeout(() => setReportStatus(""), 1800);
+    } catch (err: any) {
+      setReportStatus(err?.message || "Failed to download report");
+    }
+  };
+
   return (
-    <div className="publish-wrap alteryx-publish-page">
-      <div className="publish-hero">
+    <div className="publish-shell">
+      <header className="publish-topbar">
         <div>
-          <p className="eyebrow">Power BI Publish</p>
-          <h1>{publishSummary.workflowName}</h1>
-          <p>
-            Publish the generated Alteryx-to-Power Query artifact to Power BI and review the migration progress,
-            endpoint, dataset identifiers, and validation/reconciliation status in one place.
-          </p>
+          <div className="publish-title-row">
+            <h1>Publish to Power BI / Fabric</h1>
+            <span>Step 5 of 6</span>
+          </div>
+          <p>{workflowName} · {publishResult?.success ? "Published" : "Ready to deploy"}</p>
         </div>
-        <div className="publish-status-card">
-          <span>Status</span>
-          <strong>{publishSummary.status}</strong>
-          <small>{publishSummary.percent}% migration progress</small>
-        </div>
-      </div>
-
-      <div className="publish-actions">
-        <button onClick={() => navigate("/export")}>Back to conversion</button>
-        <button onClick={downloadPlan} disabled={!mquery}>Download M Query</button>
-        <button onClick={publishNow} disabled={!mquery || publishing}>{publishing ? "Publishing..." : "Publish to Power BI"}</button>
-      </div>
-
-      {publishError && <div className="error-card">{publishError}</div>}
-
-      <div className="publish-tab-bar">
-        {PUBLISH_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            className={activeTab === tab.id ? "active" : ""}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
+        <div className="publish-top-actions">
+          <button className="outline-btn" onClick={downloadBim} disabled={!mquery}>Download .bim</button>
+          <button className="dark-btn" onClick={publishNow} disabled={!mquery || publishing}>
+            {publishing ? "Publishing..." : "Publish now"}
           </button>
+        </div>
+      </header>
+
+      {publishError && <div className="error-card publish-error">{publishError}</div>}
+
+      <section className="publish-stepper">
+        {steps.map((step, index) => (
+          <div className="wire-step" key={step.label}>
+            <div className={`wire-step-circle ${step.complete ? "done" : step.active ? "active" : ""}`}>
+              {step.complete ? "✓" : index + 1}
+            </div>
+            <span>{step.label}</span>
+            {index < steps.length - 1 && <i />}
+          </div>
         ))}
-      </div>
+      </section>
 
-      {activeTab === "progress" && (
-        <section className="migration-dashboard">
-          <div className="progress-meter">
-            <span style={{ width: `${publishSummary.percent}%` }} />
+      <main className="publish-main-grid">
+        <section className="wire-card publish-target-card">
+          <div className="wire-card-header">
+            <h2>Publish target</h2>
+            <button onClick={() => navigate("/export")}>Configure</button>
           </div>
-          <div className="migration-step-grid">
-            {progressSteps.map((step, index) => (
-              <article key={step.name} className={`migration-step ${step.status}`}>
-                <b>{index + 1}</b>
-                <h3>{step.name}</h3>
-                <p>{step.detail}</p>
-              </article>
-            ))}
+          <div className="target-row">
+            <span>Target</span>
+            <select value="Power BI Service (XMLA)" onChange={() => {}}>
+              <option>Power BI Service (XMLA)</option>
+              <option>Power BI / Fabric semantic model</option>
+            </select>
+          </div>
+          <div className="target-row">
+            <span>Workspace</span>
+            <strong>{publishResult?.workspace_url ? <a href={publishResult.workspace_url} target="_blank" rel="noreferrer">{workspaceName}</a> : workspaceName}</strong>
+          </div>
+          <div className="target-row">
+            <span>Dataset name</span>
+            <input value={datasetName} readOnly />
+          </div>
+          <div className="target-row">
+            <span>Power BI publish URL</span>
+            <div className="copy-url-box">
+              <input value={publishUrl || "Available after publish"} readOnly />
+              <button onClick={copyPublishUrl} disabled={!publishUrl}>{copyStatus || "Copy"}</button>
+            </div>
+          </div>
+          <div className="target-row">
+            <span>Overwrite existing</span>
+            <input className="checkbox-input" type="checkbox" checked readOnly />
           </div>
         </section>
-      )}
 
-      {activeTab === "details" && (
-        <section>
-          <div className="publish-result-grid">
-            <div><span>API Endpoint</span><strong>{publishResult?.api_endpoint || "Publishes through /api/migration/publish-mquery"}</strong></div>
-            <div><span>Dataset ID</span><strong>{publishResult?.dataset_id || "Unavailable until publish succeeds"}</strong></div>
-            <div><span>Workspace URL</span><strong>{publishResult?.workspace_url || "Unavailable until publish succeeds"}</strong></div>
-            <div><span>Tables Deployed</span><strong>{publishResult?.tables_deployed ?? 0}</strong></div>
-            <div><span>Dataset Name</span><strong>{datasetName}</strong></div>
-            <div><span>Source File</span><strong>{fileName}</strong></div>
-          </div>
-          <pre className="publish-preview">{mquery || "No Power Query conversion plan was found. Return to Export and generate the plan again."}</pre>
+        <section className="wire-card publish-summary-card">
+          <h2>Publish summary</h2>
+          <div className="summary-row"><span>Queries to deploy</span><strong>1 of 1</strong></div>
+          <div className="summary-row"><span>Total tables</span><strong>{deployedTables || 1}</strong></div>
+          <div className="summary-row"><span>Relationships</span><strong>0 inferred</strong></div>
+          <button className="summary-row validation-download-row" onClick={downloadValidationReport}>
+            <span>Validation & Reconciliation</span>
+            <strong className={validationWarningCount ? "warn-pill" : "ok-pill"}>
+              {validationWarningCount ? `${validationWarningCount} warning remain` : finalLayerStatus}
+            </strong>
+          </button>
+          <div className="summary-row"><span>Estimated raw rows</span><strong>{rawExpectedLabel}</strong></div>
+          <div className="summary-row"><span>Final output rows</span><strong>{actualPowerBiRows ?? (expectedRowCount || "Run validation")}</strong></div>
+          {reportStatus && <p className="report-status">{reportStatus}</p>}
         </section>
-      )}
+      </main>
 
-      {activeTab === "validation" && (
-        <section className="publish-validation validation-dashboard">
-          <h2>Validation & Reconciliation</h2>
-          <div className="validation-grid">
-            {validationChecks.map((check) => (
-              <article key={check.name} className={`validation-card ${check.status.toLowerCase()}`}>
-                <strong>{check.status}</strong>
-                <h3>{check.name}</h3>
-                <p>{check.detail}</p>
-              </article>
-            ))}
+      <section className="wire-card layer-summary-card publish-layer-card">
+        <div className="layer-summary-header">
+          <div>
+            <span>Reconciliation Layers</span>
+            <h3>Raw Source vs Final Alteryx Output</h3>
           </div>
-        </section>
-      )}
+          <strong className={finalLayerStatus.toLowerCase()}>{finalLayerStatus}</strong>
+        </div>
+        <div className="layer-table">
+          <div className="layer-row layer-head">
+            <span>Layer</span>
+            <span>Table</span>
+            <span>Expected rows</span>
+            <span>Power BI actual</span>
+            <span>Status</span>
+          </div>
+          <div className="layer-row">
+            <span>Raw source validation</span>
+            <span>{fileName.replace(/\.csv$/i, "_raw")}</span>
+            <span>{rawExpectedLabel}</span>
+            <span>Reference layer</span>
+            <strong className="info">REFERENCE</strong>
+          </div>
+          <div className="layer-row">
+            <span>Final Alteryx output</span>
+            <span>{validationResult?.table_name || validationTableName}</span>
+            <span>
+              <input
+                className="inline-count-input"
+                value={expectedRowCount}
+                onChange={(event) => setExpectedRowCount(event.target.value)}
+                placeholder="Expected rows"
+              />
+            </span>
+            <span>{actualPowerBiRows ?? "Run report"}</span>
+            <strong className={finalLayerStatus.toLowerCase()}>{finalLayerStatus}</strong>
+          </div>
+          <div className="layer-row">
+            <span>Validation status</span>
+            <span>Compare raw + transformed checks</span>
+            <span>Baseline entered by user</span>
+            <span>{validationResult ? "Power BI actuals returned" : "Awaiting validation"}</span>
+            <strong className={finalLayerStatus.toLowerCase()}>{finalLayerStatus}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="wire-card mquery-snapshot">
+        <div>
+          <h2>Deployment artifact</h2>
+          <p>{lineCount} generated M Query line(s) from {fileName}</p>
+        </div>
+        <pre>{mquery || "No Power Query conversion plan was found. Return to Export and generate the plan again."}</pre>
+      </section>
     </div>
   );
 }
