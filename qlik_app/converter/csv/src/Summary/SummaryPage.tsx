@@ -13,12 +13,13 @@ const DEFAULT_SHAREPOINT_URL = "https://sorimtechnologies.sharepoint.com/Shared%
 const DEFAULT_FILE_NAME = "sales_data_1M.csv";
 
 type SummaryTab = "sourceTypes" | "summary" | "brd" | "diagram";
+type SourceType = "database" | "scripts" | "csv";
 
 const TABS: Array<{ id: SummaryTab; label: string; icon: string }> = [
-  { id: "sourceTypes", label: "Source Types", icon: "folder" },
-  { id: "summary", label: "Summary", icon: "chart" },
-  { id: "brd", label: "App BRD", icon: "doc" },
-  { id: "diagram", label: "ER Diagram", icon: "flow" },
+  { id: "sourceTypes", label: "Source Types", icon: "" },
+  { id: "summary", label: "Summary", icon: "" },
+  { id: "brd", label: "App BRD", icon: "" },
+  { id: "diagram", label: "ER Diagram", icon: "" },
 ];
 
 function readStoredWorkflow(): AlteryxWorkflow | null {
@@ -89,6 +90,7 @@ export default function SummaryPage() {
   const [workflow, setWorkflow] = useState<AlteryxWorkflow | null>(readStoredWorkflow());
   const [analysis, setAnalysis] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<SummaryTab>("sourceTypes");
+  const [selectedSource, setSelectedSource] = useState<SourceType>("csv"); // ✅ track selected card
   const [sharePointUrl, setSharePointUrl] = useState(DEFAULT_SHAREPOINT_URL);
   const [fileName, setFileName] = useState(DEFAULT_FILE_NAME);
   const [loading, setLoading] = useState(true);
@@ -209,51 +211,82 @@ export default function SummaryPage() {
         <div className="timer-badge">Analysis Time: {pageLoadTime || "00m : 00s : 00ms"}</div>
       </div>
 
-      <div className="source-config alteryx-source-config">
-        <label>
-          Data Source Path
-          <input value={sharePointUrl} onChange={(event) => setSharePointUrl(event.target.value)} />
-        </label>
-        <label>
-          File name
-          <input value={fileName} onChange={(event) => setFileName(event.target.value)} />
-        </label>
-      </div>
+      {activeTab !== "sourceTypes" && (
+        <div className="source-config alteryx-source-config">
+          <label>
+            Data Source Path
+            <input value={sharePointUrl} onChange={(event) => setSharePointUrl(event.target.value)} />
+          </label>
+          <label>
+            File name
+            <input value={fileName} onChange={(event) => setFileName(event.target.value)} />
+          </label>
+        </div>
+      )}
 
       {activeTab === "sourceTypes" && (
         <section className="source-type-grid">
-          <article className="source-type-card muted">
+
+          {/* ✅ Database Card */}
+          <article
+            className={`source-type-card database ${selectedSource === "database" ? "selected" : "muted"}`}
+            onClick={() => setSelectedSource("database")}
+            style={{ cursor: "pointer" }}
+          >
             <div className="source-card-head">
-              <span className="source-radio" />
-              <span className="source-icon">db</span>
-              <div><h3>Database</h3><p>Direct ODBC/JDBC connection</p></div>
-              <em>Coming Soon</em>
+              <span className={`source-radio ${selectedSource === "database" ? "selected" : ""}`} />
+              <span className="source-icon database-icon">🗄️</span>
+              <div>
+                <h3>Database</h3>
+                <p>Direct ODBC / JDBC connection</p>
+              </div>
             </div>
-            <p>Connect directly to SQL Server, Oracle, Snowflake, or other governed databases. Schema is inferred automatically when credentials are supplied.</p>
-            <div className="source-tags"><span>ODBC / JDBC</span><span>Live schema</span><span>SQL sources</span></div>
+            <p className="source-card-desc">Connect directly to the source database via ODBC. Schema is inferred automatically. Best for live systems where data resides in SQL Server, Oracle, or Snowflake.</p>
+            <div className="source-tags default"><span>ODBC / JDBC</span><span>LIVE SCHEMA</span><span>SQL SERVER · ORACLE</span></div>
           </article>
 
-          <article className="source-type-card active-card">
+          {/* ✅ Scripts Card */}
+          <article
+            className={`source-type-card scripts ${selectedSource === "scripts" ? "selected" : ""}`}
+            onClick={() => setSelectedSource("scripts")}
+            style={{ cursor: "pointer" }}
+          >
             <div className="source-card-head">
-              <span className="source-radio" />
-              <span className="source-icon warm">script</span>
-              <div><h3>Parse & Convert</h3><p>Alteryx workflow XML to Power Query M</p></div>
+              <span className={`source-radio ${selectedSource === "scripts" ? "selected" : ""}`} />
+              <span className="source-icon script-icon">📜</span>
+              <div>
+                <h3>Scripts</h3>
+                <p>Qlik Load Script → M-Query</p>
+              </div>
             </div>
-            <p>Maps 20+ Alteryx tools to M equivalents, including Filter, Join, Summarize, Formula, Select, Union, Sort, Unique, Record ID, APIs, CSV, Excel, and database source patterns.</p>
-            <div className="source-tags"><span>M-QUERY</span><span>TOOL MAP</span><span>WORKFLOW GRAPH</span></div>
-            <button onClick={() => navigate("/export")}>Go to Scripts</button>
+            <p className="source-card-desc">Parse the Qlik Load Script from your application. Transforms APPLYMAP, INLINE, and RESIDENT tables into Power Query M-code. Full schema and relationship preservation.</p>
+            <div className="source-tags recommended"><span>M-QUERY</span><span>XMLA</span><span>RELATIONSHIPS</span></div>
+            {selectedSource === "scripts" && (
+              <button onClick={(e) => { e.stopPropagation(); navigate("/export"); }}>Open M Query</button>
+            )}
           </article>
 
-          <article className="source-type-card active-card">
+          {/* ✅ Export CSV Card */}
+          <article
+            className={`source-type-card csv ${selectedSource === "csv" ? "selected" : ""}`}
+            onClick={() => setSelectedSource("csv")}
+            style={{ cursor: "pointer" }}
+          >
             <div className="source-card-head">
-              <span className="source-radio" />
-              <span className="source-icon tan">csv</span>
-              <div><h3>Publish CSV</h3><p>SharePoint CSV to Power BI</p></div>
+              <span className={`source-radio ${selectedSource === "csv" ? "selected" : ""}`} />
+              <span className="source-icon csv-icon">📦</span>
+              <div>
+                <h3>Export CSV</h3>
+                <p>Data export via REST API</p>
+              </div>
             </div>
-            <p>Uses the supplied SharePoint path for {fileName}, publishes the generated model, and exposes the backend API endpoint used by the migration.</p>
-            <div className="source-tags blue"><span>ANY LICENSE</span><span>REST API</span><span>FAST DEPLOY</span></div>
-            <button onClick={continueToExport}>Go to Export</button>
+            <p className="source-card-desc">Export all table data as CSV and push to Power BI as a push dataset via REST API. Works on any Power BI license. Ideal for flat tables without complex transformations.</p>
+            <div className="source-tags csv-tags"><span>ANY LICENSE</span><span>REST API</span><span>FAST DEPLOY</span></div>
+            {selectedSource === "csv" && (
+              <button onClick={(e) => { e.stopPropagation(); continueToExport(); }}>Go to Export</button>
+            )}
           </article>
+
         </section>
       )}
 
@@ -336,9 +369,6 @@ export default function SummaryPage() {
       )}
 
       <div className="summary-actions">
-        <button onClick={() => navigate("/apps")}>Back to workflows</button>
-        <button onClick={downloadBrd} disabled={brdLoading}>{brdLoading ? "Generating BRD..." : "Download BRD"}</button>
-        <button onClick={continueToExport}>Continue to Power BI Conversion</button>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 .export-wrap {
   padding: 24px;
   font-family: "Inter", "Segoe UI", sans-serif;
+  margin-top: 20px;
 }
 
 .export-wrap h2 {
@@ -714,6 +715,17 @@
   line-height: 1.65;
 }
 
+.data-source-path {
+  margin: 12px 0 0;
+  color: #0f172a;
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.data-source-path strong {
+  color: #0b4a7a;
+}
+
 .export-generation-badge {
   display: inline-grid;
   gap: 5px;
@@ -780,7 +792,6 @@
   min-height: 360px;
   padding: 20px;
   border-radius: 18px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
   background: #0f172a;
   color: #dbeafe;
   font-size: 0.92rem;
@@ -797,6 +808,7 @@
   background: #0070c0;
   color: #fff;
   box-shadow: 0 12px 28px rgba(0, 112, 192, 0.24);
+  margin-bottom: 30px;
 }
 
 @media (max-width: 760px) {

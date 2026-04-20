@@ -526,6 +526,7 @@
 .export-wrap {
   padding: 24px;
   font-family: "Inter", "Segoe UI", sans-serif;
+  margin-top: 20px;
 }
 
 .export-wrap h2 {
