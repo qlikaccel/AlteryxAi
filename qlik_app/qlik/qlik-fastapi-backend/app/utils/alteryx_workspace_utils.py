@@ -34,14 +34,13 @@ import time
 from typing import Any, Optional
 from dataclasses import dataclass
 from dotenv import load_dotenv
+from app.utils.token_manager import TokenManager
 
 try:
     import jwt
     HAS_JWT = True
 except ImportError:
     HAS_JWT = False
-
-load_dotenv()
 
 ALTERYX_BASE_URL  = "https://us1.alteryxcloud.com"
 ALTERYX_TOKEN_URL = "https://pingauth.alteryxcloud.com/as/token"
@@ -50,11 +49,13 @@ ALTERYX_TOKEN_URL = "https://pingauth.alteryxcloud.com/as/token"
 # Required for the refresh_token grant even with no client_secret.
 _KNOWN_PUBLIC_CLIENT_ID = "af1b5321-afe0-48c2-966a-c77d74e98085"
 
-ALTERYX_CLIENT_ID     = os.getenv("ALTERYX_CLIENT_ID", _KNOWN_PUBLIC_CLIENT_ID)
-ALTERYX_CLIENT_SECRET = os.getenv("ALTERYX_CLIENT_SECRET", "")
 ALTERYX_ENV_FILE = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", ".env")
 )
+load_dotenv(ALTERYX_ENV_FILE, override=True)
+
+ALTERYX_CLIENT_ID     = os.getenv("ALTERYX_CLIENT_ID", _KNOWN_PUBLIC_CLIENT_ID)
+ALTERYX_CLIENT_SECRET = os.getenv("ALTERYX_CLIENT_SECRET", "")
 
 
 def decode_jwt_payload(token: str) -> dict[str, Any]:
@@ -80,6 +81,51 @@ def token_expiry_summary(token: str) -> str:
     minutes = abs(remaining) / 60
     direction = "expires in" if remaining >= 0 else "expired"
     return f"{direction} {minutes:.1f} minutes"
+
+
+def masked_token_summary(token: Optional[str]) -> dict[str, Any]:
+    """Return safe token diagnostics without exposing the token value."""
+    value = (token or "").strip()
+    payload = decode_jwt_payload(value)
+    exp = payload.get("exp")
+    remaining_seconds = exp - time.time() if exp else None
+    return {
+        "present": bool(value),
+        "length": len(value),
+        "prefix": f"{value[:12]}..." if value else "",
+        "expires_at": exp,
+        "remaining_seconds": remaining_seconds,
+        "expiry": token_expiry_summary(value) if value else "missing",
+        "looks_like_access_token": looks_like_access_token(value) if value else False,
+        "looks_like_refresh_token": looks_like_refresh_token(value) if value else False,
+    }
+
+
+def get_alteryx_token_diagnostics() -> dict[str, Any]:
+    """Summarize configured token sources without exposing secrets."""
+    stored = TokenManager.load_tokens()
+    env_access = os.getenv("ALTERYX_ACCESS_TOKEN", "")
+    env_refresh = os.getenv("ALTERYX_REFRESH_TOKEN", "")
+    stored_access = stored.get("access_token", "")
+    stored_refresh = stored.get("refresh_token", "")
+    return {
+        "env_file": {
+            "path": ALTERYX_ENV_FILE,
+            "exists": os.path.exists(ALTERYX_ENV_FILE),
+        },
+        "env": {
+            "access_token": masked_token_summary(env_access),
+            "refresh_token": masked_token_summary(env_refresh),
+        },
+        "token_storage": {
+            "path": str(TokenManager.storage_path()),
+            "exists": TokenManager.storage_path().exists(),
+            "timestamp": stored.get("timestamp"),
+            "access_token": masked_token_summary(stored_access),
+            "refresh_token": masked_token_summary(stored_refresh),
+        },
+        "same_refresh_token": bool(env_refresh and stored_refresh and env_refresh == stored_refresh),
+    }
 
 
 def looks_like_access_token(token: str) -> bool:
@@ -109,8 +155,7 @@ class AlteryxSession:
 
 def get_session_from_env() -> AlteryxSession:
     """Build a session from environment variables."""
-    access_token  = os.getenv("ALTERYX_ACCESS_TOKEN", "")
-    refresh_token = os.getenv("ALTERYX_REFRESH_TOKEN", "")
+    access_token, refresh_token = TokenManager.get_tokens_from_storage_or_env()
 
     if not access_token and not refresh_token:
         raise ValueError(
@@ -139,6 +184,7 @@ def refresh_access_token(refresh_token: str) -> tuple[str, Optional[str]]:
     """
     print(f"\n🔄 [refresh_access_token] Requesting new access_token from Ping Identity...")
     print(f"   client_id : {ALTERYX_CLIENT_ID}")
+    return TokenManager.refresh_token(refresh_token)
 
     payload: dict = {
         "grant_type":    "refresh_token",
@@ -184,6 +230,7 @@ def refresh_access_token(refresh_token: str) -> tuple[str, Optional[str]]:
 
 def persist_alteryx_tokens(access_token: str, refresh_token: Optional[str] = None) -> None:
     """Persist the current token pair so backend restarts do not reuse stale tokens."""
+    TokenManager.save_tokens(access_token, refresh_token)
     try:
         if not os.path.exists(ALTERYX_ENV_FILE):
             print(f"⚠️  [persist_alteryx_tokens] .env not found: {ALTERYX_ENV_FILE}")
@@ -254,13 +301,19 @@ def ensure_fresh_token(session: AlteryxSession) -> str:
     print(f"\n🔄 [ensure_fresh_token] Token expired — refreshing...")
 
     last_error: Optional[Exception] = None
+    stored = TokenManager.load_tokens()
+    refresh_to_use = (stored.get("refresh_token") or session.refresh_token or "").strip()
 
-    if session.refresh_token:
+    if refresh_to_use:
         try:
-            new_access, new_refresh = refresh_access_token(session.refresh_token)
+            if stored.get("refresh_token") and stored.get("refresh_token") != session.refresh_token:
+                print("🔁 [ensure_fresh_token] Using latest rotated refresh token from token_storage.json")
+            new_access, new_refresh = refresh_access_token(refresh_to_use)
             session.access_token = new_access
             if new_refresh:                  # BUG 4 FIX: always update rotated token
                 session.refresh_token = new_refresh
+            elif not session.refresh_token:
+                session.refresh_token = refresh_to_use
             persist_alteryx_tokens(session.access_token, session.refresh_token)
             print(f"✅ [ensure_fresh_token] Token refreshed")
             return session.access_token
@@ -469,24 +522,54 @@ def create_alteryx_session(
     Build and validate an AlteryxSession.
 
     Token resolution order:
-      access_token  → UI value → ALTERYX_ACCESS_TOKEN in .env → ""
-      refresh_token → UI value → ALTERYX_REFRESH_TOKEN in .env → None
+      1. UI/request token override
+      2. ALTERYX_ACCESS_TOKEN / ALTERYX_REFRESH_TOKEN in .env
+      3. token_storage.json as a last fallback
     """
-    # BUG 3 FIX: env fallback was commented out in the original code
-    resolved_access  = access_token  or os.getenv("ALTERYX_ACCESS_TOKEN", "")
-    resolved_refresh = refresh_token or os.getenv("ALTERYX_REFRESH_TOKEN")
+    request_access = (access_token or "").strip()
+    request_refresh = (refresh_token or "").strip() or None
+    stored = TokenManager.load_tokens()
+    stored_access = (stored.get("access_token") or "").strip()
+    stored_refresh = (stored.get("refresh_token") or "").strip() or None
+    env_access = (os.getenv("ALTERYX_ACCESS_TOKEN", "") or "").strip()
+    env_refresh = (os.getenv("ALTERYX_REFRESH_TOKEN", "") or "").strip() or None
 
-    if not resolved_access and not resolved_refresh:
+    candidates: list[tuple[str, str, Optional[str]]] = []
+    if request_access or request_refresh:
+        candidates.append(("request", request_access, request_refresh))
+    else:
+        if (env_access or env_refresh) and (env_access, env_refresh) != (stored_access, stored_refresh):
+            candidates.append((".env", env_access, env_refresh))
+        elif env_access or env_refresh:
+            candidates.append((".env", env_access, env_refresh))
+        if stored_access or stored_refresh:
+            candidates.append(("token_storage.json", stored_access, stored_refresh))
+
+    if not candidates:
         raise ValueError(
             "No Alteryx credentials provided. "
             "Provide an access token and refresh token from Alteryx One."
         )
 
-    session = AlteryxSession(
-        access_token=resolved_access,
-        refresh_token=resolved_refresh,
-    )
+    last_error: Optional[Exception] = None
+    for source, resolved_access, resolved_refresh in candidates:
+        print(f"🔐 [create_alteryx_session] Trying Alteryx tokens from {source}")
+        session = AlteryxSession(
+            access_token=resolved_access,
+            refresh_token=resolved_refresh,
+        )
+        try:
+            get_workspace_id_by_name(session, workspace_name)
+            persist_alteryx_tokens(session.access_token, session.refresh_token)
+            return session
+        except Exception as exc:
+            last_error = exc
+            print(f"⚠️  [create_alteryx_session] Token source {source} failed: {exc}")
+            if source == "request":
+                break
+            if source == "token_storage.json" and env_access:
+                TokenManager.clear_storage()
+                print("🔁 [create_alteryx_session] Cleared stale stored token.")
+            continue
 
-    get_workspace_id_by_name(session, workspace_name)
-    persist_alteryx_tokens(session.access_token, session.refresh_token)
-    return session
+    raise ValueError(str(last_error) if last_error else "Unable to validate Alteryx credentials.")
