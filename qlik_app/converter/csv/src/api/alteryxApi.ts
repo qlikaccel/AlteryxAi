@@ -148,6 +148,56 @@ export async function publishAlteryxMQuery(payload: {
   };
 }
 
+export async function validatePowerBiMigration(payload: {
+  dataset_id: string;
+  table_name: string;
+  numeric_columns?: string[];
+  expected_row_count?: number | null;
+  expected_totals?: Record<string, number>;
+}): Promise<any> {
+  const res = await fetch(`${BASE_URL}/api/migration/validate-powerbi`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dataset_id: payload.dataset_id,
+      table_name: payload.table_name,
+      numeric_columns: payload.numeric_columns || [],
+      expected_row_count: payload.expected_row_count ?? null,
+      expected_totals: payload.expected_totals || {},
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.detail || `Power BI validation failed (${res.status})`);
+  }
+
+  return data;
+}
+
+export async function downloadValidationReportPdf(payload: {
+  table_name: string;
+  app_name: string;
+  migration_status: string;
+  publishing_method?: string;
+  tables_deployed?: number;
+  qlik_metrics: Record<string, any>;
+  powerbi_metrics: Record<string, any>;
+}): Promise<Blob> {
+  const res = await fetch(`${BASE_URL}/report/download-pdf`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Failed to generate PDF (${res.status})`);
+  }
+
+  return res.blob();
+}
+
 export async function fetchAlteryxWorkflows(workspaceId: string, accessToken: string): Promise<AlteryxWorkflow[]> {
   const workspaceName = sessionStorage.getItem("alteryx_workspace_name");
   const alteryxUsername = sessionStorage.getItem("alteryx_username");

@@ -1,8 +1,16 @@
-import os
+import logging
 import os
 import re
 from typing import Any
 from urllib.parse import urlparse
+
+try:
+    import requests
+except ImportError:  # pragma: no cover - runtime dependency may be absent in lightweight test shells.
+    requests = None
+
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_SHAREPOINT_FILE_URL = "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx"
@@ -39,6 +47,26 @@ ALTERYX_TOOL_MAPPINGS: dict[str, dict[str, str]] = {
     "output data": {"m": "Power BI publish target", "category": "Output"},
     "in-db": {"m": "Value.NativeQuery / source SQL", "category": "Database"},
 }
+
+LLM_ROUTE_TOOL_KEYS = {
+    "dynamic input",
+    "download",
+    "json parse",
+    "xml parse",
+    "multi-row formula",
+    "multi-field formula",
+    "join",
+    "join multiple",
+    "append fields",
+    "text to columns",
+    "transpose",
+    "cross tab",
+    "find replace",
+    "in-db",
+}
+
+RULE_ROUTE_MAX_TOOLS = 25
+RULE_ROUTE_MAX_CONNECTIONS = 40
 
 
 def safe_name(value: str, fallback: str = "AlteryxOutput") -> str:
@@ -105,6 +133,129 @@ def detect_tool_key(plugin: str) -> str:
         if token in lowered:
             return key
     return _short_tool_name(plugin)
+
+
+def choose_generation_strategy(workflow: dict[str, Any]) -> dict[str, Any]:
+    """Route simple workflows to rules and complex mapping workflows to LLM assistance."""
+    nodes = workflow.get("workflowNodes") or []
+    tool_keys = [detect_tool_key(str(node.get("plugin", ""))) for node in nodes]
+    tool_count = int(workflow.get("toolCount") or len(nodes) or 0)
+    connection_count = int(workflow.get("connectionCount") or len(workflow.get("workflowEdges") or []) or 0)
+    unsupported_count = int(workflow.get("unsupportedToolCount") or 0)
+    complexity = str(workflow.get("complexity") or "low").lower()
+    complex_tools = sorted({tool for tool in tool_keys if tool in LLM_ROUTE_TOOL_KEYS})
+
+    indicators: list[str] = []
+    if complexity in {"medium", "high", "manual_review"}:
+        indicators.append(f"{complexity} workflow complexity")
+    if unsupported_count:
+        indicators.append(f"{unsupported_count} unsupported tool instance(s)")
+    if tool_count > RULE_ROUTE_MAX_TOOLS:
+        indicators.append(f"{tool_count} tools exceeds simple-rule threshold")
+    if connection_count > RULE_ROUTE_MAX_CONNECTIONS:
+        indicators.append(f"{connection_count} connections exceeds simple-rule threshold")
+    if complex_tools:
+        indicators.append(f"complex mapping tools detected: {', '.join(complex_tools[:6])}")
+    expression_nodes = [
+        node for node in nodes
+        if re.search(r"\bIIF\s*\(|REGEX_|Row-\d+|Contains\(|DateTime|Join|Union", str(node.get("expression") or node.get("configurationText") or ""), re.IGNORECASE)
+    ]
+    if expression_nodes:
+        indicators.append(f"{len(expression_nodes)} expression-heavy transformation(s)")
+
+    if indicators:
+        return {
+            "generation_method": "llm",
+            "generation_label": "LLM-assisted mapping",
+            "routing_reason": "; ".join(indicators),
+            "complexity_indicators": indicators,
+            "llm_used": False,
+            "llm_status": "routing_selected",
+            "llm_model": os.getenv("ALTERYX_MQUERY_LLM_MODEL", "configured LLM"),
+        }
+
+    return {
+        "generation_method": "rule_based",
+        "generation_label": "Rule-based mapping",
+        "routing_reason": "Low-complexity workflow with supported deterministic tool mappings.",
+        "complexity_indicators": [],
+        "llm_used": False,
+        "llm_status": "not_required",
+        "llm_model": "",
+    }
+
+
+def _llm_mapping_guidance(workflow: dict[str, Any], conversion_steps: list[dict[str, Any]]) -> list[str]:
+    """Create an auditable LLM handoff summary for complex mappings."""
+    name = workflow.get("name") or "Selected workflow"
+    unresolved = [step for step in conversion_steps if not step.get("mapped")]
+    complex_steps = [step for step in conversion_steps if step.get("tool") in LLM_ROUTE_TOOL_KEYS]
+    guidance = [
+        f"Hybrid route selected for {name}: use LLM-assisted semantic mapping for complex transformation intent, then render validated Power Query M.",
+        "Review generated steps for multi-input ordering, expression semantics, join cardinality, and source credentials before publishing.",
+    ]
+    if complex_steps:
+        tools = ", ".join(sorted({str(step.get("tool")) for step in complex_steps})[:8])
+        guidance.append(f"LLM mapping focus: {tools}.")
+    if unresolved:
+        tools = ", ".join(sorted({str(step.get("tool")) for step in unresolved})[:8])
+        guidance.append(f"Manual/LLM review still required for: {tools}.")
+    return guidance
+
+
+def _call_llm_mapping_model(workflow: dict[str, Any], conversion_steps: list[dict[str, Any]]) -> tuple[list[str], dict[str, Any]]:
+    if requests is None:
+        return [], {"llm_used": False, "llm_status": "requests_unavailable", "llm_model": ""}
+
+    token = os.getenv("ALTERYX_MQUERY_LLM_API_KEY") or os.getenv("HF_TOKEN")
+    if not token:
+        return [], {"llm_used": False, "llm_status": "not_configured", "llm_model": ""}
+
+    model = os.getenv("ALTERYX_MQUERY_LLM_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
+    url = os.getenv("ALTERYX_MQUERY_LLM_URL", "https://router.huggingface.co/v1/chat/completions")
+    compact_steps = [
+        {
+            "tool": step.get("tool"),
+            "mapped": step.get("mapped"),
+            "m_function": step.get("m_function"),
+            "note": step.get("note"),
+        }
+        for step in conversion_steps[:40]
+    ]
+    prompt = (
+        "Map this Alteryx workflow to Power Query M. Return 3-5 concise bullets covering "
+        "semantic transformation risks, multi-input mapping order, and any M-query remediation needed.\n\n"
+        f"Workflow: {workflow.get('name')}\n"
+        f"Complexity: {workflow.get('complexity')}\n"
+        f"Tools: {compact_steps}"
+    )
+
+    try:
+        response = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You are an expert Alteryx to Power Query M migration engineer."},
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": 350,
+                "temperature": 0.1,
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        bullets = [
+            re.sub(r"^[\s*\-\d.]+", "", line).strip()
+            for line in content.splitlines()
+            if line.strip()
+        ][:5]
+        return bullets, {"llm_used": True, "llm_status": "completed", "llm_model": model}
+    except Exception as exc:
+        logger.warning("LLM-assisted Alteryx M-query mapping failed; using deterministic guidance: %s", exc)
+        return [], {"llm_used": False, "llm_status": "failed_fallback", "llm_model": model}
 
 
 def _field_ref(value: str) -> str:
@@ -445,6 +596,7 @@ def convert_workflow_to_m(
     sharepoint_url: str = "",
     file_name: str = "",
 ) -> dict[str, Any]:
+    strategy = choose_generation_strategy(workflow)
     if sharepoint_url or file_name:
         source = {
             **source,
@@ -493,6 +645,12 @@ def convert_workflow_to_m(
         formatted.append(f"    {name} = {expression}{suffix}")
 
     combined_mquery = f"{table_name} =\nlet\n" + "\n".join(formatted) + f"\nin\n    {current}"
+    llm_metadata: dict[str, Any] = {}
+    if strategy["generation_method"] == "llm":
+        model_guidance, llm_metadata = _call_llm_mapping_model(workflow, conversion_steps)
+        llm_guidance = model_guidance or _llm_mapping_guidance(workflow, conversion_steps)
+    else:
+        llm_guidance = []
 
     return {
         "dataset_name": table_name,
@@ -505,4 +663,7 @@ def convert_workflow_to_m(
         "mapped_tool_count": mapped_count,
         "unmapped_tool_count": unmapped_count,
         "tool_mappings": ALTERYX_TOOL_MAPPINGS,
+        **strategy,
+        **llm_metadata,
+        "llm_mapping_guidance": llm_guidance,
     }

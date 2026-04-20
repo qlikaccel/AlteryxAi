@@ -22,10 +22,12 @@ import re
 from collections import Counter
 from typing import Any, Dict, List, Optional
 
+import requests
 from fastapi import APIRouter, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel as _BaseModel
 
+from app.services.powerbi_publisher import _acquire_sp_token
 from app.services.six_stage_orchestrator import SixStageOrchestrator, run_migration_pipeline
 from app.services.relationship_service import (
     _sanitize_col_name,
@@ -1279,6 +1281,7 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
             "tables_deployed":    len(tables_m),
             "method":             result.get("method", ""),
             "workspace_url":      result.get("workspace_url", ""),
+            "dataset_url":        result.get("dataset_url", ""),
             "qlik_fields_map_used": len(qlik_fields_map),
             "message":            result.get("message", f"Published {dataset_name} to Power BI"),
         }
@@ -1296,6 +1299,278 @@ class GeneratePbitRequest(_BaseModel):
     raw_script:       str  = ""
     data_source_path: str  = ""
     relationships:    list = []
+
+
+class PowerBiValidationRequest(_BaseModel):
+    dataset_id: str
+    table_name: str
+    workspace_id: str = ""
+    numeric_columns: List[str] = []
+    expected_row_count: Optional[int] = None
+    expected_totals: Dict[str, float] = {}
+
+
+def _dax_table(name: str) -> str:
+    return "'" + str(name or "").replace("'", "''") + "'"
+
+
+def _dax_column(name: str) -> str:
+    return "[" + str(name or "").replace("]", "]]") + "]"
+
+
+def _normalize_execute_query_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    normalized: Dict[str, Any] = {}
+    for key, value in (row or {}).items():
+        clean_key = str(key).strip("[]")
+        if "[" in clean_key and "]" in clean_key:
+            clean_key = clean_key.split("[")[-1].rstrip("]")
+        normalized[clean_key] = value
+    return normalized
+
+
+def _table_match_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _get_powerbi_table_metadata(workspace_id: str, dataset_id: str, headers: Dict[str, str]) -> List[Dict[str, Any]]:
+    try:
+        url = (
+            f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}"
+            f"/datasets/{dataset_id}/tables"
+        )
+        resp = requests.get(url, headers=headers, timeout=30)
+        if resp.ok:
+            tables: List[Dict[str, Any]] = []
+            for item in resp.json().get("value", []):
+                name = str(item.get("name") or item.get("displayName") or "")
+                if not name:
+                    continue
+                tables.append({
+                    "name": name,
+                    "columns": [
+                        str(col.get("name") or "")
+                        for col in item.get("columns", [])
+                        if col.get("name")
+                    ],
+                })
+            return tables
+        logger.warning("[validate_powerbi] Table discovery failed: %d %s", resp.status_code, resp.text[:300])
+    except Exception as exc:
+        logger.warning("[validate_powerbi] Table discovery error: %s", exc)
+    return []
+
+
+def _resolve_powerbi_table_name(requested: str, available: List[Dict[str, Any]]) -> str:
+    names = [table.get("name", "") for table in available if table.get("name")]
+    if not names:
+        return requested
+    requested_key = _table_match_key(requested)
+    for table in names:
+        if table == requested:
+            return table
+    for table in names:
+        if _table_match_key(table) == requested_key:
+            return table
+    for table in names:
+        key = _table_match_key(table)
+        if requested_key and (requested_key in key or key in requested_key):
+            return table
+    non_system = [
+        table for table in names
+        if not table.startswith(("LocalDateTable", "DateTableTemplate", "_"))
+    ]
+    return non_system[0] if len(non_system) == 1 else requested
+
+
+def _resolve_powerbi_columns(requested: List[str], available: List[str]) -> tuple[List[str], List[str]]:
+    if not requested:
+        return [], []
+    if not available:
+        return requested, []
+    resolved: List[str] = []
+    skipped: List[str] = []
+    available_by_key = {_table_match_key(col): col for col in available}
+    for col in requested:
+        if not col:
+            continue
+        matched = available_by_key.get(_table_match_key(col))
+        if matched:
+            resolved.append(matched)
+        else:
+            skipped.append(col)
+    return resolved, skipped
+
+
+def _post_execute_dax(query_url: str, headers: Dict[str, str], dax: str) -> requests.Response:
+    body = {
+        "queries": [{"query": dax}],
+        "serializerSettings": {"includeNulls": True},
+    }
+    return requests.post(query_url, headers=headers, json=body, timeout=60)
+
+
+@router.post("/validate-powerbi")
+async def validate_powerbi_dataset_endpoint(request: PowerBiValidationRequest):
+    """Return actual row count/totals from the published Power BI semantic model."""
+    workspace_id = request.workspace_id or os.getenv("POWERBI_WORKSPACE_ID", "")
+    if not workspace_id:
+        raise HTTPException(status_code=400, detail="POWERBI_WORKSPACE_ID is not configured.")
+    if not request.dataset_id:
+        raise HTTPException(status_code=400, detail="dataset_id is required.")
+    if not request.table_name:
+        raise HTTPException(status_code=400, detail="table_name is required.")
+
+    token = _acquire_sp_token("https://analysis.windows.net/powerbi/api/.default")
+    if not token:
+        raise HTTPException(status_code=500, detail="Unable to acquire Power BI service principal token.")
+
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    available_metadata = _get_powerbi_table_metadata(workspace_id, request.dataset_id, headers)
+    available_tables = [table.get("name", "") for table in available_metadata if table.get("name")]
+    actual_table_name = _resolve_powerbi_table_name(request.table_name, available_metadata)
+    actual_columns = next(
+        (table.get("columns", []) for table in available_metadata if table.get("name") == actual_table_name),
+        [],
+    )
+    numeric_columns, skipped_columns = _resolve_powerbi_columns(request.numeric_columns or [], actual_columns)
+    table_ref = _dax_table(actual_table_name)
+    row_items = [f'"RowCount", COUNTROWS({table_ref})']
+    for col in numeric_columns:
+        if not col:
+            continue
+        col_ref = f"{table_ref}{_dax_column(col)}"
+        # Columns from CSV semantic models are often stored as text in BIM, so
+        # VALUE() keeps totals useful even when Power BI imported string columns.
+        row_items.append(
+            f'"{col}", SUMX({table_ref}, IFERROR(VALUE({col_ref}), BLANK()))'
+        )
+    dax = "EVALUATE ROW(" + ", ".join(row_items) + ")"
+
+    query_url = (
+        f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}"
+        f"/datasets/{request.dataset_id}/executeQueries"
+    )
+    refresh_status: Dict[str, Any] = {}
+    try:
+        refresh_url = (
+            f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}"
+            f"/datasets/{request.dataset_id}/refreshes?$top=1"
+        )
+        refresh_resp = requests.get(refresh_url, headers=headers, timeout=30)
+        if refresh_resp.ok:
+            latest = (refresh_resp.json().get("value") or [{}])[0]
+            refresh_status = {
+                "status": latest.get("status", "Unknown"),
+                "startTime": latest.get("startTime"),
+                "endTime": latest.get("endTime"),
+                "serviceExceptionJson": latest.get("serviceExceptionJson"),
+            }
+    except Exception as exc:
+        logger.warning("[validate_powerbi] Refresh status lookup failed: %s", exc)
+
+    resp = _post_execute_dax(query_url, headers, dax)
+    if not resp.ok and actual_table_name == request.table_name:
+        fallback_candidates = [
+            request.table_name.replace("_", " "),
+            request.table_name.replace("_", ""),
+            request.table_name.title().replace("_", " "),
+        ]
+        for candidate in fallback_candidates:
+            if not candidate or candidate == actual_table_name:
+                continue
+            candidate_ref = _dax_table(candidate)
+            candidate_items = [f'"RowCount", COUNTROWS({candidate_ref})']
+            for col in numeric_columns:
+                if col:
+                    col_ref = f"{candidate_ref}{_dax_column(col)}"
+                    candidate_items.append(f'"{col}", SUMX({candidate_ref}, IFERROR(VALUE({col_ref}), BLANK()))')
+            candidate_dax = "EVALUATE ROW(" + ", ".join(candidate_items) + ")"
+            candidate_resp = _post_execute_dax(query_url, headers, candidate_dax)
+            if candidate_resp.ok:
+                actual_table_name = candidate
+                table_ref = candidate_ref
+                dax = candidate_dax
+                resp = candidate_resp
+                break
+
+    if not resp.ok:
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=(
+                f"Power BI executeQueries failed for table '{actual_table_name}'. "
+                f"Available tables: {available_tables or 'not returned by Power BI'}. "
+                f"Available columns: {actual_columns or 'not returned by Power BI'}. "
+                f"Response: {resp.text[:500]}"
+            ),
+        )
+
+    result = resp.json()
+    rows = (
+        result.get("results", [{}])[0]
+        .get("tables", [{}])[0]
+        .get("rows", [])
+    )
+    actual = _normalize_execute_query_row(rows[0] if rows else {})
+    actual_row_count = int(actual.get("RowCount") or 0)
+
+    checks: List[Dict[str, Any]] = []
+    if request.expected_row_count is not None:
+        checks.append({
+            "name": "Row count",
+            "expected": request.expected_row_count,
+            "actual": actual_row_count,
+            "variance": actual_row_count - request.expected_row_count,
+            "status": "PASS" if actual_row_count == request.expected_row_count else "WARNING",
+        })
+    else:
+        checks.append({
+            "name": "Row count",
+            "expected": None,
+            "actual": actual_row_count,
+            "variance": None,
+            "status": "INFO",
+        })
+
+    for col, expected in (request.expected_totals or {}).items():
+        resolved_col = next(
+            (candidate for candidate in numeric_columns if _table_match_key(candidate) == _table_match_key(col)),
+            "",
+        )
+        if not resolved_col:
+            checks.append({
+                "name": f"Total {col}",
+                "expected": expected,
+                "actual": None,
+                "variance": None,
+                "status": "WARNING",
+                "message": f"Column '{col}' was not found in Power BI table '{actual_table_name}'.",
+            })
+            continue
+        actual_value = float(actual.get(resolved_col) or 0)
+        variance = actual_value - float(expected)
+        checks.append({
+            "name": f"Total {col}",
+            "expected": expected,
+            "actual": actual_value,
+            "variance": variance,
+            "status": "PASS" if abs(variance) < 0.0001 else "WARNING",
+        })
+
+    return {
+        "success": True,
+        "dataset_id": request.dataset_id,
+        "table_name": actual_table_name,
+        "requested_table_name": request.table_name,
+        "available_tables": available_tables,
+        "available_columns": actual_columns,
+        "queried_numeric_columns": numeric_columns,
+        "skipped_numeric_columns": skipped_columns,
+        "workspace_id": workspace_id,
+        "dax": dax,
+        "actual": actual,
+        "refresh": refresh_status,
+        "checks": checks,
+    }
 
 
 @router.post("/generate-pbit")

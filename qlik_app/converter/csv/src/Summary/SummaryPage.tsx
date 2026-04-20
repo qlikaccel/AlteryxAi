@@ -112,6 +112,10 @@ export default function SummaryPage() {
         sessionStorage.setItem("alteryx_file_name", fileName);
         sessionStorage.setItem("migration_mquery", data.mquery?.combined_mquery || "");
         sessionStorage.setItem("migration_dataset_name", data.mquery?.dataset_name || data.workflow?.name || "AlteryxDataset");
+        sessionStorage.setItem("migration_generation_method", data.mquery?.generation_method || "rule_based");
+        sessionStorage.setItem("migration_generation_label", data.mquery?.generation_label || "Rule-based mapping");
+        sessionStorage.setItem("migration_generation_reason", data.mquery?.routing_reason || "");
+        sessionStorage.setItem("migration_llm_status", data.mquery?.llm_status || "not_required");
         setError("");
       })
       .catch((err: any) => setError(err?.message || "Failed to load workflow analysis"))
@@ -132,6 +136,12 @@ export default function SummaryPage() {
 
   const pieSlices = useMemo(() => buildPieSlices(workflow), [workflow]);
   const conversionSteps = analysis?.mquery?.conversion_steps || [];
+  const generation = analysis?.mquery || {};
+  const generationMethod = generation.generation_method || "rule_based";
+  const generationLabel = generation.generation_label || "Rule-based mapping";
+  const generationReason = generation.routing_reason || "Low-complexity workflow with supported deterministic tool mappings.";
+  const generationIndicators = generation.complexity_indicators || [];
+  const generationStatus = generation.llm_status || "not_required";
 
   const downloadBrd = async () => {
     if (!batchId || !workflowId) return;
@@ -262,6 +272,17 @@ export default function SummaryPage() {
             <div className="metric-card"><span>Needs Review</span><strong>{assessment.unsupportedTools}</strong></div>
             <div className="metric-card"><span>Automation Fit</span><strong>{assessment.automationScore}%</strong></div>
           </div>
+          <div className={`hybrid-route-panel ${generationMethod === "llm" ? "llm" : "rules"}`}>
+            <span>Query Generation Path</span>
+            <strong>{generationLabel}</strong>
+            <p>{generationReason}</p>
+            <small>{generationMethod === "llm" ? `LLM status: ${generationStatus}` : "Rule engine used for M Query generation"}</small>
+            {generationIndicators.length > 0 && (
+              <div className="hybrid-route-tags">
+                {generationIndicators.slice(0, 4).map((item: string) => <em key={item}>{item}</em>)}
+              </div>
+            )}
+          </div>
         </section>
       )}
 
@@ -274,6 +295,10 @@ export default function SummaryPage() {
             criteria, and validation/reconciliation requirements.
           </p>
           <div className="mapping-table-wrap">
+            <div className={`generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
+              <span>{generationLabel}</span>
+              <strong>{generationMethod === "llm" ? `Complex workflow route (${generationStatus})` : "Simple workflow route"}</strong>
+            </div>
             <table>
               <thead><tr><th>Alteryx Tool</th><th>Power Query Mapping</th><th>Status</th></tr></thead>
               <tbody>

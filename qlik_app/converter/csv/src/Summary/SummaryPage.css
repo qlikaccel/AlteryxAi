@@ -2386,6 +2386,67 @@ PAGE WRAP
   margin: 0;
 }
 
+.hybrid-route-panel {
+  grid-column: 1 / -1;
+  padding: 20px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-left: 6px solid #0f766e;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.hybrid-route-panel.llm {
+  border-left-color: #7c3aed;
+  background: #faf7ff;
+}
+
+.hybrid-route-panel span,
+.generation-badge span {
+  display: block;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hybrid-route-panel strong {
+  display: block;
+  margin-top: 6px;
+  color: #102033;
+  font-size: 1.35rem;
+}
+
+.hybrid-route-panel p {
+  margin: 8px 0 0;
+  color: #334155;
+  line-height: 1.55;
+}
+
+.hybrid-route-panel small {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.hybrid-route-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.hybrid-route-tags em {
+  border-radius: 999px;
+  background: #ede9fe;
+  color: #5b21b6;
+  padding: 7px 11px;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
 .alteryx-brd-panel,
 .alteryx-diagram-panel {
   padding: 28px;
@@ -2394,6 +2455,25 @@ PAGE WRAP
 .mapping-table-wrap {
   overflow: auto;
   margin: 18px 0 24px;
+}
+
+.generation-badge {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.generation-badge.llm {
+  background: #f5f3ff;
+  color: #5b21b6;
+}
+
+.generation-badge strong {
+  color: inherit;
 }
 
 .mapping-table-wrap table {
