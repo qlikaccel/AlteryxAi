@@ -14,7 +14,7 @@ export default function ExportPage() {
   const fileName = sessionStorage.getItem("alteryx_file_name") || "sales_data_1M.csv";
   const [mquery, setMquery] = useState(sessionStorage.getItem("migration_mquery") || "");
   const [datasetName, setDatasetName] = useState(sessionStorage.getItem("migration_dataset_name") || workflowName);
-  const [dataSourcePath, setDataSourcePath] = useState(sessionStorage.getItem("migration_data_source_path") || sharePointUrl);
+  // const [dataSourcePath, setDataSourcePath] = useState(sessionStorage.getItem("migration_data_source_path") || sharePointUrl);
   const [generationMethod, setGenerationMethod] = useState(sessionStorage.getItem("migration_generation_method") || "rule_based");
   const [generationLabel, setGenerationLabel] = useState(sessionStorage.getItem("migration_generation_label") || "Rule-based mapping");
   const [generationReason, setGenerationReason] = useState(sessionStorage.getItem("migration_generation_reason") || "Low-complexity workflow with supported deterministic tool mappings.");
@@ -41,7 +41,7 @@ export default function ExportPage() {
         setGenerationLabel(data.generation_label || "Rule-based mapping");
         setGenerationReason(data.routing_reason || "Low-complexity workflow with supported deterministic tool mappings.");
         setGenerationStatus(data.llm_status || "not_required");
-        setDataSourcePath(data.data_source_path || sharePointUrl);
+        // setDataSourcePath(data.data_source_path || sharePointUrl);
         sessionStorage.setItem("migration_mquery", data.combined_mquery || "");
         sessionStorage.setItem("migration_dataset_name", data.dataset_name || workflowName);
         sessionStorage.setItem("migration_data_source_path", data.data_source_path || sharePointUrl);
