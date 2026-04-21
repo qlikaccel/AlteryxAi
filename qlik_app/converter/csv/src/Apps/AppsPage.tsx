@@ -155,18 +155,18 @@ export default function AppsPage() {
       <div className="qlik-header">
         <div className="qlik-header-left-group">
           <div className="qlik-header-left">
-            <span className="platform-badge alteryx-badge">Alteryx</span>
+            {/* <span className="platform-badge alteryx-badge">Alteryx</span> */}
             {workflows.length} Workflow{workflows.length !== 1 ? "s" : ""}
             {platform === "alteryx_upload" && (
               <span className="workspace-pill" title="Bulk upload assessment">
                 Bulk Upload
               </span>
             )}
-            {workspaceName && (
+            {/* {workspaceName && (
               <span className="workspace-pill" title={workspaceName}>
                 {workspaceName}
               </span>
-            )}
+            )} */}
           </div>
         </div>
 
@@ -191,6 +191,8 @@ export default function AppsPage() {
           {pageError}
         </div>
       )}
+      
+      
 
       <div className="card-container">
         {filteredWorkflows.length === 0 && !pageError && (
@@ -210,13 +212,21 @@ export default function AppsPage() {
           >
             <div className="card-center">
               <div className="alteryx-workflow-icon">
-                <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect width="40" height="40" rx="8" fill="#0070c0" />
-                  <path d="M8 20h6m18 0h-6M20 8v6m0 18v-6" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-                  <circle cx="20" cy="20" r="5" fill="white" fillOpacity="0.9" />
-                  <path d="M14 14l4 4m8 8l-4-4M26 14l-4 4M14 26l4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </div>
+  <div className="alteryx-workflow-icon">
+    <svg viewBox="0 0 100 115" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M10 5 L65 5 L88 28 L88 105 L10 105 Z" fill="white" stroke="#1a7fd4" strokeWidth="4" strokeLinejoin="round"/>
+    <path d="M65 5 L65 28 L88 28" fill="#cce0f5" stroke="#1a7fd4" strokeWidth="4" strokeLinejoin="round"/>
+    <circle cx="34" cy="42" r="4" fill="#1a7fd4"/>
+    <circle cx="34" cy="72" r="4" fill="#1a7fd4"/>
+    <circle cx="66" cy="57" r="4" fill="#1a7fd4"/>
+    <line x1="34" y1="42" x2="66" y2="57" stroke="#1a7fd4" strokeWidth="3" strokeLinecap="round"/>
+    <line x1="34" y1="72" x2="66" y2="57" stroke="#1a7fd4" strokeWidth="3" strokeLinecap="round"/>
+    <polygon points="42,50 42,64 54,57" fill="#1a7fd4"/>
+    <circle cx="88" cy="105" r="14" fill="#1a7fd4"/>
+    <polygon points="89,93 83,105 89,105 86,117 95,104 89,104" fill="white"/>
+  </svg>
+</div>
+</div>
             </div>
 
             <div className="card-footer">
@@ -233,7 +243,7 @@ export default function AppsPage() {
                 <span className="fav-icon" onClick={(event) => { event.stopPropagation(); toggleFav(workflow.id); }}>
                   {favourites.includes(workflow.id) ? "*" : "+"}
                 </span>
-                <span className="dot-menu">...</span>
+                
               </div>
             </div>
           </div>
