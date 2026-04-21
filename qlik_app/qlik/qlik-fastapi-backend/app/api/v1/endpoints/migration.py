@@ -697,6 +697,17 @@ def _infer_relationships_from_tables(tables_m: List[Dict[str, Any]]) -> List[Dic
     return infer_relationships_unified(tables_m, alias_aware=True)
 
 
+def _is_alteryx_raw_source_table(table_name: str) -> bool:
+    return str(table_name or "").lower().endswith("_raw")
+
+
+def _should_disable_alteryx_relationship_inference(tables_m: List[Dict[str, Any]], app_id: str = "") -> bool:
+    if app_id:
+        return False
+    raw_count = sum(1 for table in tables_m if _is_alteryx_raw_source_table(table.get("name", "")))
+    return raw_count >= 2
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # FIX C helper: scan tables_m for APPLYMAP and inject dimension tables
 # ─────────────────────────────────────────────────────────────────────────────
@@ -889,6 +900,52 @@ def _normalize_tables_m_fields(
         normalized_tables.append(table_copy)
 
     return normalized_tables
+
+
+def _table_publish_quality(table: Dict[str, Any]) -> tuple[int, int, int, int]:
+    expr = str(table.get("m_expression") or "")
+    source_path = str(table.get("source_path") or "")
+    combined = f"{expr} {source_path}".lower()
+    has_sharepoint = int("sharepoint.files" in combined and "sharepoint.com" in combined)
+    has_http = int("https://" in combined or "http://" in combined)
+    avoids_pseudo = int('sharepoint.files("s://' not in combined and "sharepoint.files('s://" not in combined)
+    field_count = len(table.get("fields") or [])
+    return (has_sharepoint, has_http, avoids_pseudo, field_count)
+
+
+def _dedupe_tables_m_by_name(tables_m: List[Dict[str, Any]], context: str = "") -> List[Dict[str, Any]]:
+    """Power BI/Fabric rejects semantic models with duplicate table names."""
+    selected: Dict[str, Dict[str, Any]] = {}
+    original_names: Dict[str, str] = {}
+    dropped: List[str] = []
+
+    for table in tables_m:
+        name = str(table.get("name") or "").strip()
+        key = name.lower()
+        if not key:
+            continue
+        existing = selected.get(key)
+        if not existing:
+            selected[key] = table
+            original_names[key] = name
+            continue
+
+        if _table_publish_quality(table) > _table_publish_quality(existing):
+            dropped.append(original_names.get(key, name))
+            selected[key] = table
+            original_names[key] = name
+        else:
+            dropped.append(name)
+
+    if dropped:
+        logger.warning(
+            "[publish_mquery] Dropped %d duplicate table definition(s)%s: %s",
+            len(dropped),
+            f" during {context}" if context else "",
+            ", ".join(dropped[:10]),
+        )
+
+    return list(selected.values())
 
 
 def _fetch_table_rows_for_cardinality(app_id: str, table_name: str, limit: int = 5000) -> List[Dict[str, Any]]:
@@ -1094,6 +1151,7 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
             ]
             before = len(tables_m)
             tables_m = [t for t in tables_m if not _is_system_table(t["name"])]
+            tables_m = _dedupe_tables_m_by_name(tables_m, "raw_script rebuild")
             logger.info(
                 "[publish_mquery] Rebuilt from raw_script using current converter: %d tables (%d system filtered)",
                 len(tables_m), before - len(tables_m)
@@ -1112,17 +1170,31 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
             try:
                 from app.services.powerbi_publisher import _extract_fields_from_m
                 for t in tables_m:
-                    if not t.get("fields") or len(t["fields"]) == 0:
-                        extracted_fields = _extract_fields_from_m(t.get("m_expression", ""))
-                        if extracted_fields:
-                            t["fields"] = extracted_fields
-                            logger.info("[publish_mquery] Extracted %d fields from '%s' M expression", 
-                                       len(extracted_fields), t["name"])
+                    extracted_fields = _extract_fields_from_m(t.get("m_expression", ""))
+                    if extracted_fields and not request.app_id:
+                        # Caller-provided Alteryx M is the source of truth. The
+                        # frontend can carry stale parser fields from pre-group or
+                        # pre-select steps (for example ValueType), which causes
+                        # Power BI to declare columns that the final rowset no
+                        # longer returns.
+                        previous_count = len(t.get("fields") or [])
+                        t["fields"] = extracted_fields
+                        logger.info(
+                            "[publish_mquery] Replaced '%s' field metadata from final M expression: %d -> %d",
+                            t["name"],
+                            previous_count,
+                            len(extracted_fields),
+                        )
+                    elif extracted_fields and (not t.get("fields") or len(t["fields"]) == 0):
+                        t["fields"] = extracted_fields
+                        logger.info("[publish_mquery] Extracted %d fields from '%s' M expression", 
+                                   len(extracted_fields), t["name"])
             except Exception as extract_exc:
                 logger.warning("[publish_mquery] Field extraction failed: %s", extract_exc)
 
             before   = len(tables_m)
             tables_m = [t for t in tables_m if not _is_system_table(t["name"])]
+            tables_m = _dedupe_tables_m_by_name(tables_m, "combined M parse")
             logger.info(
                 "[publish_mquery] Parsed combined M: %d tables (%d system filtered)",
                 len(tables_m), before - len(tables_m)
@@ -1149,6 +1221,7 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
         if not _is_system_table(t.get("name", ""))
         and not _is_applymap_dimension_table(t)
     ]
+    tables_m = _dedupe_tables_m_by_name(tables_m, "helper/system filter")
     if len(tables_m) != pre_filter_count:
         logger.info(
             "[publish_mquery] Filtered %d helper/system table(s) before publish",
@@ -1231,9 +1304,16 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
     tables_m = _normalize_tables_m_fields(tables_m, qlik_fields_map)
 
     try:
-        col_name_map_by_table = build_col_name_map_for_tables_m(tables_m)
-        relationships = resolve_relationships_unified(tables_m, col_name_map_by_table)
-        relationships = _apply_row_aware_cardinality(relationships, request.app_id)
+        if _should_disable_alteryx_relationship_inference(tables_m, request.app_id):
+            relationships = []
+            logger.info(
+                "[publish_mquery] Disabled generic relationship inference for Alteryx raw-source publish. "
+                "Graph-aware join/cardinality mapping is required before creating relationships."
+            )
+        else:
+            col_name_map_by_table = build_col_name_map_for_tables_m(tables_m)
+            relationships = resolve_relationships_unified(tables_m, col_name_map_by_table)
+            relationships = _apply_row_aware_cardinality(relationships, request.app_id)
         logger.info(
             "[publish_mquery] Unified inferred %d relationship(s) from %d tables "
             "(fields populated: %d)",

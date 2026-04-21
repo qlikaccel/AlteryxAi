@@ -642,7 +642,7 @@ PAGE WRAP
 } */
  
 .summary-report{
-  height: 80vh;
+  height: auto;
 }
  
  
@@ -2307,6 +2307,71 @@ PAGE WRAP
   border-color: #bfdbfe;
 }
 
+.cloud-metadata-notice {
+  display: grid;
+  gap: 8px;
+  margin: -6px 0 24px;
+  padding: 16px 18px;
+  border: 1px solid #bfdbfe;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #eff6ff, #f8fafc);
+  color: #1e3a8a;
+  box-shadow: 0 12px 30px rgba(30, 64, 175, 0.08);
+}
+
+.cloud-metadata-notice strong {
+  font-size: 1rem;
+}
+
+.cloud-metadata-notice span {
+  color: #334155;
+  line-height: 1.55;
+}
+
+.cloud-workflow-panel {
+  padding: 34px;
+}
+
+.cloud-workflow-panel h2 {
+  margin-top: 0;
+}
+
+.cloud-workflow-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 24px 0;
+}
+
+.cloud-workflow-facts div,
+.cloud-next-step {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 14px 16px;
+}
+
+.cloud-workflow-facts span,
+.cloud-next-step span {
+  display: block;
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.cloud-workflow-facts strong,
+.cloud-next-step strong {
+  display: block;
+  margin-top: 4px;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.cloud-next-step {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
 .source-type-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(320px, 1fr));
@@ -2529,11 +2594,13 @@ PAGE WRAP
 
 .alteryx-pie {
   display: grid;
-  width: min(380px, 72vw);
+  width: min(300px, 72vw);
   aspect-ratio: 1;
   place-items: center;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  position: relative;
+  top: -40px;
 }
 
 .alteryx-pie span {
@@ -2546,6 +2613,11 @@ PAGE WRAP
 .alteryx-pie-legend {
   display: grid;
   gap: 14px;
+  position: relative;
+  top: -88px;
+  right: -50px;
+  font-size: 14px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .alteryx-pie-legend div {
@@ -2553,7 +2625,7 @@ PAGE WRAP
   gap: 12px;
   align-items: center;
   color: #555;
-  font-size: 1rem;
+  font-size: 14px;
 }
 
 .alteryx-pie-legend i {
@@ -2568,11 +2640,12 @@ PAGE WRAP
 }
 
 .alteryx-exec-copy li {
-  margin-bottom: 20px;
+  margin-bottom: 10px;
   color: #555;
-  font-size: 1.04rem;
-  font-weight: 700;
-  line-height: 1.7;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .alteryx-metrics {
@@ -2646,6 +2719,236 @@ PAGE WRAP
   padding: 28px;
 }
 
+.alteryx-diagram-panel p {
+  max-width: 980px;
+  color: #334155;
+  line-height: 1.65;
+}
+
+.workflow-canvas-shell {
+  position: relative;
+  overflow: auto;
+  min-height: 440px;
+  margin-top: 20px;
+  border: 1px solid #d7e3f2;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 18px 18px, rgba(100, 116, 139, 0.16) 1px, transparent 1px),
+    linear-gradient(135deg, #f7fbff 0%, #eef5fb 100%);
+  background-size: 28px 28px, auto;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.workflow-canvas {
+  position: relative;
+  min-width: 100%;
+}
+
+.workflow-edge-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.workflow-edge-layer marker path {
+  fill: #71819a;
+}
+
+.workflow-edge {
+  fill: none;
+  stroke: #71819a;
+  stroke-width: 2.1;
+  marker-end: url("#workflow-arrow");
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.8));
+}
+
+.workflow-node {
+  position: absolute;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  column-gap: 10px;
+  align-content: center;
+  padding: 12px 12px 10px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 15px 28px rgba(15, 23, 42, 0.12);
+  color: #102033;
+}
+
+.workflow-node::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -7px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #9fb0c6;
+  border-radius: 50%;
+  background: #f8fbff;
+  transform: translateY(-50%);
+}
+
+.workflow-node::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -7px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #9fb0c6;
+  border-radius: 50%;
+  background: #f8fbff;
+  transform: translateY(-50%);
+}
+
+.node-icon {
+  grid-row: 1 / 4;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  align-self: center;
+  border-radius: 13px;
+  background: #e8f2ff;
+  color: #075985;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.node-title {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 0.9rem;
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-id {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.node-subtitle {
+  overflow: hidden;
+  color: #475569;
+  font-size: 0.76rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-warning {
+  position: absolute;
+  right: 10px;
+  bottom: -10px;
+  border-radius: 999px;
+  background: #fff1f2;
+  color: #be123c;
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  box-shadow: 0 8px 16px rgba(190, 18, 60, 0.12);
+}
+
+.workflow-node-input .node-icon {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.workflow-node-output .node-icon {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.workflow-node-union .node-icon,
+.workflow-node-join .node-icon {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.workflow-node-filter .node-icon,
+.workflow-node-select .node-icon,
+.workflow-node-cleanse .node-icon,
+.workflow-node-summarize .node-icon,
+.workflow-node-formula .node-icon,
+.workflow-node-shape .node-icon {
+  background: #dbeafe;
+  color: #0369a1;
+}
+
+.workflow-node.needs-review {
+  border-color: #fecdd3;
+  background: #fffafb;
+}
+
+.workflow-empty-state {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 22px;
+  border: 1px dashed #bfdbfe;
+  border-radius: 18px;
+  background: #f8fbff;
+  color: #334155;
+}
+
+.workflow-empty-state strong {
+  color: #0f172a;
+}
+
+.workflow-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0 12px;
+}
+
+.workflow-legend span {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.workflow-legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.legend-input {
+  background: #10b981;
+}
+
+.legend-transform {
+  background: #0ea5e9;
+}
+
+.legend-join {
+  background: #7c3aed;
+}
+
+.legend-output {
+  background: #ef4444;
+}
+
+.workflow-detail-pills {
+  margin-top: 14px;
+}
+
 .mapping-table-wrap {
   overflow: auto;
   margin: 18px 0 24px;
@@ -2700,3 +3003,4 @@ PAGE WRAP
     text-align: center;
   }
 }
+
