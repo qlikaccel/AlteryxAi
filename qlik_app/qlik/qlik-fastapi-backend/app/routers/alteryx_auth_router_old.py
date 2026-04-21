@@ -1,19 +1,6 @@
-# app/routers/alteryx_auth_router.py
-#
-# CHANGES vs original dev10:
-#   - validate_alteryx_auth() now resolves tokens via
-#     TokenManager.get_tokens_from_storage_or_env() instead of reading
-#     os.getenv() directly.  This ensures that after the first successful
-#     connection (and token rotation), subsequent /validate-auth calls use
-#     the fresh rotated tokens from token_storage.json — not the stale
-#     originals in .env.
-#   - All other logic (error handling, response model) is UNCHANGED.
-
-import os
 import requests
 from fastapi import APIRouter, HTTPException
 
-from app.utils.token_manager import TokenManager
 from utils.alteryx_workspace_utils import create_alteryx_session
 from schemas.alteryx_schemas import AlteryxAuthRequest, AlteryxAuthResponse
 
@@ -23,48 +10,54 @@ router = APIRouter(prefix="/api/alteryx", tags=["Alteryx Auth"])
 @router.post("/validate-auth", response_model=AlteryxAuthResponse)
 def validate_alteryx_auth(config: AlteryxAuthRequest):
     """
-    Validates Alteryx Cloud credentials and confirms the workspace name.
+    Validates Alteryx Cloud credentials stored in .env and confirms
+    the user-supplied workspace name matches the token's workspace.
 
-    Token resolution order (most-recent first):
-      1. token_storage.json  — contains the latest rotated pair after any refresh
-      2. .env environment variables  — original tokens set at startup
-      3. Raise HTTP 500 if neither has a refresh token
+    Flow:
+    1. Reads access_token and refresh_token from environment variables.
+    2. Refreshes the access token (Alteryx tokens expire every 5 min).
+    3. Calls /iam/v1/workspaces/current to resolve workspace ID.
+    4. Confirms the workspace name the user typed matches the token's workspace.
 
-    The frontend should store the returned access_token and refresh_token
-    because refresh tokens rotate on every use.
+    The frontend should store:
+    - workspace_id: required for all subsequent migration API calls
+    - access_token: fresh token for immediate use
+    - refresh_token: persist this — it replaces the old one (rotation)
     """
+    import os
+
     print(f"\n📋 [validate_alteryx_auth] Starting authentication validation...")
     print(f"   Workspace name: {config.workspace_name}")
+    
+    # Read tokens from environment (set in .env)
+    access_token = os.getenv("ALTERYX_ACCESS_TOKEN", "")
+    refresh_token = os.getenv("ALTERYX_REFRESH_TOKEN", "")
 
-    # ── Resolve tokens from storage → env (storage wins so rotated tokens are used) ──
-    access_token, refresh_token = TokenManager.get_tokens_from_storage_or_env()
-
-    print(f"\n🔑 Checking tokens:")
-    print(f"   ✓ ACCESS_TOKEN  : {'present' if access_token else 'MISSING'}")
-    print(f"   ✓ REFRESH_TOKEN : {'present' if refresh_token else 'MISSING'}")
+    print(f"\n🔑 Checking tokens from environment:")
+    print(f"   ✓ ACCESS_TOKEN loaded: {bool(access_token)}")
+    print(f"   ✓ REFRESH_TOKEN loaded: {bool(refresh_token)}")
 
     if not refresh_token:
-        print(f"\n❌ REFRESH_TOKEN NOT FOUND in storage or environment!")
+        print(f"\n❌ REFRESH_TOKEN NOT FOUND in environment!")
         raise HTTPException(
             status_code=500,
             detail=(
-                "ALTERYX_REFRESH_TOKEN is not configured. "
-                "Generate tokens from Alteryx One → User Preferences → OAuth 2.0 API Tokens "
-                "and set them in .env as ALTERYX_ACCESS_TOKEN and ALTERYX_REFRESH_TOKEN."
-            ),
-        )
-
-    if not access_token:
-        print(f"\n❌ ACCESS_TOKEN NOT FOUND in storage or environment!")
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "ALTERYX_ACCESS_TOKEN is not configured. "
+                "ALTERYX_REFRESH_TOKEN is not configured in environment variables. "
                 "Generate tokens from Alteryx One → User Preferences → OAuth 2.0 API Tokens."
             ),
         )
 
-    print(f"\n✅ Both tokens resolved. Proceeding with session creation...")
+    if not access_token:
+        print(f"\n❌ ACCESS_TOKEN NOT FOUND in environment!")
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "ALTERYX_ACCESS_TOKEN is not configured in environment variables. "
+                "Generate tokens from Alteryx One → User Preferences → OAuth 2.0 API Tokens."
+            ),
+        )
+    
+    print(f"\n✅ Both tokens found. Proceeding with session creation...")
 
     try:
         print(f"\n🚀 [validate_alteryx_auth] Calling create_alteryx_session()...")
@@ -105,9 +98,9 @@ def validate_alteryx_auth(config: AlteryxAuthRequest):
         access_token=session.access_token,    # freshly refreshed — store this
         refresh_token=session.refresh_token,  # rotated — store this, replaces old one
     )
-
+    
     print(f"\n✅ [validate_alteryx_auth] Authentication successful!")
     print(f"   Workspace: {response.workspace_name} (ID: {response.workspace_id})")
-    print(f"   Tokens persisted to token_storage.json for auto-refresh")
-
+    print(f"   Refresh token will be used for auto-refresh fallback (365 day lifetime)")
+    
     return response
