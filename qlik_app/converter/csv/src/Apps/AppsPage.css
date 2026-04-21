@@ -408,7 +408,7 @@
 .app-card.alteryx-card:hover {
   border-color: rgba(0, 112, 192, 0.6);
   background: rgba(219, 234, 254, 1);
-  box-shadow: 0 20px 34px rgba(0, 70, 140, 0.18);
+  box-shadow: 0 2px 8px rgba(0, 70, 140, 0.18);
 }
 
 /* Alteryx workflow icon */
@@ -417,7 +417,6 @@
   height: 52px;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 112, 192, 0.3);
 }
 
 .alteryx-workflow-icon svg {
@@ -494,10 +493,10 @@
 }
 
 .apps-search {
-  min-width: 220px;
-  padding: 8px 14px;
+  min-width: 270px;
+  padding: 14px 14px;
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: 15px;
   outline: none;
   color: #1f2937;
   background: #ffffff;
@@ -510,13 +509,14 @@
   box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
 }
 
+
+
 .card-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   animation: discoveryFadeIn 0.3s ease;
 }
-
 @keyframes discoveryFadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -524,19 +524,21 @@
 
 .app-card {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   overflow: hidden;
-  padding: 20px;
+  padding: 14px 20px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #ffffff;
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  gap: 16px;
 }
 
 .app-card:hover {
   border-color: #d1d5db;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transform: translateY(-2px);
 }
 
@@ -544,20 +546,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 70px;
-  margin-bottom: 16px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #f8f9fa;
+  margin-bottom: 0;
 }
 
 .card-footer {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  align-items: center;
   flex: 1;
-  padding-top: 12px;
-  border-top: 1px solid #f3f4f6;
+  padding-top: 0;
+  border-top: none;
+  gap: 12px;
 }
 
 .footer-left {
@@ -697,22 +702,23 @@
 .app-card.alteryx-card:hover {
   border-color: rgba(0, 112, 192, 0.6);
   background: rgba(219, 234, 254, 1);
-  box-shadow: 0 20px 34px rgba(0, 70, 140, 0.18);
+  box-shadow: 0 2px 8px rgba(0, 70, 140, 0.18);
 }
 
 /* Alteryx workflow icon */
 .alteryx-workflow-icon {
   width: 52px;
-  height: 52px;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 112, 192, 0.3);
+  height: 60px;
+  min-width: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
 }
 
 .alteryx-workflow-icon svg {
-  width: 100%;
-  height: 100%;
-  display: block;
+  width: 62%;
+  height: 80%;
 }
 
 /* Empty state */
