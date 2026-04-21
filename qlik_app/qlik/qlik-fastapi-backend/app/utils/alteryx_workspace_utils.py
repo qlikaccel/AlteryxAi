@@ -289,16 +289,27 @@ def is_token_expired(token: str, buffer_seconds: int = 30) -> bool:
 
 # ── Ensure fresh token ───────────────────────────────────────────────────────
 
-def ensure_fresh_token(session: AlteryxSession) -> str:
+def ensure_fresh_token(session: AlteryxSession, force_refresh: bool = False) -> str:
     """
     Returns a valid access_token, refreshing via refresh_token if needed.
+    
+    Args:
+        session: AlteryxSession with current tokens
+        force_refresh: If True, always refresh even if token is still valid.
+                      If False, only refresh if token is expired.
+    
     Raises ValueError  — no refresh_token available.
     Raises HTTPError   — Ping Identity refresh call failed.
     """
-    if not is_token_expired(session.access_token):
+    # Check if refresh is needed
+    token_is_expired = is_token_expired(session.access_token)
+    needs_refresh = force_refresh or token_is_expired
+    
+    if not needs_refresh:
         return session.access_token
 
-    print(f"\n🔄 [ensure_fresh_token] Token expired — refreshing...")
+    refresh_reason = "force refresh" if force_refresh else "token expired"
+    print(f"\n🔄 [ensure_fresh_token] {refresh_reason.capitalize()} — refreshing...")
 
     last_error: Optional[Exception] = None
     stored = TokenManager.load_tokens()
@@ -315,7 +326,7 @@ def ensure_fresh_token(session: AlteryxSession) -> str:
             elif not session.refresh_token:
                 session.refresh_token = refresh_to_use
             persist_alteryx_tokens(session.access_token, session.refresh_token)
-            print(f"✅ [ensure_fresh_token] Token refreshed")
+            print(f"✅ [ensure_fresh_token] Token refreshed successfully")
             return session.access_token
         except Exception as exc:
             last_error = exc
@@ -336,13 +347,20 @@ def _get_with_refresh(
     url: str,
     session: AlteryxSession,
     params: Optional[dict] = None,
+    force_refresh: bool = False,
 ) -> dict:
     """
     Authenticated GET with proactive + reactive token refresh:
-      1. Check expiry before call; refresh proactively if needed.
+      1. Check expiry before call; refresh proactively if needed (or force_refresh=True).
       2. Make the API call.
       3. On 401: attempt one final refresh and retry once.
       4. On other 4xx/5xx: raise.
+    
+    Args:
+        url: API endpoint to call
+        session: AlteryxSession with current tokens
+        params: Query parameters
+        force_refresh: If True, always refresh token before API call
     """
     def _do_get(token: str) -> requests.Response:
         return requests.get(
@@ -355,8 +373,8 @@ def _get_with_refresh(
             timeout=15,
         )
 
-    # Step 1: proactive refresh
-    fresh_token = ensure_fresh_token(session)
+    # Step 1: proactive refresh (with optional force)
+    fresh_token = ensure_fresh_token(session, force_refresh=force_refresh)
 
     # Step 2: API call
     resp = _do_get(fresh_token)
@@ -393,8 +411,14 @@ def _get_with_refresh(
 
 # ── Workspace listing ────────────────────────────────────────────────────────
 
-def list_alteryx_workspaces(session: AlteryxSession) -> list[dict]:
-    """Fetch all workspaces accessible to this token."""
+def list_alteryx_workspaces(session: AlteryxSession, force_refresh: bool = False) -> list[dict]:
+    """
+    Fetch all workspaces accessible to this token.
+    
+    Args:
+        session: AlteryxSession with current tokens
+        force_refresh: If True, always refresh token before API call
+    """
     print(f"\n🔵 Fetching workspaces...")
 
     endpoints = [
@@ -407,7 +431,7 @@ def list_alteryx_workspaces(session: AlteryxSession) -> list[dict]:
     for endpoint in endpoints:
         try:
             print(f"  Trying: {endpoint}")
-            data = _get_with_refresh(endpoint, session)
+            data = _get_with_refresh(endpoint, session, force_refresh=force_refresh)
             workspaces = (
                 data if isinstance(data, list)
                 else data.get("data", data.get("workspaces", []))
@@ -428,12 +452,18 @@ def list_alteryx_workspaces(session: AlteryxSession) -> list[dict]:
 
 # ── Workspace name → ID ──────────────────────────────────────────────────────
 
-def get_workspace_id_by_name(session: AlteryxSession, workspace_name: str) -> str:
+def get_workspace_id_by_name(session: AlteryxSession, workspace_name: str, force_refresh: bool = False) -> str:
     """
     Resolve workspace name → ID. Mutates session on success.
+    
+    Args:
+        session: AlteryxSession with current tokens
+        workspace_name: Name of workspace to find
+        force_refresh: If True, always refresh token before API call
+    
     Raises ValueError if not found or ambiguous.
     """
-    workspaces = list_alteryx_workspaces(session)
+    workspaces = list_alteryx_workspaces(session, force_refresh=force_refresh)
 
     # Exact match
     for ws in workspaces:
@@ -468,10 +498,15 @@ def get_workspace_id_by_name(session: AlteryxSession, workspace_name: str) -> st
 
 # ── Entry point ──────────────────────────────────────────────────────────────
 
-def list_alteryx_workflows(session: AlteryxSession, workspace_id: Optional[str] = None) -> list[dict]:
+def list_alteryx_workflows(session: AlteryxSession, workspace_id: Optional[str] = None, force_refresh: bool = False) -> list[dict]:
     """
     Fetch Alteryx Designer Cloud workflows using the working service endpoint
     from the Sam accelerator, with a workspace-scoped variant as fallback.
+    
+    Args:
+        session: AlteryxSession with current tokens
+        workspace_id: Optional workspace ID to filter workflows
+        force_refresh: If True, always refresh token before API call
     """
     print(f"\nFetching Designer Cloud workflows...")
 
@@ -488,7 +523,7 @@ def list_alteryx_workflows(session: AlteryxSession, workspace_id: Optional[str] 
     for endpoint, params in endpoints:
         try:
             print(f"  Trying: {endpoint}")
-            data = _get_with_refresh(endpoint, session, params=params)
+            data = _get_with_refresh(endpoint, session, params=params, force_refresh=force_refresh)
             if isinstance(data, list):
                 workflows = data
             else:
@@ -517,6 +552,7 @@ def create_alteryx_session(
     refresh_token: Optional[str] = None,
     username: Optional[str] = None,
     password: Optional[str] = None,
+    force_refresh: bool = True,
 ) -> AlteryxSession:
     """
     Build and validate an AlteryxSession.
@@ -525,6 +561,14 @@ def create_alteryx_session(
       1. UI/request token override
       2. ALTERYX_ACCESS_TOKEN / ALTERYX_REFRESH_TOKEN in .env
       3. token_storage.json as a last fallback
+    
+    Args:
+        access_token: Access token from request
+        workspace_name: Target workspace name
+        refresh_token: Refresh token from request
+        username: Username (if using password auth)
+        password: Password (if using password auth)
+        force_refresh: If True (default), always refresh token on connection
     """
     request_access = (access_token or "").strip()
     request_refresh = (refresh_token or "").strip() or None
@@ -559,7 +603,8 @@ def create_alteryx_session(
             refresh_token=resolved_refresh,
         )
         try:
-            get_workspace_id_by_name(session, workspace_name)
+            # ← CHANGED: Always force refresh on connection attempt
+            get_workspace_id_by_name(session, workspace_name, force_refresh=force_refresh)
             persist_alteryx_tokens(session.access_token, session.refresh_token)
             return session
         except Exception as exc:
