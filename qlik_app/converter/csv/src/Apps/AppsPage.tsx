@@ -240,9 +240,9 @@ export default function AppsPage() {
                     {workflow.toolCount}
                   </span>
                 )}
-                <span className="fav-icon" onClick={(event) => { event.stopPropagation(); toggleFav(workflow.id); }}>
+                {/* <span className="fav-icon" onClick={(event) => { event.stopPropagation(); toggleFav(workflow.id); }}>
                   {favourites.includes(workflow.id) ? "*" : "+"}
-                </span>
+                </span> */}
                 
               </div>
             </div>
