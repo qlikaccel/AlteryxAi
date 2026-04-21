@@ -2583,6 +2583,7 @@ PAGE WRAP
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+  border: 1px solid #ddd6d6;
 }
 
 .alteryx-pie-wrap {
