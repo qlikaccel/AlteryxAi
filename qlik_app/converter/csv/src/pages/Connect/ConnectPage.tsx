@@ -118,7 +118,7 @@ export default function ConnectPage() {
             disabled={loading}
           >
             <span className="method-title">Bulk Upload</span>
-            <span className="method-subtitle">.yxmd, .yxzp, .zip</span>
+            <span className="method-subtitle">.yxmd, .json, .yxzp, .zip</span>
           </button>
           <button
             type="button"
@@ -141,7 +141,7 @@ export default function ConnectPage() {
                 id="alteryx-bulk-files"
                 type="file"
                 multiple
-                accept=".yxmd,.yxmc,.yxwz,.yxzp,.zip"
+                accept=".yxmd,.yxmc,.yxwz,.json,.yxzp,.zip"
                 onChange={(e) => {
                   setSelectedFiles(e.target.files);
                   setError("");
@@ -149,7 +149,7 @@ export default function ConnectPage() {
                 disabled={loading}
               />
               <p className="field-hint">
-                Upload individual workflows, packaged workflows, or a bulk zip exported from a repository.
+                Upload individual workflows, JSON workflow exports, packaged workflows, or a bulk zip exported from a repository.
               </p>
             </div>
 

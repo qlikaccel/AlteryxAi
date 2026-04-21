@@ -11,6 +11,7 @@ import re
 
 
 SUPPORTED_WORKFLOW_EXTENSIONS = {".yxmd", ".yxmc", ".yxwz"}
+SUPPORTED_JSON_WORKFLOW_EXTENSIONS = {".json"}
 SUPPORTED_ARCHIVE_EXTENSIONS = {".yxzp", ".zip"}
 UPLOAD_CACHE_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "_alteryx_upload_batches")
@@ -86,6 +87,8 @@ def _workflow_name(filename: str, root: ET.Element) -> str:
 
 def _classify_tool(plugin: str) -> tuple[bool, str | None]:
     lowered = plugin.lower()
+    if "summarize" in lowered:
+        return True, None
     unsupported_keywords = {
         "python": "Python tools usually need Fabric Notebook or manual rewrite.",
         "rtool": "R tools usually need Fabric Notebook or manual rewrite.",
@@ -126,6 +129,192 @@ def _node_expression(node: ET.Element) -> str:
             if value and any(name in lowered_key for name in expression_names):
                 candidates.append(value.strip())
     return candidates[0] if candidates else ""
+
+
+def _json_values(value: Any) -> list[str]:
+    values: list[str] = []
+    if isinstance(value, dict):
+        for item in value.values():
+            values.extend(_json_values(item))
+    elif isinstance(value, list):
+        for item in value:
+            values.extend(_json_values(item))
+    elif value is not None:
+        values.append(str(value))
+    return values
+
+
+def _json_text_blob(value: Any) -> str:
+    return "\n".join(item for item in _json_values(value) if item)
+
+
+def _json_attr(value: Any, *keys: str) -> Any:
+    if not isinstance(value, dict):
+        return None
+    variants: list[str] = []
+    for key in keys:
+        variants.extend([key, key.lower(), key.upper(), key[:1].upper() + key[1:], f"@{key}", f"_{key}"])
+    for key in variants:
+        if key in value:
+            return value[key]
+    lowered = {str(k).lower().lstrip("@_"): v for k, v in value.items()}
+    for key in keys:
+        lookup = key.lower().lstrip("@_")
+        if lookup in lowered:
+            return lowered[lookup]
+    return None
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def _json_node_id(node: dict[str, Any], fallback: int) -> str:
+    value = _json_attr(node, "id", "toolId", "ToolID", "ToolId", "nodeId", "NodeId")
+    return str(value or fallback)
+
+
+def _json_plugin_name(node: dict[str, Any]) -> str:
+    for container_key in ("GuiSettings", "guiSettings", "EngineSettings", "engineSettings"):
+        container = node.get(container_key)
+        if isinstance(container, dict):
+            value = _json_attr(container, "Plugin", "plugin", "Macro", "macro")
+            if value:
+                return str(value)
+
+    value = _json_attr(
+        node,
+        "plugin",
+        "Plugin",
+        "toolType",
+        "tool_type",
+        "type",
+        "toolName",
+        "tool_name",
+        "macro",
+        "Macro",
+    )
+    if value:
+        return str(value)
+    return "Unknown"
+
+
+def _json_node_expression(value: Any) -> str:
+    expression_names = ("expression", "formula", "condition")
+    if isinstance(value, dict):
+        for key, item in value.items():
+            lowered = str(key).lower()
+            if isinstance(item, str) and item.strip() and any(name in lowered for name in expression_names):
+                return item.strip()
+        for item in value.values():
+            nested = _json_node_expression(item)
+            if nested:
+                return nested
+    elif isinstance(value, list):
+        for item in value:
+            nested = _json_node_expression(item)
+            if nested:
+                return nested
+    return ""
+
+
+def _json_config(node: dict[str, Any]) -> dict[str, Any]:
+    config = (
+        _json_attr(node, "config", "configuration", "Configuration", "properties", "Properties")
+        or node
+    )
+    if isinstance(config, dict):
+        nested = _json_attr(config, "configuration", "Configuration")
+        if isinstance(nested, dict):
+            return nested
+        properties = _json_attr(config, "properties", "Properties")
+        if isinstance(properties, dict):
+            nested = _json_attr(properties, "configuration", "Configuration")
+            if isinstance(nested, dict):
+                return nested
+    return config if isinstance(config, dict) else {}
+
+
+def _json_config_items(config: dict[str, Any], *keys: str) -> list[Any]:
+    for key in keys:
+        value = _json_attr(config, key)
+        if value is not None:
+            if isinstance(value, dict):
+                for child_key in keys:
+                    child_value = _json_attr(value, child_key)
+                    if child_value is not None and child_value is not value:
+                        return _as_list(child_value)
+            return _as_list(value)
+    for item in config.values():
+        if isinstance(item, dict):
+            nested = _json_config_items(item, *keys)
+            if nested:
+                return nested
+    return []
+
+
+def _extract_json_node_config(node: dict[str, Any], plugin: str) -> dict[str, Any]:
+    config = _json_config(node)
+    lowered = plugin.lower()
+    parsed: dict[str, Any] = {}
+
+    if "select" in lowered:
+        fields: list[dict[str, Any]] = []
+        for field in _json_config_items(config, "selectedFields", "SelectField", "selectFields", "fields"):
+            if not isinstance(field, dict):
+                continue
+            name = _json_attr(field, "field", "name", "fieldName", "Name")
+            if not name:
+                continue
+            selected = str(_json_attr(field, "selected", "Selected") or "true").lower() != "false"
+            rename = _json_attr(field, "rename", "Rename", "newName") or name
+            field_type = _json_attr(field, "type", "fieldType", "size") or "String"
+            if selected:
+                fields.append({"name": str(name), "rename": str(rename), "type": str(field_type)})
+        if fields:
+            parsed["selectedFields"] = fields
+
+    if "filter" in lowered and "summarize" not in lowered:
+        expression = _json_node_expression(config) or _json_node_expression(node)
+        if expression:
+            parsed["filterExpression"] = expression
+
+    if "summarize" in lowered:
+        group_by: list[str] = []
+        aggregations: list[dict[str, str]] = []
+        for field in _json_config_items(config, "SummarizeField", "summarizeFields", "fields"):
+            if not isinstance(field, dict):
+                continue
+            name = str(_json_attr(field, "field", "name", "fieldName") or "")
+            action = str(_json_attr(field, "action", "operation", "summaryAction") or "")
+            rename = str(_json_attr(field, "rename", "outputName") or name)
+            if not name:
+                continue
+            if action.lower() == "groupby":
+                group_by.append(name)
+            else:
+                aggregations.append({"field": name, "action": action, "rename": rename})
+        if group_by:
+            parsed["groupBy"] = group_by
+        if aggregations:
+            parsed["aggregations"] = aggregations
+
+    if "formula" in lowered:
+        formulas: list[dict[str, str]] = []
+        for formula in _json_config_items(config, "FormulaField", "formulas", "formulaFields"):
+            if not isinstance(formula, dict):
+                continue
+            field = str(_json_attr(formula, "field", "name", "fieldName") or "")
+            expression = str(_json_attr(formula, "expression", "formula") or "")
+            field_type = str(_json_attr(formula, "type", "fieldType", "size") or "Double")
+            if field and expression:
+                formulas.append({"field": field, "expression": expression, "type": field_type})
+        if formulas:
+            parsed["formulas"] = formulas
+
+    return parsed
 
 
 def _extract_node_config(node: ET.Element, plugin: str) -> dict[str, Any]:
@@ -188,6 +377,8 @@ def _extract_node_config(node: ET.Element, plugin: str) -> dict[str, Any]:
 
 def _source_type(value: str, plugin: str = "") -> str:
     lowered = f"{value} {plugin}".lower()
+    if ".json" in lowered or "json" in lowered:
+        return "json"
     if any(token in lowered for token in (".csv", "csv")):
         return "csv"
     if any(token in lowered for token in (".xlsx", ".xls", "excel")):
@@ -199,6 +390,31 @@ def _source_type(value: str, plugin: str = "") -> str:
     if "sharepoint.com" in lowered:
         return "sharepoint"
     return "unknown"
+
+
+def _extract_output_fields_from_blob(blob: str) -> list[dict[str, str]]:
+    lines = [line.strip() for line in (blob or "").splitlines() if line.strip()]
+    try:
+        index = lines.index("Output") + 1
+    except ValueError:
+        return []
+
+    known_types = {
+        "bool", "boolean", "byte", "int16", "int32", "int64", "integer", "long",
+        "float", "double", "decimal", "fixeddecimal", "string", "v_string",
+        "wstring", "v_wstring", "date", "datetime", "time",
+    }
+    fields: list[dict[str, str]] = []
+    while index + 2 < len(lines):
+        name, size, field_type = lines[index:index + 3]
+        if "dll" in name.lower() or "engine" in name.lower():
+            break
+        if size.isdigit() and field_type.lower() in known_types:
+            fields.append({"name": name, "type": field_type, "size": size})
+            index += 3
+            continue
+        index += 1
+    return fields
 
 
 def _extract_sources(node: ET.Element, plugin: str) -> list[dict[str, Any]]:
@@ -221,17 +437,58 @@ def _extract_sources(node: ET.Element, plugin: str) -> list[dict[str, Any]]:
 
     seen: set[str] = set()
     sources: list[dict[str, Any]] = []
+    fields = _extract_output_fields_from_blob(blob)
     for value in candidates:
         cleaned = value.strip().strip(";,)")
         if not cleaned or cleaned in seen:
             continue
         seen.add(cleaned)
-        sources.append({
+        source = {
             "name": os.path.basename(cleaned.split("?")[0]) or cleaned[:80],
             "type": _source_type(cleaned, plugin),
             "path": cleaned,
             "tool": plugin,
-        })
+        }
+        if fields and "input" in plugin.lower():
+            source["fields"] = fields
+        sources.append(source)
+    return sources
+
+
+def _extract_json_sources(node: dict[str, Any], plugin: str) -> list[dict[str, Any]]:
+    blob = _json_text_blob(node)
+    candidates: list[str] = []
+    patterns = [
+        r"https?://[^\s\"'<>]+",
+        r"[A-Za-z]:[^\n\"'<>]+\.(?:csv|xlsx?|json|xml|txt|parquet)",
+        r"(?:lib://|file://|\\\\)[^\n\"'<>]+\.(?:csv|xlsx?|json|xml|txt|parquet)",
+        r"[^\\/\n\"'<>]+\.(?:csv|xlsx?|json|xml|txt|parquet)",
+    ]
+    for pattern in patterns:
+        candidates.extend(match.group(0).strip() for match in re.finditer(pattern, blob, flags=re.IGNORECASE))
+
+    if not candidates and any(token in plugin.lower() for token in ("input", "download", "database", "indb")):
+        short_blob = " ".join(blob.split())[:500]
+        if short_blob:
+            candidates.append(short_blob)
+
+    seen: set[str] = set()
+    sources: list[dict[str, Any]] = []
+    fields = _extract_output_fields_from_blob(blob)
+    for value in candidates:
+        cleaned = value.strip().strip("; ,)")
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        source = {
+            "name": os.path.basename(cleaned.split("?")[0]) or cleaned[:80],
+            "type": _source_type(cleaned, plugin),
+            "path": cleaned,
+            "tool": plugin,
+        }
+        if fields and "input" in plugin.lower():
+            source["fields"] = fields
+        sources.append(source)
     return sources
 
 
@@ -250,6 +507,125 @@ def _extract_edges(root: ET.Element) -> list[dict[str, Any]]:
                 "toAnchor": destination.attrib.get("Connection") if destination is not None else "",
             })
     return edges
+
+
+def _looks_like_json_node(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if _json_attr(value, "ToolID", "ToolId", "toolId", "nodeId", "id") is None:
+        return False
+    return bool(_json_plugin_name(value) != "Unknown" or _json_attr(value, "config", "configuration", "GuiSettings", "EngineSettings"))
+
+
+def _find_json_node_list(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        for key in ("nodes", "Nodes", "tools", "Tools", "workflowNodes", "workflow_nodes"):
+            raw_items = value.get(key)
+            if isinstance(raw_items, dict):
+                raw_items = (
+                    raw_items.get("Node")
+                    or raw_items.get("node")
+                    or raw_items.get("items")
+                    or raw_items.get("Items")
+                    or raw_items
+                )
+            items = _as_list(raw_items)
+            dict_items = [item for item in items if isinstance(item, dict)]
+            if dict_items and sum(1 for item in dict_items if _looks_like_json_node(item)) >= max(1, len(dict_items) // 2):
+                return dict_items
+        for item in value.values():
+            found = _find_json_node_list(item)
+            if found:
+                return found
+    elif isinstance(value, list):
+        dict_items = [item for item in value if isinstance(item, dict)]
+        if dict_items and sum(1 for item in dict_items if _looks_like_json_node(item)) >= max(1, len(dict_items) // 2):
+            return dict_items
+        for item in value:
+            found = _find_json_node_list(item)
+            if found:
+                return found
+    return []
+
+
+def _edge_endpoint(value: Any, *direct_keys: str) -> str:
+    if isinstance(value, dict):
+        direct = _json_attr(value, *direct_keys)
+        if direct is not None and not isinstance(direct, dict):
+            return str(direct)
+        for nested_key in ("Origin", "origin", "source", "from", "Destination", "destination", "target", "to"):
+            nested = value.get(nested_key)
+            if isinstance(nested, dict):
+                endpoint = _json_attr(nested, "ToolID", "ToolId", "toolId", "nodeId", "id")
+                if endpoint is not None:
+                    return str(endpoint)
+    elif value is not None:
+        return str(value)
+    return ""
+
+
+def _json_edge_from(edge: dict[str, Any]) -> str:
+    value = _json_attr(edge, "from", "source", "sourceId", "sourceToolId", "fromToolId", "origin")
+    return _edge_endpoint(value, "from", "source", "sourceId", "sourceToolId", "fromToolId") or _edge_endpoint(edge.get("Origin") or edge.get("origin"), "ToolID", "ToolId", "toolId")
+
+
+def _json_edge_to(edge: dict[str, Any]) -> str:
+    value = _json_attr(edge, "to", "target", "targetId", "destination", "destinationToolId", "toToolId")
+    return _edge_endpoint(value, "to", "target", "targetId", "destinationToolId", "toToolId") or _edge_endpoint(edge.get("Destination") or edge.get("destination"), "ToolID", "ToolId", "toolId")
+
+
+def _find_json_edges(value: Any) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        for key in ("connections", "Connections", "edges", "Edges", "workflowEdges", "workflow_edges"):
+            raw_items = value.get(key)
+            if isinstance(raw_items, dict):
+                raw_items = (
+                    raw_items.get("Connection")
+                    or raw_items.get("connection")
+                    or raw_items.get("items")
+                    or raw_items.get("Items")
+                    or raw_items
+                )
+            items = _as_list(raw_items)
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                from_id = _json_edge_from(item)
+                to_id = _json_edge_to(item)
+                if from_id or to_id:
+                    candidates.append({
+                        "from": from_id,
+                        "to": to_id,
+                        "fromAnchor": str(_json_attr(item.get("Origin") or item.get("origin") or {}, "Connection") or _json_attr(item, "fromAnchor") or ""),
+                        "toAnchor": str(_json_attr(item.get("Destination") or item.get("destination") or {}, "Connection") or _json_attr(item, "toAnchor") or ""),
+                    })
+            if candidates:
+                return candidates
+        for item in value.values():
+            found = _find_json_edges(item)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _find_json_edges(item)
+            if found:
+                return found
+    return candidates
+
+
+def _json_workflow_name(filename: str, payload: Any) -> str:
+    if isinstance(payload, dict):
+        value = _json_attr(payload, "name", "workflowName", "title")
+        if value:
+            return str(value)
+        for key in ("workflow", "Workflow", "metaInfo", "MetaInfo", "metadata", "Metadata"):
+            nested = payload.get(key)
+            if isinstance(nested, dict):
+                value = _json_attr(nested, "name", "workflowName", "title")
+                if value:
+                    return str(value)
+    return os.path.splitext(os.path.basename(filename))[0]
 
 
 def _complexity(tool_count: int, unsupported_count: int, connection_count: int) -> str:
@@ -357,6 +733,90 @@ def parse_workflow_xml(filename: str, content: bytes, package_file: str | None =
     )
 
 
+def parse_workflow_json(filename: str, content: bytes, package_file: str | None = None) -> WorkflowInventoryItem:
+    try:
+        payload = json.loads(content.decode("utf-8-sig"))
+    except Exception as exc:
+        workflow_id = _stable_id(filename, str(exc))
+        return WorkflowInventoryItem(
+            id=workflow_id,
+            name=os.path.basename(filename),
+            sourceFile=filename,
+            packageFile=package_file,
+            fileType="json",
+            toolCount=0,
+            connectionCount=0,
+            convertibility="manual_review",
+            complexity="high",
+            supportedToolCount=0,
+            unsupportedToolCount=1,
+            toolTypes=[],
+            unsupportedTools=["Invalid JSON"],
+            recommendations=[f"Could not parse workflow JSON: {exc}"],
+            dataSources=[],
+            workflowNodes=[],
+            workflowEdges=[],
+        )
+
+    nodes = _find_json_node_list(payload)
+    edges = _find_json_edges(payload)
+    tool_types: list[str] = []
+    unsupported_tools: list[str] = []
+    recommendations: list[str] = []
+    data_sources: list[dict[str, Any]] = []
+    workflow_nodes: list[dict[str, Any]] = []
+
+    for index, node in enumerate(nodes, start=1):
+        plugin = _json_plugin_name(node)
+        node_id = _json_node_id(node, index)
+        tool_types.append(plugin)
+        workflow_nodes.append({
+            "id": node_id,
+            "plugin": plugin,
+            "supported": True,
+            "expression": _json_node_expression(node),
+            "configurationText": _json_text_blob(node)[:4000],
+            "config": _extract_json_node_config(node, plugin),
+        })
+        data_sources.extend(_extract_json_sources(node, plugin))
+        supported, reason = _classify_tool(plugin)
+        workflow_nodes[-1]["supported"] = supported
+        if not supported:
+            unsupported_tools.append(plugin)
+            if reason and reason not in recommendations:
+                recommendations.append(reason)
+
+    unique_tool_types = sorted(set(tool_types))
+    unique_unsupported = sorted(set(unsupported_tools))
+    unsupported_count = len(unsupported_tools)
+    tool_count = len(nodes)
+
+    if tool_count == 0:
+        recommendations.append("No Alteryx tool nodes were found in the JSON; verify this is a full workflow JSON export, not only metadata.")
+    if not recommendations:
+        recommendations.append("Candidate for automated Power Query/Dataflow conversion from workflow JSON.")
+
+    return WorkflowInventoryItem(
+        id=_stable_id(filename, package_file or "", str(len(content))),
+        name=_json_workflow_name(filename, payload),
+        sourceFile=filename,
+        packageFile=package_file,
+        fileType="json",
+        toolCount=tool_count,
+        connectionCount=len(edges),
+        convertibility=_convertibility(tool_count, unsupported_count),
+        complexity=_complexity(tool_count, unsupported_count, len(edges)),
+        supportedToolCount=max(tool_count - unsupported_count, 0),
+        unsupportedToolCount=unsupported_count,
+        toolTypes=unique_tool_types,
+        unsupportedTools=unique_unsupported,
+        recommendations=recommendations,
+        dataSources=data_sources,
+        workflowNodes=workflow_nodes,
+        workflowEdges=edges,
+    )
+
+
 def _extract_from_archive(filename: str, content: bytes) -> list[WorkflowInventoryItem]:
     workflows: list[WorkflowInventoryItem] = []
     with zipfile.ZipFile(BytesIO(content)) as archive:
@@ -368,6 +828,14 @@ def _extract_from_archive(filename: str, content: bytes) -> list[WorkflowInvento
             if entry_ext in SUPPORTED_WORKFLOW_EXTENSIONS:
                 workflows.append(
                     parse_workflow_xml(
+                        filename=entry.filename,
+                        content=archive.read(entry),
+                        package_file=filename,
+                    )
+                )
+            elif entry_ext in SUPPORTED_JSON_WORKFLOW_EXTENSIONS:
+                workflows.append(
+                    parse_workflow_json(
                         filename=entry.filename,
                         content=archive.read(entry),
                         package_file=filename,
@@ -388,12 +856,14 @@ def ingest_uploaded_files(files: list[tuple[str, bytes]]) -> dict[str, Any]:
         try:
             if ext in SUPPORTED_WORKFLOW_EXTENSIONS:
                 workflows.append(parse_workflow_xml(filename, content))
+            elif ext in SUPPORTED_JSON_WORKFLOW_EXTENSIONS:
+                workflows.append(parse_workflow_json(filename, content))
             elif ext in SUPPORTED_ARCHIVE_EXTENSIONS:
                 workflows.extend(_extract_from_archive(filename, content))
             else:
                 rejected.append({
                     "file": filename,
-                    "reason": "Unsupported file type. Use .yxmd, .yxmc, .yxwz, .yxzp, or .zip.",
+                    "reason": "Unsupported file type. Use .yxmd, .yxmc, .yxwz, .json, .yxzp, or .zip.",
                 })
         except zipfile.BadZipFile:
             rejected.append({"file": filename, "reason": "Archive is not a valid zip/yxzp file."})

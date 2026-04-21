@@ -54,7 +54,17 @@ ALTERYX_ENV_FILE = os.path.abspath(
 )
 load_dotenv(ALTERYX_ENV_FILE, override=True)
 
-ALTERYX_CLIENT_ID     = os.getenv("ALTERYX_CLIENT_ID", _KNOWN_PUBLIC_CLIENT_ID)
+def _resolve_alteryx_client_id() -> str:
+    configured = (os.getenv("ALTERYX_CLIENT_ID") or "").strip()
+    if not configured:
+        return _KNOWN_PUBLIC_CLIENT_ID
+    if configured.startswith("eyJ") or len(configured) > 80:
+        print("⚠️  [Alteryx OAuth] ALTERYX_CLIENT_ID looks like a token; using public Alteryx client_id fallback.")
+        return _KNOWN_PUBLIC_CLIENT_ID
+    return configured
+
+
+ALTERYX_CLIENT_ID     = _resolve_alteryx_client_id()
 ALTERYX_CLIENT_SECRET = os.getenv("ALTERYX_CLIENT_SECRET", "")
 
 
@@ -138,6 +148,16 @@ def looks_like_refresh_token(token: str) -> bool:
     return bool(payload.get("sid") and payload.get("sub") and not payload.get("aud"))
 
 
+def _is_invalid_refresh_token_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "refresh token is invalid" in message
+        or "invalid, revoked, or already used" in message
+        or "invalid_grant" in message
+        or "refresh token does not exist" in message
+    )
+
+
 # ── Token container ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -183,7 +203,7 @@ def refresh_access_token(refresh_token: str) -> tuple[str, Optional[str]]:
     the access_token — causing all subsequent API calls to 401.)
     """
     print(f"\n🔄 [refresh_access_token] Requesting new access_token from Ping Identity...")
-    print(f"   client_id : {ALTERYX_CLIENT_ID}")
+    print(f"   client_id : {ALTERYX_CLIENT_ID[:8]}...{ALTERYX_CLIENT_ID[-4:]}")
     return TokenManager.refresh_token(refresh_token)
 
     payload: dict = {
@@ -300,14 +320,19 @@ def ensure_fresh_token(session: AlteryxSession) -> str:
 
     print(f"\n🔄 [ensure_fresh_token] Token expired — refreshing...")
 
-    last_error: Optional[Exception] = None
     stored = TokenManager.load_tokens()
-    refresh_to_use = (stored.get("refresh_token") or session.refresh_token or "").strip()
+    session_refresh = (session.refresh_token or "").strip()
+    stored_refresh = (stored.get("refresh_token") or "").strip()
+    refresh_candidates: list[tuple[str, str]] = []
+    if session_refresh:
+        refresh_candidates.append(("active session", session_refresh))
+    if stored_refresh and stored_refresh != session_refresh:
+        refresh_candidates.append(("token_storage.json", stored_refresh))
 
-    if refresh_to_use:
+    last_error: Optional[Exception] = None
+    for source, refresh_to_use in refresh_candidates:
         try:
-            if stored.get("refresh_token") and stored.get("refresh_token") != session.refresh_token:
-                print("🔁 [ensure_fresh_token] Using latest rotated refresh token from token_storage.json")
+            print(f"🔁 [ensure_fresh_token] Trying refresh token from {source}")
             new_access, new_refresh = refresh_access_token(refresh_to_use)
             session.access_token = new_access
             if new_refresh:                  # BUG 4 FIX: always update rotated token
@@ -320,6 +345,10 @@ def ensure_fresh_token(session: AlteryxSession) -> str:
         except Exception as exc:
             last_error = exc
             print(f"⚠️  [ensure_fresh_token] Refresh token flow failed: {exc}")
+            if source == "token_storage.json" or refresh_to_use == stored_refresh:
+                TokenManager.clear_storage()
+                print("🔁 [ensure_fresh_token] Cleared stale token_storage.json refresh token.")
+            continue
 
     if last_error is not None:
         raise last_error
@@ -418,6 +447,8 @@ def list_alteryx_workspaces(session: AlteryxSession) -> list[dict]:
         except Exception as e:
             print(f"  ⚠️  Failed: {e}")
             last_error = e
+            if _is_invalid_refresh_token_error(e):
+                break
             continue
 
     raise ValueError(
@@ -566,6 +597,10 @@ def create_alteryx_session(
             last_error = exc
             print(f"⚠️  [create_alteryx_session] Token source {source} failed: {exc}")
             if source == "request":
+                break
+            if _is_invalid_refresh_token_error(exc):
+                TokenManager.clear_storage()
+                print("🔁 [create_alteryx_session] Cleared stale stored token.")
                 break
             if source == "token_storage.json" and env_access:
                 TokenManager.clear_storage()
