@@ -45,7 +45,13 @@ def get_primary_source(workflow: dict[str, Any], sharepoint_url: str = "", file_
         source.setdefault("siteUrl", _sharepoint_site(source.get("path", "")))
         return source
 
-    return _source_from_override("", "")
+    return {
+        "name": workflow.get("sourceFile") or workflow.get("name") or "AlteryxWorkflow",
+        "type": "unknown",
+        "path": "",
+        "siteUrl": "",
+        "tool": "Workflow source metadata unavailable",
+    }
 
 
 def generate_m_query(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:

@@ -294,19 +294,21 @@ def _extract_fields_from_m(expr: str) -> list:
     # Grouped Alteryx workflows reduce the schema after Select/TransformColumnTypes.
     # Detect final output first so Power BI receives grouped keys, aggregations,
     # and formula columns instead of pre-aggregation source fields.
-    final_group_match = re.search(r'Table\.Group\s*\(\s*[^,]+\s*,\s*\{([^}]*)\}', expr, re.DOTALL)
+    final_group_matches = list(re.finditer(r'Table\.Group\s*\(\s*[^,]+\s*,\s*\{([^}]*)\}', expr, re.DOTALL))
+    final_group_match = final_group_matches[-1] if final_group_matches else None
     if final_group_match:
+        final_group_expr = expr[final_group_match.start():]
         for col_ref in re.finditer(r'"([^"]+)"', final_group_match.group(1)):
             col_name = col_ref.group(1).strip()
             if col_name and col_name not in [f["name"] for f in fields]:
                 fields.append({"name": col_name, "type": "string"})
-        for agg_ref in re.finditer(r'\{\s*"([^"]+)"\s*,\s*each\s+(?:List\.|Table\.)', expr):
+        for agg_ref in re.finditer(r'\{\s*"([^"]+)"\s*,\s*each\s+(?:List\.|Table\.)', final_group_expr):
             col_name = agg_ref.group(1).strip()
             if col_name and col_name not in [f["name"] for f in fields]:
                 fields.append({"name": col_name, "type": _infer_type_from_name(col_name)})
         for add_ref in re.finditer(
             r'Table\.AddColumn\s*\(\s*[^,]+\s*,\s*"([^"]+)"\s*,.*?,\s*(type\s+\w+|Int64\.Type|\w+(?:\.\w+)*)\s*\)',
-            expr,
+            final_group_expr,
             re.DOTALL,
         ):
             col_name = add_ref.group(1).strip()
@@ -402,19 +404,21 @@ def _extract_fields_from_m(expr: str) -> list:
 
         # Priority 2: final grouped schemas. Grouped Alteryx workflows often
         # return GroupBy columns + aggregation columns + later Formula columns.
-        group_match = re.search(r'Table\.Group\s*\(\s*[^,]+\s*,\s*\{([^}]*)\}', expr, re.DOTALL)
+        group_matches = list(re.finditer(r'Table\.Group\s*\(\s*[^,]+\s*,\s*\{([^}]*)\}', expr, re.DOTALL))
+        group_match = group_matches[-1] if group_matches else None
         if group_match:
+            group_expr = expr[group_match.start():]
             for col_ref in re.finditer(r'"([^"]+)"', group_match.group(1)):
                 col_name = col_ref.group(1).strip()
                 if col_name and col_name not in [f["name"] for f in fields]:
                     fields.append({"name": col_name, "type": "string"})
-            for agg_ref in re.finditer(r'\{\s*"([^"]+)"\s*,\s*each\s+(?:List\.|Table\.)', expr):
+            for agg_ref in re.finditer(r'\{\s*"([^"]+)"\s*,\s*each\s+(?:List\.|Table\.)', group_expr):
                 col_name = agg_ref.group(1).strip()
                 if col_name and col_name not in [f["name"] for f in fields]:
                     fields.append({"name": col_name, "type": _infer_type_from_name(col_name)})
             for add_ref in re.finditer(
                 r'Table\.AddColumn\s*\(\s*[^,]+\s*,\s*"([^"]+)"\s*,.*?,\s*(type\s+\w+|Int64\.Type|\w+(?:\.\w+)*)\s*\)',
-                expr,
+                group_expr,
                 re.DOTALL,
             ):
                 col_name = add_ref.group(1).strip()
@@ -459,7 +463,8 @@ def _extract_fields_from_m(expr: str) -> list:
         logger.debug("[Extract] Pattern C: No static column refs found - falling through to D/E")
 
     # Pattern D: Table.SelectColumns
-    select_match = re.search(r'Table\.SelectColumns\s*\(\s*[^,]+\s*,\s*\{([^}]+)\}\s*\)', expr)
+    select_matches = list(re.finditer(r'Table\.SelectColumns\s*\(\s*[^,]+\s*,\s*\{([^}]+)\}\s*\)', expr))
+    select_match = select_matches[-1] if select_matches else None
     if select_match:
         for col_ref in re.finditer(r'"([^"]+)"', select_match.group(1)):
             col_name = col_ref.group(1).strip()
@@ -470,19 +475,21 @@ def _extract_fields_from_m(expr: str) -> list:
             return fields
 
     # Pattern E: Table.Group
-    group_match = re.search(r'Table\.Group\s*\(\s*[^,]+\s*,\s*\{([^}]+)\}', expr)
+    group_matches = list(re.finditer(r'Table\.Group\s*\(\s*[^,]+\s*,\s*\{([^}]+)\}', expr, re.DOTALL))
+    group_match = group_matches[-1] if group_matches else None
     if group_match:
+        group_expr = expr[group_match.start():]
         for col_ref in re.finditer(r'"([^"]+)"', group_match.group(1)):
             col_name = col_ref.group(1).strip()
             if col_name:
                 fields.append({"name": col_name, "type": "string"})
-        for agg_ref in re.finditer(r'\{\s*"([^"]+)"\s*,\s*each\s+(?:List\.|Table\.)', expr):
+        for agg_ref in re.finditer(r'\{\s*"([^"]+)"\s*,\s*each\s+(?:List\.|Table\.)', group_expr):
             col_name = agg_ref.group(1).strip()
             if col_name and col_name not in [f["name"] for f in fields]:
                 fields.append({"name": col_name, "type": _infer_type_from_name(col_name)})
         for add_ref in re.finditer(
             r'Table\.AddColumn\s*\(\s*[^,]+\s*,\s*"([^"]+)"\s*,.*?,\s*(type\s+\w+|Int64\.Type|\w+(?:\.\w+)*)\s*\)',
-            expr,
+            group_expr,
             re.DOTALL,
         ):
             col_name = add_ref.group(1).strip()
@@ -856,6 +863,36 @@ class _Publisher:
 
             # ── Step 1: Try resolve_output_columns (handles GROUP BY, APPLYMAP, IF) ──
             resolved_cols = converter.resolve_output_columns(t)
+            final_m_fields = _extract_fields_from_m(expr_str) if expr_str else []
+            if final_m_fields and (
+                "Table.Group" in expr_str
+                or "Table.SelectColumns" in expr_str
+                or "Table.AddColumn" in expr_str
+            ):
+                final_names = {
+                    str(field.get("name") or "").strip().lower()
+                    for field in final_m_fields
+                    if str(field.get("name") or "").strip()
+                }
+                resolved_names = {
+                    _strip_qlik_qualifier(str(col.get("name") or "")).strip().lower()
+                    for col in resolved_cols
+                    if str(col.get("name") or "").strip()
+                }
+                if final_names and final_names != resolved_names:
+                    logger.info(
+                        "[BIM] '%s': final M schema overrides stale metadata: %s -> %s",
+                        table_name,
+                        sorted(resolved_names),
+                        sorted(final_names),
+                    )
+                    resolved_cols = [
+                        {
+                            "name": field.get("name"),
+                            "dataType": _tabular_type(field.get("type", "string")),
+                        }
+                        for field in final_m_fields
+                    ]
             columns: List[Dict[str, Any]] = []
 
             if resolved_cols:
