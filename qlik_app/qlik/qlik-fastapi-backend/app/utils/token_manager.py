@@ -36,7 +36,20 @@ ALTERYX_TOKEN_URL = "https://pingauth.alteryxcloud.com/as/token"
 ALTERYX_ENV_FILE = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(ALTERYX_ENV_FILE, override=True)
 
-ALTERYX_CLIENT_ID = os.getenv("ALTERYX_CLIENT_ID", "af1b5321-afe0-48c2-966a-c77d74e98085")
+KNOWN_PUBLIC_CLIENT_ID = "af1b5321-afe0-48c2-966a-c77d74e98085"
+
+
+def _resolve_alteryx_client_id() -> str:
+    configured = (os.getenv("ALTERYX_CLIENT_ID") or "").strip()
+    if not configured:
+        return KNOWN_PUBLIC_CLIENT_ID
+    if configured.startswith("eyJ") or len(configured) > 80:
+        logger.warning("[TokenManager] ALTERYX_CLIENT_ID looks like a token; using public Alteryx client_id fallback.")
+        return KNOWN_PUBLIC_CLIENT_ID
+    return configured
+
+
+ALTERYX_CLIENT_ID = _resolve_alteryx_client_id()
 ALTERYX_CLIENT_SECRET = os.getenv("ALTERYX_CLIENT_SECRET", "")
 
 

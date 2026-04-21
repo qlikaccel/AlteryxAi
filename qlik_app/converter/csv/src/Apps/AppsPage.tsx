@@ -7,6 +7,7 @@ import {
   fetchAlteryxWorkflows,
   fetchUploadedAlteryxWorkflows,
   materializeCloudAlteryxWorkflow,
+  materializeJsonAlteryxWorkflow,
 } from "../api/alteryxApi";
 import type { AlteryxWorkflow } from "../api/alteryxApi";
 
@@ -68,6 +69,23 @@ export default function AppsPage() {
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
 
+  const openMaterializedWorkflow = (materialized: any, fallbackWorkflow: AlteryxWorkflow) => {
+    const parsedWorkflow = materialized.workflow || materialized.workflows?.[0];
+    if (!parsedWorkflow?.id || !materialized.batch_id) {
+      throw new Error("Workflow JSON/package was received, but no parseable workflow was found.");
+    }
+    sessionStorage.setItem("platform", "alteryx_upload");
+    sessionStorage.setItem("alteryx_batch_id", materialized.batch_id);
+    sessionStorage.setItem("alteryx_batch_summary", JSON.stringify(materialized.summary || {}));
+    sessionStorage.setItem("alteryx_workflow_id", parsedWorkflow.id);
+    sessionStorage.setItem("alteryx_workflow_name", parsedWorkflow.name || fallbackWorkflow.name);
+    sessionStorage.setItem("alteryx_selected_workflow", JSON.stringify(parsedWorkflow));
+    sessionStorage.setItem("alteryx_cloud_source_workflow_id", fallbackWorkflow.id);
+    sessionStorage.setItem("alteryx_cloud_artifact_name", materialized.artifact_name || "");
+    startTimer?.("/summary");
+    nav("/summary", { state: { workflowId: parsedWorkflow.id, workflowName: parsedWorkflow.name || fallbackWorkflow.name } });
+  };
+
   const openSummary = async (workflow: AlteryxWorkflow) => {
     sessionStorage.setItem("appSelected", workflow.id);
     sessionStorage.setItem("appName", workflow.name);
@@ -85,25 +103,29 @@ export default function AppsPage() {
           workspace_id: sessionStorage.getItem("alteryx_workspace_id") || undefined,
           workspace_name: sessionStorage.getItem("alteryx_workspace_name") || undefined,
         });
-        const parsedWorkflow = materialized.workflow || materialized.workflows?.[0];
-        if (!parsedWorkflow?.id || !materialized.batch_id) {
-          throw new Error("Cloud workflow package was downloaded, but no parseable workflow was found.");
-        }
-        sessionStorage.setItem("platform", "alteryx_upload");
-        sessionStorage.setItem("alteryx_batch_id", materialized.batch_id);
-        sessionStorage.setItem("alteryx_batch_summary", JSON.stringify(materialized.summary || {}));
-        sessionStorage.setItem("alteryx_workflow_id", parsedWorkflow.id);
-        sessionStorage.setItem("alteryx_workflow_name", parsedWorkflow.name || workflow.name);
-        sessionStorage.setItem("alteryx_selected_workflow", JSON.stringify(parsedWorkflow));
-        sessionStorage.setItem("alteryx_cloud_source_workflow_id", workflow.id);
-        sessionStorage.setItem("alteryx_cloud_artifact_name", materialized.artifact_name || "");
-        startTimer?.("/summary");
-        nav("/summary", { state: { workflowId: parsedWorkflow.id, workflowName: parsedWorkflow.name || workflow.name } });
+        openMaterializedWorkflow(materialized, workflow);
       } catch (err: any) {
-        setLoading(false);
-        setPageError(err?.message || "Unable to download the full workflow package from Alteryx Cloud.");
-        startTimer?.("/summary");
-        nav("/summary", { state: { workflowId: workflow.id, workflowName: workflow.name, cloudMaterializeError: err?.message } });
+        try {
+          const materializedFromJson = await materializeJsonAlteryxWorkflow({
+            workflow_json: workflow as unknown as Record<string, any>,
+            workflow_name: workflow.name,
+            source: "cloud_workflow_list_json",
+          });
+          openMaterializedWorkflow(materializedFromJson, workflow);
+        } catch (jsonErr: any) {
+          setLoading(false);
+          const packageError = err?.message || "Unable to download the full workflow package from Alteryx Cloud.";
+          const jsonError = jsonErr?.message || "Workflow JSON did not contain parseable tool nodes.";
+          setPageError(`${packageError} JSON fallback also failed: ${jsonError}`);
+          startTimer?.("/summary");
+          nav("/summary", {
+            state: {
+              workflowId: workflow.id,
+              workflowName: workflow.name,
+              cloudMaterializeError: `${packageError} JSON fallback also failed: ${jsonError}`,
+            },
+          });
+        }
       }
       return;
     }

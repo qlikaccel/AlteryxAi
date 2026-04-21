@@ -9,8 +9,8 @@ import {
 import type { AlteryxWorkflow } from "../api/alteryxApi";
 import { useWizard } from "../context/WizardContext";
 
-const DEFAULT_SHAREPOINT_URL = sessionStorage.getItem("alteryx_sharepoint_url") || "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx";
-const DEFAULT_FILE_NAME = sessionStorage.getItem("alteryx_file_name") || "sales_data_1M.csv";
+const DEFAULT_SHAREPOINT_URL = sessionStorage.getItem("alteryx_sharepoint_url") || "";
+const DEFAULT_FILE_NAME = sessionStorage.getItem("alteryx_file_name") || "";
 
 type SummaryTab = "sourceTypes" | "summary" | "brd" | "diagram";
 
@@ -48,6 +48,18 @@ function buildPieSlices(workflow: AlteryxWorkflow | null) {
   return entries;
 }
 
+function workflowSourceName(workflow: AlteryxWorkflow | null, fallback = "") {
+  const source = (workflow?.dataSources || []).find((item: any) => item?.name || item?.fileName || item?.path);
+  if (!source) return fallback;
+  return source.fileName || source.name || String(source.path || "").split(/[\\/]/).pop() || fallback;
+}
+
+function workflowSourcePath(workflow: AlteryxWorkflow | null, fallback = "") {
+  const source = (workflow?.dataSources || []).find((item: any) => item?.path || item?.connection || item?.siteUrl);
+  if (!source) return fallback;
+  return source.path || source.connection || source.siteUrl || fallback;
+}
+
 function PieChart({ slices }: { slices: Array<[string, number]> }) {
   const total = slices.reduce((sum, [, value]) => sum + value, 0) || 1;
   let cumulative = 0;
@@ -73,6 +85,200 @@ function PieChart({ slices }: { slices: Array<[string, number]> }) {
             <span>{name}: {safePercent(value, total)}%</span>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+type WorkflowGraphNode = Record<string, any>;
+type WorkflowGraphEdge = Record<string, any>;
+
+function shortToolName(plugin: string) {
+  return (plugin || "Tool")
+    .split(/[./\\]/)
+    .filter(Boolean)
+    .slice(-1)[0]
+    .replace(/Tool$/i, "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .trim() || "Tool";
+}
+
+function toolFamily(plugin: string) {
+  const lowered = (plugin || "").toLowerCase();
+  if (lowered.includes("input") || lowered.includes("download")) return "input";
+  if (lowered.includes("output")) return "output";
+  if (lowered.includes("union")) return "union";
+  if (lowered.includes("join") || lowered.includes("findreplace")) return "join";
+  if (lowered.includes("filter")) return "filter";
+  if (lowered.includes("select")) return "select";
+  if (lowered.includes("cleansing") || lowered.includes("cleanse")) return "cleanse";
+  if (lowered.includes("summarize") || lowered.includes("aggregate")) return "summarize";
+  if (lowered.includes("formula")) return "formula";
+  if (lowered.includes("sort") || lowered.includes("unique")) return "shape";
+  return "default";
+}
+
+function toolIcon(family: string) {
+  const icons: Record<string, string> = {
+    input: "in",
+    output: "out",
+    union: "U",
+    join: "J",
+    filter: "F",
+    select: "S",
+    cleanse: "#",
+    summarize: "sum",
+    formula: "fx",
+    shape: "sort",
+    default: "tool",
+  };
+  return icons[family] || icons.default;
+}
+
+function nodeSubtitle(node: WorkflowGraphNode, sourceDetails: Array<Record<string, any>>) {
+  const plugin = String(node.plugin || "");
+  const family = toolFamily(plugin);
+  const config = node.config || {};
+  const sourcesForTool = sourceDetails.filter((source) => String(source.tool || "") === plugin);
+
+  if (family === "input" && sourcesForTool.length > 0) {
+    return sourcesForTool[0].name || sourcesForTool[0].path || "Input source";
+  }
+  if (config.filterExpression) return config.filterExpression;
+  if (Array.isArray(config.formulas) && config.formulas.length > 0) {
+    return `${config.formulas.length} formula field${config.formulas.length === 1 ? "" : "s"}`;
+  }
+  if (Array.isArray(config.groupBy) && config.groupBy.length > 0) {
+    return `Group by ${config.groupBy.slice(0, 2).join(", ")}`;
+  }
+  if (Array.isArray(config.selectedFields) && config.selectedFields.length > 0) {
+    return `${config.selectedFields.length} selected field${config.selectedFields.length === 1 ? "" : "s"}`;
+  }
+  return shortToolName(plugin);
+}
+
+function buildWorkflowLayout(nodes: WorkflowGraphNode[], edges: WorkflowGraphEdge[]) {
+  const nodeById = new Map(nodes.map((node, index) => [String(node.id || index), node]));
+  const levels = new Map<string, number>();
+  nodes.forEach((node, index) => levels.set(String(node.id || index), 0));
+
+  for (let pass = 0; pass < nodes.length; pass += 1) {
+    let changed = false;
+    edges.forEach((edge) => {
+      const from = String(edge.from || "");
+      const to = String(edge.to || "");
+      if (!nodeById.has(from) || !nodeById.has(to)) return;
+      const nextLevel = (levels.get(from) || 0) + 1;
+      if (nextLevel > (levels.get(to) || 0)) {
+        levels.set(to, nextLevel);
+        changed = true;
+      }
+    });
+    if (!changed) break;
+  }
+
+  const grouped = new Map<number, WorkflowGraphNode[]>();
+  nodes.forEach((node, index) => {
+    const id = String(node.id || index);
+    const level = levels.get(id) || 0;
+    if (!grouped.has(level)) grouped.set(level, []);
+    grouped.get(level)?.push(node);
+  });
+
+  const nodeWidth = 156;
+  const nodeHeight = 78;
+  const columnGap = 230;
+  const rowGap = 116;
+  const xOffset = 28;
+  const yOffset = 34;
+  const maxLevel = Math.max(0, ...Array.from(grouped.keys()));
+  const maxRows = Math.max(1, ...Array.from(grouped.values()).map((group) => group.length));
+  const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
+
+  Array.from(grouped.keys()).sort((a, b) => a - b).forEach((level) => {
+    const group = grouped.get(level) || [];
+    const columnHeight = (group.length - 1) * rowGap;
+    const yBase = yOffset + Math.max(0, (maxRows - 1) * rowGap - columnHeight) / 2;
+    group.forEach((node, row) => {
+      positions.set(String(node.id || ""), {
+        x: xOffset + level * columnGap,
+        y: yBase + row * rowGap,
+        width: nodeWidth,
+        height: nodeHeight,
+      });
+    });
+  });
+
+  return {
+    positions,
+    canvasWidth: xOffset * 2 + maxLevel * columnGap + nodeWidth + 48,
+    canvasHeight: yOffset * 2 + Math.max(1, maxRows) * rowGap + 32,
+  };
+}
+
+function WorkflowGraph({ workflow, sourceDetails }: { workflow: AlteryxWorkflow; sourceDetails: Array<Record<string, any>> }) {
+  const nodes = workflow.workflowNodes || [];
+  const edges = workflow.workflowEdges || [];
+  const { positions, canvasWidth, canvasHeight } = useMemo(
+    () => buildWorkflowLayout(nodes, edges),
+    [nodes, edges]
+  );
+  const visibleEdges = edges.filter((edge) => positions.has(String(edge.from || "")) && positions.has(String(edge.to || "")));
+
+  if (!nodes.length) {
+    return (
+      <div className="workflow-empty-state">
+        <strong>Workflow graph is not available yet.</strong>
+        <span>Upload the exported .yxmd/.yxzp package so the accelerator can parse tool nodes and draw the lineage diagram.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="workflow-canvas-shell">
+      <div className="workflow-canvas" style={{ width: canvasWidth, height: canvasHeight }}>
+        <svg className="workflow-edge-layer" width={canvasWidth} height={canvasHeight} aria-hidden="true">
+          <defs>
+            <marker id="workflow-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+              <path d="M0,0 L10,4 L0,8 Z" />
+            </marker>
+          </defs>
+          {visibleEdges.map((edge, index) => {
+            const from = positions.get(String(edge.from || ""))!;
+            const to = positions.get(String(edge.to || ""))!;
+            const startX = from.x + from.width;
+            const startY = from.y + from.height / 2;
+            const endX = to.x;
+            const endY = to.y + to.height / 2;
+            const curve = Math.max(58, Math.min(120, (endX - startX) / 2));
+            return (
+              <path
+                key={`${edge.from}-${edge.to}-${index}`}
+                className="workflow-edge"
+                d={`M ${startX} ${startY} C ${startX + curve} ${startY}, ${endX - curve} ${endY}, ${endX} ${endY}`}
+              />
+            );
+          })}
+        </svg>
+        {nodes.map((node, index) => {
+          const id = String(node.id || index);
+          const position = positions.get(id) || { x: 24, y: 24 + index * 92, width: 156, height: 78 };
+          const family = toolFamily(String(node.plugin || ""));
+          return (
+            <div
+              key={id}
+              className={`workflow-node workflow-node-${family} ${node.supported === false ? "needs-review" : ""}`}
+              style={{ left: position.x, top: position.y, width: position.width, height: position.height }}
+              title={node.configurationText || nodeSubtitle(node, sourceDetails)}
+            >
+              <span className="node-icon">{toolIcon(family)}</span>
+              <span className="node-title">{shortToolName(String(node.plugin || ""))}</span>
+              <span className="node-id">#{id}</span>
+              <span className="node-subtitle">{nodeSubtitle(node, sourceDetails)}</span>
+              {node.supported === false && <span className="node-warning">review</span>}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -147,8 +353,12 @@ export default function SummaryPage() {
         setAnalysis(data);
         setWorkflow(data.workflow);
         sessionStorage.setItem("alteryx_selected_workflow", JSON.stringify(data.workflow));
-        sessionStorage.setItem("alteryx_sharepoint_url", sharePointUrl);
-        sessionStorage.setItem("alteryx_file_name", fileName);
+        const resolvedSourcePath = workflowSourcePath(data.workflow, data.mquery?.data_source_path || sharePointUrl);
+        const resolvedFileName = workflowSourceName(data.workflow, data.mquery?.source?.name || fileName);
+        if (sharePointUrl) sessionStorage.setItem("alteryx_sharepoint_url", sharePointUrl);
+        else sessionStorage.removeItem("alteryx_sharepoint_url");
+        sessionStorage.setItem("alteryx_file_name", resolvedFileName || "");
+        sessionStorage.setItem("migration_data_source_path", resolvedSourcePath || data.mquery?.data_source_path || "");
         sessionStorage.setItem("migration_mquery", data.mquery?.combined_mquery || "");
         sessionStorage.setItem("migration_dataset_name", data.mquery?.dataset_name || data.workflow?.name || "AlteryxDataset");
         sessionStorage.setItem("migration_generation_method", data.mquery?.generation_method || "rule_based");
@@ -330,7 +540,7 @@ export default function SummaryPage() {
               <span className="source-icon tan">csv</span>
               <div><h3>Publish CSV</h3><p>SharePoint CSV to Power BI</p></div>
             </div>
-            <p>Uses the supplied SharePoint path for {fileName}, publishes the generated model, and exposes the backend API endpoint used by the migration.</p>
+            <p>Uses the workflow source metadata for {workflowSourceName(workflow, "the selected source")}, publishes the generated model, and exposes the backend API endpoint used by the migration.</p>
             <div className="source-tags blue"><span>ANY LICENSE</span><span>REST API</span><span>FAST DEPLOY</span></div>
             <button onClick={continueToExport}>Go to Export</button>
           </article>
@@ -422,8 +632,14 @@ export default function SummaryPage() {
             For a local or SharePoint CSV workflow, the accelerator shows the Alteryx workflow graph so reviewers
             can validate transformation lineage before publishing.
           </p>
-          <pre className="diagram-preview">{analysis?.diagram?.mermaid}</pre>
-          <div className="pill-list">
+          <WorkflowGraph workflow={workflow} sourceDetails={sourceDetails} />
+          <div className="workflow-legend">
+            <span><i className="legend-input" /> Source</span>
+            <span><i className="legend-transform" /> Transform</span>
+            <span><i className="legend-join" /> Join / Union</span>
+            <span><i className="legend-output" /> Output</span>
+          </div>
+          <div className="pill-list workflow-detail-pills">
             {sourceDetails.length > 0 && sourceDetails.slice(0, 12).map((source: any, index: number) => (
               <span key={`source-${index}`}>{source.fileName || source.path || source.connection || source.type || "Data source"}</span>
             ))}

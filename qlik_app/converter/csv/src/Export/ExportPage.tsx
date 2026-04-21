@@ -10,8 +10,8 @@ export default function ExportPage() {
   const platform = sessionStorage.getItem("platform") || "alteryx_upload";
   const isCloudApiWorkflow = platform !== "alteryx_upload" && !batchId;
   const workflowName = sessionStorage.getItem("alteryx_workflow_name") || "Alteryx workflow";
-  const sharePointUrl = sessionStorage.getItem("alteryx_sharepoint_url") || "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx";
-  const fileName = sessionStorage.getItem("alteryx_file_name") || "sales_data_1M.csv";
+  const sharePointUrl = sessionStorage.getItem("alteryx_sharepoint_url") || "";
+  const fileName = sessionStorage.getItem("alteryx_file_name") || "";
   const [mquery, setMquery] = useState(sessionStorage.getItem("migration_mquery") || "");
   const [datasetName, setDatasetName] = useState(sessionStorage.getItem("migration_dataset_name") || workflowName);
   const [generationMethod, setGenerationMethod] = useState(sessionStorage.getItem("migration_generation_method") || "rule_based");
@@ -96,7 +96,7 @@ export default function ExportPage() {
           <p className="eyebrow">Power BI Conversion</p>
           <h1>{workflowName}</h1>
           <p>
-            Generated Power Query uses the configured data source <strong>{fileName}</strong>.
+            Generated Power Query uses the workflow data source <strong>{fileName || "from parsed workflow metadata"}</strong>.
             The same mapper can emit connector stubs for CSV, Excel, database, and API inputs detected in Alteryx.
           </p>
           <div className={`export-generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>

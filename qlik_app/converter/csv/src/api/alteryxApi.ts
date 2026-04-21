@@ -62,10 +62,12 @@ export async function fetchUploadedAlteryxWorkflow(
 export async function fetchAlteryxWorkflowAnalysis(
   batchId: string,
   workflowId: string,
-  sharePointUrl = "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx",
-  fileName = "sales_data_1M.csv"
+  sharePointUrl = "",
+  fileName = ""
 ): Promise<any> {
-  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const params = new URLSearchParams();
+  if (sharePointUrl) params.set("sharepoint_url", sharePointUrl);
+  if (fileName) params.set("file_name", fileName);
   const res = await fetch(
     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/analysis?${params.toString()}`
   );
@@ -81,10 +83,12 @@ export async function fetchAlteryxWorkflowAnalysis(
 export async function fetchAlteryxWorkflowMQuery(
   batchId: string,
   workflowId: string,
-  sharePointUrl = "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx",
-  fileName = "sales_data_1M.csv"
+  sharePointUrl = "",
+  fileName = ""
 ): Promise<any> {
-  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const params = new URLSearchParams();
+  if (sharePointUrl) params.set("sharepoint_url", sharePointUrl);
+  if (fileName) params.set("file_name", fileName);
   const res = await fetch(
     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/mquery?${params.toString()}`
   );
@@ -100,10 +104,12 @@ export async function fetchAlteryxWorkflowMQuery(
 export async function fetchAlteryxBrdHtml(
   batchId: string,
   workflowId: string,
-  sharePointUrl = "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx",
-  fileName = "sales_data_1M.csv"
+  sharePointUrl = "",
+  fileName = ""
 ): Promise<string> {
-  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const params = new URLSearchParams();
+  if (sharePointUrl) params.set("sharepoint_url", sharePointUrl);
+  if (fileName) params.set("file_name", fileName);
   const res = await fetch(
     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/brd?${params.toString()}`
   );
@@ -246,6 +252,25 @@ export async function materializeCloudAlteryxWorkflow(payload: {
 
   if (!res.ok) {
     throw new Error(data.detail || `Failed to download workflow package (${res.status})`);
+  }
+
+  return data;
+}
+
+export async function materializeJsonAlteryxWorkflow(payload: {
+  workflow_json: Record<string, any>;
+  workflow_name?: string;
+  source?: string;
+}): Promise<any> {
+  const res = await fetch(`${BASE_URL}/api/alteryx/workflows/materialize-json`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.detail || `Failed to materialize workflow JSON (${res.status})`);
   }
 
   return data;

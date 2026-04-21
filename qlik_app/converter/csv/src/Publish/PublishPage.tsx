@@ -35,7 +35,7 @@ export default function PublishPage() {
   const datasetName = (location.state as any)?.datasetName || sessionStorage.getItem("migration_dataset_name") || workflowName;
   const mquery = (location.state as any)?.mquery || sessionStorage.getItem("migration_mquery") || "";
   const sharePointUrl = sessionStorage.getItem("alteryx_sharepoint_url") || "";
-  const fileName = sessionStorage.getItem("alteryx_file_name") || "sales_data_1M.csv";
+  const fileName = sessionStorage.getItem("alteryx_file_name") || datasetName;
   const workspaceName = sessionStorage.getItem("alteryx_workspace_name") || "Power BI workspace";
 
   const [publishing, setPublishing] = useState(false);

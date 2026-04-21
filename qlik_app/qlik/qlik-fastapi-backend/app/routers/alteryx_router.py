@@ -1,6 +1,8 @@
 # Alteryx accelerator backend routes.
 
 import logging
+import json
+import base64
 import os
 import requests
 import re
@@ -8,6 +10,7 @@ from fastapi import APIRouter, File, HTTPException, Header, Query, Response, Upl
 from fastapi.responses import HTMLResponse
 from typing import Any, Optional
 from pydantic import BaseModel
+from urllib.parse import quote
 
 from app.utils.alteryx_workspace_utils import (
     AlteryxSession,
@@ -85,6 +88,12 @@ class CloudWorkflowMaterializeRequest(BaseModel):
     workspace_name: Optional[str] = None
 
 
+class WorkflowJsonMaterializeRequest(BaseModel):
+    workflow_json: dict[str, Any]
+    workflow_name: Optional[str] = None
+    source: Optional[str] = "cloud_json"
+
+
 def extract_workflow_items(payload: Any) -> list[dict]:
     """Pull workflow items out of common Alteryx response wrappers."""
     if isinstance(payload, list):
@@ -129,37 +138,196 @@ def _safe_filename(name: str, extension: str = ".yxzp") -> str:
     base = re.sub(r"[^A-Za-z0-9_.-]+", "_", (name or "alteryx_workflow").strip()).strip("._")
     if not base:
         base = "alteryx_workflow"
-    if not base.lower().endswith((".yxmd", ".yxmc", ".yxwz", ".yxzp", ".zip")):
+    if not base.lower().endswith((".yxmd", ".yxmc", ".yxwz", ".json", ".yxzp", ".zip")):
         base += extension
     return base
+
+
+def _json_contains_workflow_graph(value: Any) -> bool:
+    """Return True only for JSON that appears to include actual tool nodes."""
+    if isinstance(value, dict):
+        for key in ("nodes", "Nodes", "tools", "Tools", "workflowNodes", "workflow_nodes"):
+            items = value.get(key)
+            if isinstance(items, list) and any(isinstance(item, dict) for item in items):
+                return True
+            if isinstance(items, dict):
+                nested_nodes = items.get("Node") or items.get("node") or items.get("items") or items.get("Items")
+                if isinstance(nested_nodes, list) and any(isinstance(item, dict) for item in nested_nodes):
+                    return True
+                if isinstance(nested_nodes, dict):
+                    return True
+        if "Connections" in value and "Nodes" in value:
+            return True
+        for item in value.values():
+            if _json_contains_workflow_graph(item):
+                return True
+    elif isinstance(value, list):
+        return any(_json_contains_workflow_graph(item) for item in value)
+    return False
+
+
+def _workflow_artifact_headers(token: str, accept: str = "application/json") -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": accept,
+    }
+
+
+def _artifact_from_json_payload(data: Any) -> tuple[str, bytes] | None:
+    """Extract embedded XML/JSON/zip content if the workflow API returns it inline."""
+    if isinstance(data, dict):
+        for key in ("xml", "workflowXml", "workflow_xml", "fileContent", "definition", "workflowDefinition"):
+            value = data.get(key)
+            if isinstance(value, str) and ("<AlteryxDocument" in value or value.lstrip().startswith("<?xml")):
+                return "cloud_workflow.yxmd", value.encode("utf-8")
+            if isinstance(value, dict) and _json_contains_workflow_graph(value):
+                return "cloud_workflow.json", json.dumps(value, ensure_ascii=False).encode("utf-8")
+
+        content = data.get("content")
+        if isinstance(content, dict):
+            embedded = _artifact_from_json_payload(content)
+            if embedded:
+                return embedded
+            if _json_contains_workflow_graph(content):
+                return "cloud_workflow.json", json.dumps(content, ensure_ascii=False).encode("utf-8")
+        elif isinstance(content, str):
+            stripped = content.strip()
+            if "<AlteryxDocument" in stripped or stripped.startswith("<?xml"):
+                return "cloud_workflow.yxmd", stripped.encode("utf-8")
+            if stripped.startswith("PK"):
+                return "cloud_workflow.yxzp", stripped.encode("latin1", errors="ignore")
+            if stripped.startswith("UEsDB"):
+                try:
+                    return "cloud_workflow.yxzp", base64.b64decode(stripped)
+                except Exception:
+                    pass
+            try:
+                parsed = json.loads(stripped)
+                if _json_contains_workflow_graph(parsed):
+                    return "cloud_workflow.json", json.dumps(parsed, ensure_ascii=False).encode("utf-8")
+            except Exception:
+                pass
+
+        for item in data.values():
+            embedded = _artifact_from_json_payload(item)
+            if embedded:
+                return embedded
+    elif isinstance(data, list):
+        for item in data:
+            embedded = _artifact_from_json_payload(item)
+            if embedded:
+                return embedded
+    return None
+
+
+def _safe_value_summary(value: Any) -> str:
+    if value is None:
+        return "None"
+    if isinstance(value, str):
+        compact = value.replace("\n", " ").replace("\r", " ")
+        return f"str len={len(value)} value={compact[:160]}"
+    if isinstance(value, dict):
+        return f"dict keys={list(value.keys())[:12]}"
+    if isinstance(value, list):
+        return f"list len={len(value)}"
+    return f"{type(value).__name__} value={str(value)[:160]}"
+
+
+def _collect_artifact_paths(value: Any) -> list[str]:
+    """Collect VFS/download-like path values from nested workflow metadata."""
+    path_keys = {
+        "vfsyxzppath",
+        "primaryworkflowpath",
+        "vfspath",
+        "path",
+        "downloadpath",
+        "artifactpath",
+        "filepath",
+        "uri",
+        "url",
+        "location",
+    }
+    paths: list[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            normalized = str(key).lower()
+            if normalized in path_keys or ("path" in normalized and "checksum" not in normalized):
+                if isinstance(item, str) and item.strip():
+                    paths.append(item.strip())
+                elif isinstance(item, dict):
+                    for nested_key in ("path", "url", "uri", "href", "value"):
+                        nested = item.get(nested_key)
+                        if isinstance(nested, str) and nested.strip():
+                            paths.append(nested.strip())
+                elif isinstance(item, list):
+                    for nested in item:
+                        if isinstance(nested, str) and nested.strip():
+                            paths.append(nested.strip())
+                        elif isinstance(nested, dict):
+                            paths.extend(_collect_artifact_paths(nested))
+            paths.extend(_collect_artifact_paths(item))
+    elif isinstance(value, list):
+        for item in value:
+            paths.extend(_collect_artifact_paths(item))
+    return list(dict.fromkeys(paths))
+
+
+def _vfs_path_candidates(path: str) -> list[tuple[str, dict[str, Any], str]]:
+    raw_path = (path or "").strip()
+    if not raw_path:
+        return []
+
+    encoded = quote(raw_path.lstrip("/"), safe="")
+    candidates: list[tuple[str, dict[str, Any], str]] = []
+
+    if raw_path.startswith("http://") or raw_path.startswith("https://"):
+        candidates.append((raw_path, {}, "application/octet-stream,application/json"))
+    elif raw_path.startswith("/"):
+        candidates.append((f"{ALTERYX_BASE_URL}{raw_path}", {}, "application/octet-stream,application/json"))
+
+    candidates.extend([
+        (f"{ALTERYX_BASE_URL}/svc-vfs/api/v1/files/{encoded}", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-vfs/api/v1/files", {"path": raw_path}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-vfs/api/v1/download", {"path": raw_path}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-vfs/api/v1/contents/{encoded}", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/vfs/api/v1/files/{encoded}", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/vfs/api/v1/files", {"path": raw_path}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/vfs/v1/files/{encoded}", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/vfs/v1/files", {"path": raw_path}, "application/octet-stream,application/json"),
+    ])
+    return candidates
 
 
 def _download_cloud_workflow_artifact(session: AlteryxSession, workflow_id: str, workspace_id: Optional[str] = None) -> tuple[str, bytes, str]:
     """Try known Alteryx Cloud/Server package endpoints and return a workflow artifact."""
     token = ensure_fresh_token(session)
     workspace_params = {"workspaceId": workspace_id} if workspace_id else {}
-    candidates: list[tuple[str, dict[str, Any]]] = [
-        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/package", {}),
-        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/download", {}),
-        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/export", {}),
-        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}", {"includeXml": "true"}),
-        (f"{ALTERYX_BASE_URL}/v3/workflows/{workflow_id}/package", {}),
-        (f"{ALTERYX_BASE_URL}/v1/workflows/{workflow_id}/package", {}),
-        (f"{ALTERYX_BASE_URL}/admin/v1/{workflow_id}/package", {}),
-        (f"{ALTERYX_BASE_URL}/v4/workflows/{workflow_id}/package", workspace_params),
-        (f"{ALTERYX_BASE_URL}/api/v1/workflows/{workflow_id}/package", workspace_params),
+    candidates: list[tuple[str, dict[str, Any], str]] = [
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/package", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/download", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/export", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/definition", {}, "application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/json", {}, "application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/content", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/versions/latest/package", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}/versions/latest/content", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}", {"includeXml": "true", "includeDefinition": "true"}, "application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}", {"includeJson": "true", "includeGraph": "true"}, "application/json"),
+        (f"{ALTERYX_BASE_URL}/svc-workflow/api/v1/workflows/{workflow_id}", {"format": "json"}, "application/json"),
+        (f"{ALTERYX_BASE_URL}/v3/workflows/{workflow_id}/package", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/v1/workflows/{workflow_id}/package", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/admin/v1/{workflow_id}/package", {}, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/v4/workflows/{workflow_id}/package", workspace_params, "application/octet-stream,application/json"),
+        (f"{ALTERYX_BASE_URL}/api/v1/workflows/{workflow_id}/package", workspace_params, "application/octet-stream,application/json"),
     ]
 
     last_error = ""
-    for url, params in candidates:
+    for url, params, accept in candidates:
         try:
-            print(f"  Trying workflow package endpoint: {url}")
+            print(f"  Trying workflow artifact endpoint: {url}")
             resp = requests.get(
                 url,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                },
+                headers=_workflow_artifact_headers(token, accept),
                 params=params,
                 timeout=30,
             )
@@ -170,13 +338,13 @@ def _download_cloud_workflow_artifact(session: AlteryxSession, workflow_id: str,
                     session.refresh_token = new_refresh
                 resp = requests.get(
                     url,
-                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    headers=_workflow_artifact_headers(token, accept),
                     params=params,
                     timeout=30,
                 )
             if resp.status_code >= 400:
                 last_error = f"{resp.status_code} {resp.text[:200]}"
-                print(f"  Failed package endpoint: {last_error}")
+                print(f"  Failed artifact endpoint: {last_error}")
                 continue
 
             content_type = resp.headers.get("content-type", "").lower()
@@ -189,11 +357,60 @@ def _download_cloud_workflow_artifact(session: AlteryxSession, workflow_id: str,
                 return "cloud_workflow.yxmd", content, url
             if text:
                 data = resp.json()
-                for key in ("xml", "workflowXml", "workflow_xml", "content", "fileContent", "definition"):
-                    value = data.get(key) if isinstance(data, dict) else None
-                    if isinstance(value, str) and ("<AlteryxDocument" in value or value.lstrip().startswith("<?xml")):
-                        return "cloud_workflow.yxmd", value.encode("utf-8"), url
-                last_error = f"JSON response did not contain workflow XML. Keys: {list(data.keys()) if isinstance(data, dict) else 'array'}"
+                embedded = _artifact_from_json_payload(data)
+                if embedded:
+                    artifact_name, artifact_bytes = embedded
+                    return artifact_name, artifact_bytes, url
+                if _json_contains_workflow_graph(data):
+                    return "cloud_workflow.json", json.dumps(data, ensure_ascii=False).encode("utf-8"), url
+
+                if isinstance(data, dict):
+                    print(
+                        "  Artifact pointer summary | "
+                        f"vfsYxzpPath={_safe_value_summary(data.get('vfsYxzpPath'))} | "
+                        f"primaryWorkflowPath={_safe_value_summary(data.get('primaryWorkflowPath'))} | "
+                        f"content={_safe_value_summary(data.get('content'))}"
+                    )
+                vfs_paths = _collect_artifact_paths(data)
+                if vfs_paths:
+                    print(f"  Collected {len(vfs_paths)} possible artifact path(s): {[path[:120] for path in vfs_paths[:6]]}")
+
+                for vfs_path in vfs_paths:
+                    print(f"  Following workflow VFS path: {vfs_path}")
+                    for vfs_url, vfs_params, vfs_accept in _vfs_path_candidates(vfs_path):
+                        try:
+                            vfs_resp = requests.get(
+                                vfs_url,
+                                headers=_workflow_artifact_headers(token, vfs_accept),
+                                params=vfs_params,
+                                timeout=45,
+                            )
+                            if vfs_resp.status_code >= 400:
+                                last_error = f"{vfs_resp.status_code} {vfs_resp.text[:200]}"
+                                print(f"  Failed VFS endpoint: {vfs_url} | {last_error}")
+                                continue
+
+                            vfs_content = vfs_resp.content or b""
+                            vfs_type = vfs_resp.headers.get("content-type", "").lower()
+                            if vfs_content[:2] == b"PK":
+                                return "cloud_workflow.yxzp", vfs_content, vfs_url
+                            if vfs_content.lstrip().startswith(b"<?xml") or b"<AlteryxDocument" in vfs_content[:5000]:
+                                return "cloud_workflow.yxmd", vfs_content, vfs_url
+                            if "json" in vfs_type or vfs_content[:1] in (b"{", b"["):
+                                vfs_json = vfs_resp.json()
+                                embedded = _artifact_from_json_payload(vfs_json)
+                                if embedded:
+                                    artifact_name, artifact_bytes = embedded
+                                    return artifact_name, artifact_bytes, vfs_url
+                                if _json_contains_workflow_graph(vfs_json):
+                                    return "cloud_workflow.json", json.dumps(vfs_json, ensure_ascii=False).encode("utf-8"), vfs_url
+                            last_error = f"VFS response was not zip/xml/workflow-json content-type={vfs_type}, bytes={len(vfs_content)}"
+                            print(f"  {last_error}")
+                        except Exception as vfs_exc:
+                            last_error = str(vfs_exc)
+                            print(f"  Exception while following VFS path: {last_error}")
+
+                last_error = f"JSON response did not contain workflow XML or tool graph. Keys: {list(data.keys()) if isinstance(data, dict) else 'array'}"
                 print(f"  {last_error}")
                 continue
 
@@ -204,7 +421,7 @@ def _download_cloud_workflow_artifact(session: AlteryxSession, workflow_id: str,
             print(f"  Exception while downloading package: {last_error}")
 
     raise ValueError(
-        "Unable to download the full Alteryx workflow package/XML from Cloud. "
+        "Unable to download the full Alteryx workflow package/XML/JSON definition from Cloud. "
         f"Tried {len(candidates)} candidate endpoints. Last error: {last_error}"
     )
 
@@ -385,6 +602,50 @@ def materialize_cloud_workflow(config: CloudWorkflowMaterializeRequest):
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@router.post("/workflows/materialize-json")
+def materialize_workflow_json(config: WorkflowJsonMaterializeRequest):
+    """
+    Ingest a full Alteryx workflow JSON definition as a normal migration batch.
+
+    This lets Cloud/API JSON reuse the existing Bulk Upload pipeline:
+    Summary -> M Query -> BRD -> Power BI Publish -> Validation.
+    """
+    workflow_json = config.workflow_json or {}
+    if not workflow_json:
+        raise HTTPException(status_code=400, detail="workflow_json is required.")
+
+    artifact_name = _safe_filename(config.workflow_name or "alteryx_workflow", ".json")
+    try:
+        artifact_bytes = json.dumps(workflow_json, ensure_ascii=False).encode("utf-8")
+        result = ingest_uploaded_files([(artifact_name, artifact_bytes)])
+        workflows = result.get("workflows", [])
+        if not workflows:
+            rejected = result.get("rejected", [])
+            reason = rejected[0].get("reason") if rejected else "Workflow JSON did not contain a parseable workflow."
+            raise ValueError(reason)
+
+        parsed_workflow = workflows[0]
+        if not parsed_workflow.get("workflowNodes"):
+            raise ValueError(
+                "The JSON payload was received, but it contains only workflow metadata. "
+                "A full workflow JSON definition with tool nodes/connections is required for M Query conversion."
+            )
+
+        return {
+            "success": True,
+            "source": config.source or "cloud_json",
+            "artifact_name": artifact_name,
+            "batch_id": result["batch_id"],
+            "workflow": parsed_workflow,
+            "workflows": workflows,
+            "summary": result.get("summary", {}),
+            "rejected": result.get("rejected", []),
+        }
+    except Exception as exc:
+        print(f"❌ Workflow JSON materialization failed: {exc}")
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.get("/batches/{batch_id}")
 def get_alteryx_upload_batch(batch_id: str):
     try:
@@ -422,8 +683,8 @@ def get_alteryx_upload_batch_workflow(batch_id: str, workflow_id: str):
 def get_alteryx_workflow_analysis(
     batch_id: str,
     workflow_id: str,
-    sharepoint_url: str = Query(default=DEFAULT_SHAREPOINT_FILE_URL),
-    file_name: str = Query(default=DEFAULT_SHAREPOINT_FILE_NAME),
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
 ):
     workflow = _find_batch_workflow(batch_id, workflow_id)
     m_query = generate_m_query(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
@@ -441,8 +702,8 @@ def get_alteryx_workflow_analysis(
 def get_alteryx_workflow_mquery(
     batch_id: str,
     workflow_id: str,
-    sharepoint_url: str = Query(default=DEFAULT_SHAREPOINT_FILE_URL),
-    file_name: str = Query(default=DEFAULT_SHAREPOINT_FILE_NAME),
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
 ):
     workflow = _find_batch_workflow(batch_id, workflow_id)
     return {"success": True, **generate_m_query(workflow, sharepoint_url=sharepoint_url, file_name=file_name)}
@@ -458,8 +719,8 @@ def get_alteryx_workflow_diagram(batch_id: str, workflow_id: str):
 def get_alteryx_workflow_brd(
     batch_id: str,
     workflow_id: str,
-    sharepoint_url: str = Query(default=DEFAULT_SHAREPOINT_FILE_URL),
-    file_name: str = Query(default=DEFAULT_SHAREPOINT_FILE_NAME),
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
 ):
     workflow = _find_batch_workflow(batch_id, workflow_id)
     m_query = generate_m_query(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
