@@ -10,10 +10,11 @@
 .connect-card {
   background: white;
   border-radius: 14px;
-  padding: 14px 24px;
+  padding: 10px 24px 24px 24px;
   width: 100%;
   max-width: 500px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgb(237, 223, 223);
   animation: fadeIn 0.5s ease-out;
   margin-bottom: 16px;
   margin-top: 10px;
@@ -71,7 +72,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding-bottom: 8px;
+  /* padding-bottom: 8px; */
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   margin-bottom: 10px;
 }
@@ -337,7 +338,7 @@ input[type="text"].invalid { border-color: #fc8181; background: #fff5f5; }
 .actions {
   display: flex;
   justify-content: center;
-  margin-top: 0;
+  margin-top: 10px;
   margin-bottom: 0;
 }
 

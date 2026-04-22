@@ -63,14 +63,14 @@ export default function Header() {
   const navigate = useNavigate();
   const [userInfo, setUserInfo] = useState<any>(null);
  
-  useEffect(() => {
-    const workspaceName = sessionStorage.getItem("alteryx_workspace_name");
-    const username = sessionStorage.getItem("alteryx_username");
-    const batchId = sessionStorage.getItem("alteryx_batch_id");
-    if (workspaceName || username || batchId) {
-      setUserInfo({ name: username || workspaceName || "Bulk upload" });
-    }
-  }, []);
+  // useEffect(() => {
+  //   const workspaceName = sessionStorage.getItem("alteryx_workspace_name");
+  //   const username = sessionStorage.getItem("alteryx_username");
+  //   const batchId = sessionStorage.getItem("alteryx_batch_id");
+  //   if (workspaceName || username || batchId) {
+  //     setUserInfo({ name: username || workspaceName || "Bulk upload" });
+  //   }
+  // }, []);
  
   const handleLogout = () => {
     // Clear all session storage

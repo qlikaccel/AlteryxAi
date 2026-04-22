@@ -1,5 +1,5 @@
 import "./SummaryPage.css";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import LoadingOverlay from "../components/LoadingOverlay/LoadingOverlay";
 import {
@@ -25,7 +25,7 @@ const TABS: Array<{ id: SummaryTab; label: string; icon: string }> = [
   { id: "sourceTypes", label: "Source Types", icon: "" },
   { id: "summary",     label: "Summary",      icon: ""  },
   { id: "brd",         label: "App BRD",       icon: ""    },
-  { id: "diagram",     label: "ER Diagram",    icon: ""   },
+  { id: "diagram",     label: "Workflow Diagram",    icon: ""   },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -351,12 +351,14 @@ export default function SummaryPage() {
   const [activeTab,     setActiveTab]     = useState<SummaryTab>("sourceTypes");
   // const [selectedSource, setSelectedSource] = useState<SourceType>("csv"); // ✅ dev11 UI state
   const [selectedSource, setSelectedSource] = useState<SourceType>("scripts");
+  const [showSourceMQuery, setShowSourceMQuery] = useState(false);
   const [sharePointUrl, setSharePointUrl] = useState(DEFAULT_SHAREPOINT_URL);
   const [fileName,      setFileName]      = useState(DEFAULT_FILE_NAME);
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState("");
   const [pageLoadTime,  setPageLoadTime]  = useState<string | null>(null);
   const [brdLoading,    setBrdLoading]    = useState(false);
+  const sourceMQueryPanelRef = useRef<HTMLElement | null>(null);
 
   // ─── Data fetch (dev12 backend logic) ──────────────────────────────────────
 
@@ -442,6 +444,14 @@ export default function SummaryPage() {
       });
   }, [batchId, fileName, isCloudApiWorkflow, navigate, sharePointUrl, stopTimer, workflowId]);
 
+  useEffect(() => {
+    if (!showSourceMQuery) return;
+    sourceMQueryPanelRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [showSourceMQuery]);
+
   // ─── Derived values ─────────────────────────────────────────────────────────
 
   const assessment = useMemo(() => {
@@ -461,6 +471,8 @@ export default function SummaryPage() {
   const generationIndicators = generation.complexity_indicators || [];
   const generationStatus     = generation.llm_status         || "not_required";
   const canConvertAndPublish = Boolean(batchId && analysis?.mquery?.combined_mquery);
+  const mqueryPreview         = analysis?.mquery?.combined_mquery || sessionStorage.getItem("migration_mquery") || "";
+  const datasetName           = analysis?.mquery?.dataset_name || workflow?.name || "AlteryxDataset";
   const sourceDetails        = workflow?.dataSources         || [];
 
   // ─── Actions ────────────────────────────────────────────────────────────────
@@ -494,6 +506,30 @@ export default function SummaryPage() {
     sessionStorage.setItem("summaryComplete",   "true");
     sessionStorage.setItem("summaryActiveTab",  "mquery");
     navigate("/export");
+  };
+
+  const openSourceMQuery = () => {
+    setActiveTab("sourceTypes");
+    setSelectedSource("scripts");
+    setShowSourceMQuery(true);
+  };
+
+  const publishSourceMQuery = () => {
+    if (!mqueryPreview) {
+      setError("No generated M Query is available for this workflow.");
+      return;
+    }
+
+    sessionStorage.setItem("summaryComplete", "true");
+    sessionStorage.setItem("exportComplete", "true");
+    sessionStorage.setItem("publishMethod", "M_QUERY");
+    navigate("/publish", {
+      state: {
+        workflowName: workflow?.name || "Alteryx workflow",
+        mquery: mqueryPreview,
+        datasetName,
+      },
+    });
   };
 
   // ─── Early returns ──────────────────────────────────────────────────────────
@@ -554,7 +590,7 @@ export default function SummaryPage() {
         </div>
       </div>
 
-      {/* ── Source config (dev12: only shown when NOT on sourceTypes tab) ── */}
+      {/* ── Source config (dev12: only shown when NOT on sourceTypes tab) ──
       {!isCloudApiWorkflow && activeTab !== "sourceTypes" && (
         <div className="source-config alteryx-source-config">
           <label>
@@ -572,7 +608,7 @@ export default function SummaryPage() {
             />
           </label>
         </div>
-      )}
+      )} */}
 
       {/* ══════════════════════════════════════════════════════
           TAB: Source Types
@@ -605,13 +641,18 @@ export default function SummaryPage() {
             </div>
           </section>
         ) : (
-          // ✅ dev11 UI: interactive source-type cards
+          <>
+          {/* dev11 UI: interactive source-type cards */}
+          {!showSourceMQuery && (
           <section className="source-type-grid">
 
             {/* Database Card */}
             <article
               className={`source-type-card database ${selectedSource === "database" ? "selected" : "muted"}`}
-              onClick={() => setSelectedSource("database")}
+              onClick={() => {
+                setSelectedSource("database");
+                setShowSourceMQuery(false);
+              }}
               style={{ cursor: "pointer" }}
             >
               <div className="source-card-head">
@@ -649,7 +690,7 @@ export default function SummaryPage() {
                 </div>
               </div>
               <p className="source-card-desc">
-                Parse the YXMD/ JSON/ YXZP/ ZIP scripts from your workflow. Transforms complex Alteryx tools into Power Query M-code. Full schema and
+                Parse the .YXMD/ .JSON/ .YXZP scripts from your workflow. Transforms complex Alteryx tools into Power Query M-code. Full schema and
                 relationship preservation.
               </p>
               <div className="source-tags recommended">
@@ -661,7 +702,7 @@ export default function SummaryPage() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigate("/export");
+                    openSourceMQuery();
                   }}
                 >
                   Open M Query
@@ -672,7 +713,10 @@ export default function SummaryPage() {
             {/* Export CSV Card */}
             <article
               className={`source-type-card csv ${selectedSource === "csv" ? "selected" : ""}`}
-              onClick={() => setSelectedSource("csv")}
+              onClick={() => {
+                setSelectedSource("csv");
+                setShowSourceMQuery(false);
+              }}
               style={{ cursor: "pointer" }}
             >
               <div className="source-card-head">
@@ -706,6 +750,36 @@ export default function SummaryPage() {
             </article>
 
           </section>
+          )}
+          {showSourceMQuery && (
+            <section className="source-mquery-panel" ref={sourceMQueryPanelRef} tabIndex={-1}>
+              <div className="source-mquery-header">
+                <div>
+                  <h2>{workflow.name}</h2>
+                  {/* <p>
+                    Generated Power Query uses the configured data source <strong>{fileName}</strong>.
+                    The same mapper can emit connector stubs for CSV, Excel, database, and API inputs detected in Alteryx.
+                  </p> */}
+                  <div className={`source-generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
+                    <span>{generationLabel}</span>
+                    <strong>{generationReason}</strong>
+                    <em>{generationMethod === "llm" ? `LLM status: ${generationStatus}` : "Rule engine used"}</em>
+                  </div>
+                </div>
+              </div>
+
+              <pre className="source-mquery-preview">
+                {mqueryPreview || "No generated M Query is available for this workflow."}
+              </pre>
+
+              <div className="source-mquery-actions">
+                <button onClick={publishSourceMQuery} disabled={!mqueryPreview}>
+                  Publish to Power BI
+                </button>
+              </div>
+            </section>
+          )}
+          </>
         )
       )}
 
@@ -727,14 +801,14 @@ export default function SummaryPage() {
               ))}
             </ul>
           </div>
-          <div className="metric-grid alteryx-metrics">
+          {/* <div className="metric-grid alteryx-metrics">
             <div className="metric-card"><span>Total Tools</span>    <strong>{assessment.totalTools}</strong></div>
             <div className="metric-card"><span>Supported Tools</span><strong>{assessment.supportedTools}</strong></div>
             <div className="metric-card"><span>Needs Review</span>   <strong>{assessment.unsupportedTools}</strong></div>
             <div className="metric-card"><span>Automation Fit</span> <strong>{assessment.automationScore}%</strong></div>
-          </div>
+          </div> */}
           <div className={`hybrid-route-panel ${generationMethod === "llm" ? "llm" : "rules"}`}>
-            <span>Query Generation Path</span>
+            {/* <span>Query Generation Path</span>
             <strong>{generationLabel}</strong>
             <p>{generationReason}</p>
             <small>
@@ -748,7 +822,7 @@ export default function SummaryPage() {
                   <em key={item}>{item}</em>
                 ))}
               </div>
-            )}
+            )} */}
           </div>
         </section>
       )}
@@ -792,7 +866,7 @@ export default function SummaryPage() {
                   </strong>
                 </div>
                 <table>
-                  <thead>
+                  {/* <thead>
                     <tr>
                       <th>Alteryx Tool</th>
                       <th>Power Query Mapping</th>
@@ -807,7 +881,7 @@ export default function SummaryPage() {
                         <td>{step.mapped ? "Mapped" : "Manual review"}</td>
                       </tr>
                     ))}
-                  </tbody>
+                  </tbody> */}
                 </table>
               </div>
               <button
