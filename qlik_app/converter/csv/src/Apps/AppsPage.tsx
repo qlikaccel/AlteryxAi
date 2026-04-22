@@ -129,7 +129,24 @@ export default function AppsPage() {
       return a.name.localeCompare(b.name);
     });
 
-  const workspaceName = sessionStorage.getItem("alteryx_workspace_name") || "";
+  const inferWorkspaceFromWorkflowSources = () => {
+    for (const workflow of workflows) {
+      for (const source of workflow.dataSources || []) {
+        const value = String(source.path || source.connection || source.siteUrl || "");
+        const match = value.match(/(?:s|tfs):\/\/([^/]+)/i);
+        if (match?.[1]) return match[1];
+      }
+    }
+    return "";
+  };
+
+  const workspaceName =
+    sessionStorage.getItem("alteryx_workspace_name") ||
+    inferWorkspaceFromWorkflowSources();
+
+  if (workspaceName && !sessionStorage.getItem("alteryx_workspace_name")) {
+    sessionStorage.setItem("alteryx_workspace_name", workspaceName);
+  }
 
   if (loading) {
     return (
@@ -150,17 +167,19 @@ export default function AppsPage() {
         <div className="qlik-header-left-group">
           <div className="qlik-header-left">
             {/* <span className="platform-badge alteryx-badge">Alteryx</span> */}
-            {workflows.length} Workflow{workflows.length !== 1 ? "s" : ""}
-            {platform === "alteryx_upload" && (
+            <span className="workflow-count">
+              {workflows.length} Workflow{workflows.length !== 1 ? "s" : ""}
+            </span>
+            {/* {platform === "alteryx_upload" && (
               <span className="workspace-pill" title="Bulk upload assessment">
                 Bulk Upload
               </span>
-            )}
-            {/* {workspaceName && (
+            )} */}
+            {workspaceName && (
               <span className="workspace-pill" title={workspaceName}>
                 {workspaceName}
               </span>
-            )} */}
+            )}
           </div>
         </div>
 

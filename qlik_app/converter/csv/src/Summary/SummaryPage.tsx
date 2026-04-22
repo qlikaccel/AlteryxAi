@@ -532,6 +532,25 @@ export default function SummaryPage() {
     });
   };
 
+  const downloadSourceMQuery = () => {
+    if (!mqueryPreview) {
+      setError("No generated M Query is available for this workflow.");
+      return;
+    }
+
+    const safeName = (datasetName || workflow?.name || "alteryx_mquery")
+      .replace(/[^a-z0-9]+/gi, "_")
+      .replace(/^_+|_+$/g, "")
+      || "alteryx_mquery";
+    const blob = new Blob([mqueryPreview], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${safeName}.pq`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   // ─── Early returns ──────────────────────────────────────────────────────────
 
   if (loading) {
@@ -755,7 +774,7 @@ export default function SummaryPage() {
             <section className="source-mquery-panel" ref={sourceMQueryPanelRef} tabIndex={-1}>
               <div className="source-mquery-header">
                 <div>
-                  <h2>{workflow.name}</h2>
+                  {/* <h2>{workflow.name}</h2> */}
                   {/* <p>
                     Generated Power Query uses the configured data source <strong>{fileName}</strong>.
                     The same mapper can emit connector stubs for CSV, Excel, database, and API inputs detected in Alteryx.
@@ -773,6 +792,13 @@ export default function SummaryPage() {
               </pre>
 
               <div className="source-mquery-actions">
+                <button
+                  className="source-mquery-download"
+                  onClick={downloadSourceMQuery}
+                  disabled={!mqueryPreview}
+                >
+                  Download M Query
+                </button>
                 <button onClick={publishSourceMQuery} disabled={!mqueryPreview}>
                   Publish to Power BI
                 </button>
@@ -851,20 +877,11 @@ export default function SummaryPage() {
           ) : (
             <>
               <p>
-                The BRD is generated for this selected Alteryx workflow, not the legacy
-                Qlik application. It includes source inventory, conversion scope, tool
+                The BRD is generated for this selected Alteryx workflow. It includes source inventory, conversion scope, tool
                 mapping, workflow diagram, generated M Query, acceptance criteria, and
                 validation/reconciliation requirements.
               </p>
               <div className="mapping-table-wrap">
-                <div className={`generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
-                  <span>{generationLabel}</span>
-                  <strong>
-                    {generationMethod === "llm"
-                      ? `Complex workflow route (${generationStatus})`
-                      : "Simple workflow route"}
-                  </strong>
-                </div>
                 <table>
                   {/* <thead>
                     <tr>
@@ -921,7 +938,7 @@ export default function SummaryPage() {
           </div>
 
           {/* ✅ dev12 pill class */}
-          <div className="pill-list workflow-detail-pills">
+          {/* <div className="pill-list workflow-detail-pills">
             {sourceDetails.length > 0 &&
               sourceDetails.slice(0, 12).map((source: any, index: number) => (
                 <span key={`source-${index}`}>
@@ -934,7 +951,7 @@ export default function SummaryPage() {
                   Tool {edge.from} to Tool {edge.to}
                 </span>
               ))}
-          </div>
+          </div> */}
         </section>
       )}
 
