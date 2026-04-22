@@ -106,7 +106,7 @@ export default function ConnectPage() {
         <div className="card-header">
           <div className="card-header-text">
             <h1>Connect to Alteryx</h1>
-            <p>For high-volume migration, upload packages in bulk. Cloud token discovery is available as an optional admin path.</p>
+            {/* <p>For high-volume migration, upload packages in bulk. Cloud token discovery is available as an optional admin path.</p> */}
           </div>
         </div>
 
@@ -118,7 +118,7 @@ export default function ConnectPage() {
     disabled={loading}
   >
     <span className="method-title">Cloud API</span>
-    <span className="method-subtitle">Workspace + stored OAuth</span>
+    <span className="method-subtitle">OAuth Token</span>
   </button>
   <button
     type="button"
@@ -149,7 +149,7 @@ export default function ConnectPage() {
                 disabled={loading}
               />
               <p className="field-hint">
-                Upload individual workflows, packaged workflows, or a bulk zip exported from a repository.
+                Upload individual workflows, packaged workflows, or a bulk zip.
               </p>
             </div>
 

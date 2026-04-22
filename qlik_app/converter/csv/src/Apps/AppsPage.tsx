@@ -107,7 +107,7 @@ export default function AppsPage() {
   };
 
   const getRelativeTime = (dateStr?: string) => {
-    if (!dateStr) return "Updated date unavailable";
+    if (!dateStr) return "";
     const diffMs = Date.now() - new Date(dateStr).getTime();
     const diffMin = Math.floor(diffMs / 60000);
     const diffHr = Math.floor(diffMin / 60);
@@ -229,11 +229,6 @@ export default function AppsPage() {
                 <span className="last-modified">{getRelativeTime(workflow.lastModifiedDate)}</span>
               </div>
               <div className="right-actions">
-                {workflow.toolCount !== undefined && (
-                  <span className="badge" title="Tool count">
-                    {workflow.toolCount}
-                  </span>
-                )}
                 {/* <span className="fav-icon" onClick={(event) => { event.stopPropagation(); toggleFav(workflow.id); }}>
                   {favourites.includes(workflow.id) ? "*" : "+"}
                 </span> */}

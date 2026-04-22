@@ -91,17 +91,17 @@
   color: #4c6fff;
 }
  
-.profile {
+/* .profile {
   background: #f0f3f8;
   padding: 10px;
   border-radius: 50%;
   cursor: pointer;
   transition: background 0.2s ease;
-}
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+} */
  
-.profile:hover {
-  background: #e6ebf2;
-}
+
  
 @media (max-width: 768px) {
   .header {
