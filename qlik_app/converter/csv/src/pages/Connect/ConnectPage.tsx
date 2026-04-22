@@ -89,6 +89,9 @@ export default function ConnectPage() {
       sessionStorage.setItem("platform", "alteryx_upload");
       sessionStorage.setItem("alteryx_batch_id", data.batch_id);
       sessionStorage.setItem("alteryx_batch_summary", JSON.stringify(data.summary || {}));
+      if (data.workspace_name) {
+        sessionStorage.setItem("alteryx_workspace_name", data.workspace_name);
+      }
       sessionStorage.setItem("connected", "true");
 
       startTimer?.("/apps");

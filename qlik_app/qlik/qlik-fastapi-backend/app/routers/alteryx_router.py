@@ -79,6 +79,7 @@ class AlteryxBulkUploadResponse(BaseModel):
     summary: dict[str, Any]
     workflows: list[dict[str, Any]]
     rejected: list[dict[str, str]]
+    workspace_name: Optional[str] = None
 
 
 class CloudWorkflowMaterializeRequest(BaseModel):
@@ -548,6 +549,7 @@ async def bulk_upload_alteryx_workflows(
         summary=result["summary"],
         workflows=result["workflows"],
         rejected=result["rejected"],
+        workspace_name=(os.getenv("ALTERYX_WORKSPACE_NAME", "") or "").strip() or None,
     )
 
 

@@ -2010,7 +2010,6 @@ PAGE WRAP
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
 }
 
 .metric-card {
@@ -2170,59 +2169,105 @@ PAGE WRAP
   margin: 0;
   font-family:  system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   min-width: 0;
-  font-size: 1.4rem;      /* ADD THIS — overrides the large clamp from .summary-hero h1 */
-  font-weight: 600;
+  font-size: 20px;      /* ADD THIS — overrides the large clamp from .summary-hero h1 */
+  font-weight: 500;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  margin-top: 10px;
 }
 
 .alteryx-tab-bar {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
+  align-items: flex-end;
+  gap: 2px;
+  margin: 0 0 -13px;
   justify-content: center;
   flex-wrap: nowrap;
   min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid #d5dbe6;
   white-space: nowrap;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  scrollbar-width: thin;
 }
 
 .alteryx-tab-bar .tab-button {
-  border: 0;
-  border-radius: 12px;
-  background: rgba(248, 250, 252, 0.9);
-  color: #64748b;
-  padding: 14px 24px;
-  font-size: 0.95rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  position: relative;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 12px 20px;
+  flex: 0 0 auto;
+  /* min-width: 148px; */
+  height: 42px;
+  margin: 0;
+  padding: 0 24px;
+  border: 1px solid #d5dbe6;
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(180deg, #edf1f6 0%, #dfe5ee 100%);
+  color: #667085;
+  cursor: pointer;
+  /* font-size: 0.94rem; */
+  font-weight: 700;
+  isolation: isolate;
+  opacity: 0.88;
+  transform: translateY(4px);
+  transition:
+    background 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
+  box-shadow: inset 0 -1px 0 #d5dbe6;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .alteryx-tab-bar .tab-button:hover {
-  background: #ffffff;
-  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+  background: linear-gradient(180deg, #f6f8fb 0%, #e9eef5 100%);
+  color: #334155;
+  opacity: 1;
+  transform: translateY(2px);
 }
 
 .alteryx-tab-bar .tab-button span {
   margin-right: 0;
-  color: #2563eb;
-  font-size: 1.1rem;
+  color: inherit;
+  font-size: 0;
 }
 
 .alteryx-tab-bar .tab-button.active {
-  background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%) !important;
-  color: #ffffff !important;
-  box-shadow: 0 12px 28px rgba(168, 85, 247, 0.28) !important;
+  z-index: 2;
+  background: #ffffff !important;
+  color: #172033 !important;
+  opacity: 1;
+  transform: translateY(1px);
+  animation: chrome-tab-rise 180ms ease;
+}
+
+.alteryx-tab-bar .tab-button.active::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  bottom: -1px;
+  left: 10px;
+  height: 2px;
+  background: #ffffff;
 }
 
 .alteryx-tab-bar .tab-button.active span {
-  color: #ffffff !important;
+  color: inherit !important;
+}
+
+@keyframes chrome-tab-rise {
+  from {
+    transform: translateY(5px);
+  }
+  to {
+    transform: translateY(1px);
+  }
 }
 
 .timer-badge {
@@ -2559,7 +2604,6 @@ PAGE WRAP
   font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 16px 28px rgba(30, 64, 175, 0.18);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   margin-top: auto;
   position: relative;
@@ -2589,12 +2633,8 @@ PAGE WRAP
   justify-content: space-between;
   gap: 20px;
   align-items: flex-start;
-  padding: 24px;
   border-radius: 16px;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background:
-    radial-gradient(circle at 12% 0%, rgba(0, 112, 192, 0.14), transparent 36%),
-    linear-gradient(135deg, #f8fbff 0%, #eef7ff 100%);
 }
 
 .source-mquery-header h2 {
@@ -2613,9 +2653,7 @@ PAGE WRAP
 .source-generation-badge {
   display: inline-grid;
   gap: 5px;
-  max-width: 760px;
-  margin-top: 16px;
-  padding: 13px 16px;
+  padding: 15px 16px;
   border-radius: 12px;
   background: #ecfdf5;
   color: #065f46;
@@ -2665,6 +2703,9 @@ PAGE WRAP
 .source-mquery-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-top: 18px;
 }
 
@@ -2677,6 +2718,17 @@ PAGE WRAP
   font-weight: 900;
   cursor: pointer;
   box-shadow: 0 12px 28px rgba(0, 112, 192, 0.24);
+}
+
+.source-mquery-actions .source-mquery-download {
+  background: #e8f2fb;
+  color: #075985;
+  box-shadow: none;
+  border: 1px solid rgba(7, 89, 133, 0.16);
+}
+
+.source-mquery-actions .source-mquery-download:hover:not(:disabled) {
+  background: #dbeafe;
 }
 
 .source-mquery-actions button:disabled {
@@ -2851,7 +2903,6 @@ PAGE WRAP
     radial-gradient(circle at 18px 18px, rgba(100, 116, 139, 0.16) 1px, transparent 1px),
     linear-gradient(135deg, #f7fbff 0%, #eef5fb 100%);
   background-size: 28px 28px, auto;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 18px 40px rgba(15, 23, 42, 0.08);
 }
 
 .workflow-canvas {
@@ -3031,7 +3082,7 @@ PAGE WRAP
   gap: 8px;
   align-items: center;
   border-radius: 999px;
-  background: #f8fafc;
+  background: #dfe6ee;
   color: #334155;
   padding: 8px 12px;
   font-size: 0.82rem;
