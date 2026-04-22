@@ -349,7 +349,8 @@ export default function SummaryPage() {
   const [workflow,      setWorkflow]      = useState<AlteryxWorkflow | null>(readStoredWorkflow());
   const [analysis,      setAnalysis]      = useState<any>(null);
   const [activeTab,     setActiveTab]     = useState<SummaryTab>("sourceTypes");
-  const [selectedSource, setSelectedSource] = useState<SourceType>("csv"); // ✅ dev11 UI state
+  // const [selectedSource, setSelectedSource] = useState<SourceType>("csv"); // ✅ dev11 UI state
+  const [selectedSource, setSelectedSource] = useState<SourceType>("scripts");
   const [sharePointUrl, setSharePointUrl] = useState(DEFAULT_SHAREPOINT_URL);
   const [fileName,      setFileName]      = useState(DEFAULT_FILE_NAME);
   const [loading,       setLoading]       = useState(true);
@@ -644,12 +645,11 @@ export default function SummaryPage() {
                 <span className="source-icon script-icon">📜</span>
                 <div>
                   <h3>Scripts</h3>
-                  <p>Qlik Load Script → M-Query</p>
+                  <p>Alteryx Worklflow → M-Query</p>
                 </div>
               </div>
               <p className="source-card-desc">
-                Parse the Qlik Load Script from your application. Transforms APPLYMAP,
-                INLINE, and RESIDENT tables into Power Query M-code. Full schema and
+                Parse the YXMD/ JSON/ YXZP/ ZIP scripts from your workflow. Transforms complex Alteryx tools into Power Query M-code. Full schema and
                 relationship preservation.
               </p>
               <div className="source-tags recommended">

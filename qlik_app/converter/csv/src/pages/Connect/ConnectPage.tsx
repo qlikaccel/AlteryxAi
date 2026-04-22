@@ -126,7 +126,7 @@ export default function ConnectPage() {
     onClick={() => setConnectMode("upload")}
     disabled={loading}
   >
-    <span className="method-title">Bulk Upload</span>
+    <span className="method-title">File Upload</span>
     <span className="method-subtitle">.yxmd, .yxzp, .zip</span>
   </button>
 </div>
