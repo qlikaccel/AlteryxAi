@@ -15,7 +15,6 @@ export default function AppsPage() {
   const [workflows, setWorkflows] = useState<AlteryxWorkflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
-  const [favourites, setFavourites] = useState<string[]>([]);
   const [pageLoadTime, setPageLoadTime] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sortNewestFirst] = useState(true);
@@ -62,11 +61,6 @@ export default function AppsPage() {
         setLoading(false);
       });
   }, [nav, platform, startTimer, stopTimer]);
-
-  const toggleFav = (id: string) =>
-    setFavourites((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
 
   const openSummary = async (workflow: AlteryxWorkflow) => {
     sessionStorage.setItem("appSelected", workflow.id);
