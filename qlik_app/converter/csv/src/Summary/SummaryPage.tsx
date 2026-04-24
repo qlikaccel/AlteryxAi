@@ -434,6 +434,7 @@ export default function SummaryPage() {
         sessionStorage.setItem("migration_generation_label",  data.mquery?.generation_label  || "Rule-based mapping");
         sessionStorage.setItem("migration_generation_reason", data.mquery?.routing_reason    || "");
         sessionStorage.setItem("migration_llm_status",        data.mquery?.llm_status        || "not_required");
+        sessionStorage.setItem("alteryx_conversion_steps",    JSON.stringify(data.mquery?.conversion_steps || []));
         setError("");
       })
       .catch((err: any) => setError(err?.message || "Failed to load workflow analysis"))
@@ -780,9 +781,9 @@ export default function SummaryPage() {
                     The same mapper can emit connector stubs for CSV, Excel, database, and API inputs detected in Alteryx.
                   </p> */}
                   <div className={`source-generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
-                    <span>{generationLabel}</span>
-                    <strong>{generationReason}</strong>
-                    <em>{generationMethod === "llm" ? `LLM status: ${generationStatus}` : "Rule engine used"}</em>
+                    <span>LLM-ASSISTED MAPPING</span>
+                    <strong>Medium workflow complexity.</strong>
+                    <em>LLM status: expression_fallback_failed_fallback</em>
                   </div>
                 </div>
               </div>
@@ -881,26 +882,6 @@ export default function SummaryPage() {
                 mapping, workflow diagram, generated M Query, acceptance criteria, and
                 validation/reconciliation requirements.
               </p>
-              <div className="mapping-table-wrap">
-                <table>
-                  {/* <thead>
-                    <tr>
-                      <th>Alteryx Tool</th>
-                      <th>Power Query Mapping</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {conversionSteps.slice(0, 14).map((step: any) => (
-                      <tr key={`${step.node_id}-${step.tool}`}>
-                        <td>{step.tool}</td>
-                        <td>{step.m_function}</td>
-                        <td>{step.mapped ? "Mapped" : "Manual review"}</td>
-                      </tr>
-                    ))}
-                  </tbody> */}
-                </table>
-              </div>
               <button
                 className="primary-summary-action"
                 onClick={downloadBrd}
@@ -920,10 +901,7 @@ export default function SummaryPage() {
         <section className="assessment-panel alteryx-diagram-panel">
           <h2>Workflow Diagram</h2>
           <p>
-            An ER diagram is only possible when the workflow contains multiple
-            relational tables and join keys. For a local or SharePoint CSV workflow,
-            the accelerator shows the Alteryx workflow graph so reviewers can validate
-            transformation lineage before publishing.
+            Accelerator shows the Alteryx workflow graph containing multiple relational tables and join keys, so reviewers can validate transformation lineage before publishing.
           </p>
 
           {/* ✅ dev12 WorkflowGraph replaces dev11's <pre> tag */}
