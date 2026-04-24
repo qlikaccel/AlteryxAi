@@ -2,9 +2,14 @@ import "./SummaryPage.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import LoadingOverlay from "../components/LoadingOverlay/LoadingOverlay";
+// import {
+//   fetchAlteryxBrdHtml,
+//   fetchAlteryxWorkflowAnalysis,
+// } from "../api/alteryxApi";
 import {
   fetchAlteryxBrdHtml,
   fetchAlteryxWorkflowAnalysis,
+  publishAlteryxMQuery,
 } from "../api/alteryxApi";
 import type { AlteryxWorkflow } from "../api/alteryxApi";
 import { useWizard } from "../context/WizardContext";
@@ -23,9 +28,9 @@ type SourceType = "database" | "scripts" | "csv";
 
 const TABS: Array<{ id: SummaryTab; label: string; icon: string }> = [
   { id: "sourceTypes", label: "Source Types", icon: "" },
-  { id: "summary",     label: "Summary",      icon: ""  },
-  { id: "brd",         label: "App BRD",       icon: ""    },
-  { id: "diagram",     label: "Workflow Diagram",    icon: ""   },
+  { id: "summary", label: "Summary", icon: "" },
+  { id: "brd", label: "App BRD", icon: "" },
+  { id: "diagram", label: "Workflow Diagram", icon: "" },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -87,31 +92,31 @@ function shortToolName(plugin: string) {
 function toolFamily(plugin: string) {
   const lowered = (plugin || "").toLowerCase();
   if (lowered.includes("input") || lowered.includes("download")) return "input";
-  if (lowered.includes("output"))                                  return "output";
-  if (lowered.includes("union"))                                   return "union";
+  if (lowered.includes("output")) return "output";
+  if (lowered.includes("union")) return "union";
   if (lowered.includes("join") || lowered.includes("findreplace")) return "join";
-  if (lowered.includes("filter"))                                  return "filter";
-  if (lowered.includes("select"))                                  return "select";
+  if (lowered.includes("filter")) return "filter";
+  if (lowered.includes("select")) return "select";
   if (lowered.includes("cleansing") || lowered.includes("cleanse")) return "cleanse";
   if (lowered.includes("summarize") || lowered.includes("aggregate")) return "summarize";
-  if (lowered.includes("formula"))                                 return "formula";
-  if (lowered.includes("sort") || lowered.includes("unique"))      return "shape";
+  if (lowered.includes("formula")) return "formula";
+  if (lowered.includes("sort") || lowered.includes("unique")) return "shape";
   return "default";
 }
 
 function toolIcon(family: string) {
   const icons: Record<string, string> = {
-    input:     "in",
-    output:    "out",
-    union:     "U",
-    join:      "J",
-    filter:    "F",
-    select:    "S",
-    cleanse:   "#",
+    input: "in",
+    output: "out",
+    union: "U",
+    join: "J",
+    filter: "F",
+    select: "S",
+    cleanse: "#",
     summarize: "sum",
-    formula:   "fx",
-    shape:     "sort",
-    default:   "tool",
+    formula: "fx",
+    shape: "sort",
+    default: "tool",
   };
   return icons[family] || icons.default;
 }
@@ -147,7 +152,7 @@ function buildWorkflowLayout(nodes: WorkflowGraphNode[], edges: WorkflowGraphEdg
     let changed = false;
     edges.forEach((edge) => {
       const from = String(edge.from || "");
-      const to   = String(edge.to   || "");
+      const to = String(edge.to || "");
       if (!nodeById.has(from) || !nodeById.has(to)) return;
       const nextLevel = (levels.get(from) || 0) + 1;
       if (nextLevel > (levels.get(to) || 0)) {
@@ -160,33 +165,33 @@ function buildWorkflowLayout(nodes: WorkflowGraphNode[], edges: WorkflowGraphEdg
 
   const grouped = new Map<number, WorkflowGraphNode[]>();
   nodes.forEach((node, index) => {
-    const id    = String(node.id || index);
+    const id = String(node.id || index);
     const level = levels.get(id) || 0;
     if (!grouped.has(level)) grouped.set(level, []);
     grouped.get(level)?.push(node);
   });
 
-  const nodeWidth  = 156;
+  const nodeWidth = 156;
   const nodeHeight = 78;
-  const columnGap  = 230;
-  const rowGap     = 116;
-  const xOffset    = 28;
-  const yOffset    = 34;
-  const maxLevel   = Math.max(0, ...Array.from(grouped.keys()));
-  const maxRows    = Math.max(1, ...Array.from(grouped.values()).map((group) => group.length));
-  const positions  = new Map<string, { x: number; y: number; width: number; height: number }>();
+  const columnGap = 230;
+  const rowGap = 116;
+  const xOffset = 28;
+  const yOffset = 34;
+  const maxLevel = Math.max(0, ...Array.from(grouped.keys()));
+  const maxRows = Math.max(1, ...Array.from(grouped.values()).map((group) => group.length));
+  const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
 
   Array.from(grouped.keys())
     .sort((a, b) => a - b)
     .forEach((level) => {
-      const group        = grouped.get(level) || [];
+      const group = grouped.get(level) || [];
       const columnHeight = (group.length - 1) * rowGap;
-      const yBase        = yOffset + Math.max(0, (maxRows - 1) * rowGap - columnHeight) / 2;
+      const yBase = yOffset + Math.max(0, (maxRows - 1) * rowGap - columnHeight) / 2;
       group.forEach((node, row) => {
         positions.set(String(node.id || ""), {
-          x:      xOffset + level * columnGap,
-          y:      yBase + row * rowGap,
-          width:  nodeWidth,
+          x: xOffset + level * columnGap,
+          y: yBase + row * rowGap,
+          width: nodeWidth,
           height: nodeHeight,
         });
       });
@@ -194,7 +199,7 @@ function buildWorkflowLayout(nodes: WorkflowGraphNode[], edges: WorkflowGraphEdg
 
   return {
     positions,
-    canvasWidth:  xOffset * 2 + maxLevel * columnGap + nodeWidth + 48,
+    canvasWidth: xOffset * 2 + maxLevel * columnGap + nodeWidth + 48,
     canvasHeight: yOffset * 2 + Math.max(1, maxRows) * rowGap + 32,
   };
 }
@@ -217,7 +222,7 @@ function WorkflowGraph({
   const visibleEdges = edges.filter(
     (edge) =>
       positions.has(String(edge.from || "")) &&
-      positions.has(String(edge.to   || ""))
+      positions.has(String(edge.to || ""))
   );
 
   if (!nodes.length) {
@@ -254,13 +259,13 @@ function WorkflowGraph({
             </marker>
           </defs>
           {visibleEdges.map((edge, index) => {
-            const from   = positions.get(String(edge.from || ""))!;
-            const to     = positions.get(String(edge.to   || ""))!;
+            const from = positions.get(String(edge.from || ""))!;
+            const to = positions.get(String(edge.to || ""))!;
             const startX = from.x + from.width;
             const startY = from.y + from.height / 2;
-            const endX   = to.x;
-            const endY   = to.y + to.height / 2;
-            const curve  = Math.max(58, Math.min(120, (endX - startX) / 2));
+            const endX = to.x;
+            const endY = to.y + to.height / 2;
+            const curve = Math.max(58, Math.min(120, (endX - startX) / 2));
             return (
               <path
                 key={`${edge.from}-${edge.to}-${index}`}
@@ -272,17 +277,17 @@ function WorkflowGraph({
         </svg>
 
         {nodes.map((node, index) => {
-          const id       = String(node.id || index);
+          const id = String(node.id || index);
           const position = positions.get(id) || { x: 24, y: 24 + index * 92, width: 156, height: 78 };
-          const family   = toolFamily(String(node.plugin || ""));
+          const family = toolFamily(String(node.plugin || ""));
           return (
             <div
               key={id}
               className={`workflow-node workflow-node-${family} ${node.supported === false ? "needs-review" : ""}`}
               style={{
-                left:   position.x,
-                top:    position.y,
-                width:  position.width,
+                left: position.x,
+                top: position.y,
+                width: position.width,
                 height: position.height,
               }}
               title={node.configurationText || nodeSubtitle(node, sourceDetails)}
@@ -303,14 +308,14 @@ function WorkflowGraph({
 // ─── PieChart Component ───────────────────────────────────────────────────────
 
 function PieChart({ slices }: { slices: Array<[string, number]> }) {
-  const total      = slices.reduce((sum, [, value]) => sum + value, 0) || 1;
-  let   cumulative = 0;
-  const colors     = ["#ff4d4f", "#fb923c", "#facc15", "#14b8a6", "#6d5dfc", "#db3ea2", "#0ea5e9", "#22c55e"];
-  const gradient   = slices
+  const total = slices.reduce((sum, [, value]) => sum + value, 0) || 1;
+  let cumulative = 0;
+  const colors = ["#ff4d4f", "#fb923c", "#facc15", "#14b8a6", "#6d5dfc", "#db3ea2", "#0ea5e9", "#22c55e"];
+  const gradient = slices
     .map(([_, value], index) => {
-      const start   = (cumulative / total) * 100;
-      cumulative   += value;
-      const end     = (cumulative / total) * 100;
+      const start = (cumulative / total) * 100;
+      cumulative += value;
+      const end = (cumulative / total) * 100;
       return `${colors[index % colors.length]} ${start}% ${end}%`;
     })
     .join(", ");
@@ -337,27 +342,27 @@ function PieChart({ slices }: { slices: Array<[string, number]> }) {
 // ─── Main SummaryPage Component ───────────────────────────────────────────────
 
 export default function SummaryPage() {
-  const location  = useLocation();
-  const navigate  = useNavigate();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { stopTimer } = useWizard();
 
-  const workflowId       = (location.state as any)?.workflowId || sessionStorage.getItem("alteryx_workflow_id") || "";
-  const batchId          = sessionStorage.getItem("alteryx_batch_id") || "";
-  const platform         = sessionStorage.getItem("platform") || "alteryx_upload";
+  const workflowId = (location.state as any)?.workflowId || sessionStorage.getItem("alteryx_workflow_id") || "";
+  const batchId = sessionStorage.getItem("alteryx_batch_id") || "";
+  const platform = sessionStorage.getItem("platform") || "alteryx_upload";
   const isCloudApiWorkflow = platform !== "alteryx_upload" && !batchId;
 
-  const [workflow,      setWorkflow]      = useState<AlteryxWorkflow | null>(readStoredWorkflow());
-  const [analysis,      setAnalysis]      = useState<any>(null);
-  const [activeTab,     setActiveTab]     = useState<SummaryTab>("sourceTypes");
+  const [workflow, setWorkflow] = useState<AlteryxWorkflow | null>(readStoredWorkflow());
+  const [analysis, setAnalysis] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<SummaryTab>("sourceTypes");
   // const [selectedSource, setSelectedSource] = useState<SourceType>("csv"); // ✅ dev11 UI state
   const [selectedSource, setSelectedSource] = useState<SourceType>("scripts");
   const [showSourceMQuery, setShowSourceMQuery] = useState(false);
   const [sharePointUrl, setSharePointUrl] = useState(DEFAULT_SHAREPOINT_URL);
-  const [fileName,      setFileName]      = useState(DEFAULT_FILE_NAME);
-  const [loading,       setLoading]       = useState(true);
-  const [error,         setError]         = useState("");
-  const [pageLoadTime,  setPageLoadTime]  = useState<string | null>(null);
-  const [brdLoading,    setBrdLoading]    = useState(false);
+  const [fileName, setFileName] = useState(DEFAULT_FILE_NAME);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [pageLoadTime, setPageLoadTime] = useState<string | null>(null);
+  const [brdLoading, setBrdLoading] = useState(false);
   const sourceMQueryPanelRef = useRef<HTMLElement | null>(null);
 
   // ─── Data fetch (dev12 backend logic) ──────────────────────────────────────
@@ -369,8 +374,8 @@ export default function SummaryPage() {
     }
 
     if (isCloudApiWorkflow) {
-      const storedWorkflow    = readStoredWorkflow();
-      const materializeError  = (location.state as any)?.cloudMaterializeError;
+      const storedWorkflow = readStoredWorkflow();
+      const materializeError = (location.state as any)?.cloudMaterializeError;
       if (!storedWorkflow) {
         navigate("/apps");
         return;
@@ -424,17 +429,17 @@ export default function SummaryPage() {
         );
 
         if (sharePointUrl) sessionStorage.setItem("alteryx_sharepoint_url", sharePointUrl);
-        else               sessionStorage.removeItem("alteryx_sharepoint_url");
+        else sessionStorage.removeItem("alteryx_sharepoint_url");
 
-        sessionStorage.setItem("alteryx_file_name",          resolvedFileName || "");
+        sessionStorage.setItem("alteryx_file_name", resolvedFileName || "");
         sessionStorage.setItem("migration_data_source_path", resolvedSourcePath || data.mquery?.data_source_path || "");
-        sessionStorage.setItem("migration_mquery",           data.mquery?.combined_mquery || "");
-        sessionStorage.setItem("migration_dataset_name",     data.mquery?.dataset_name || data.workflow?.name || "AlteryxDataset");
+        sessionStorage.setItem("migration_mquery", data.mquery?.combined_mquery || "");
+        sessionStorage.setItem("migration_dataset_name", data.mquery?.dataset_name || data.workflow?.name || "AlteryxDataset");
         sessionStorage.setItem("migration_generation_method", data.mquery?.generation_method || "rule_based");
-        sessionStorage.setItem("migration_generation_label",  data.mquery?.generation_label  || "Rule-based mapping");
-        sessionStorage.setItem("migration_generation_reason", data.mquery?.routing_reason    || "");
-        sessionStorage.setItem("migration_llm_status",        data.mquery?.llm_status        || "not_required");
-        sessionStorage.setItem("alteryx_conversion_steps",    JSON.stringify(data.mquery?.conversion_steps || []));
+        sessionStorage.setItem("migration_generation_label", data.mquery?.generation_label || "Rule-based mapping");
+        sessionStorage.setItem("migration_generation_reason", data.mquery?.routing_reason || "");
+        sessionStorage.setItem("migration_llm_status", data.mquery?.llm_status || "not_required");
+        sessionStorage.setItem("alteryx_conversion_steps", JSON.stringify(data.mquery?.conversion_steps || []));
         setError("");
       })
       .catch((err: any) => setError(err?.message || "Failed to load workflow analysis"))
@@ -456,25 +461,26 @@ export default function SummaryPage() {
   // ─── Derived values ─────────────────────────────────────────────────────────
 
   const assessment = useMemo(() => {
-    const totalTools      = workflow?.toolCount        ?? 0;
+    const totalTools = workflow?.toolCount ?? 0;
     const unsupportedTools = workflow?.unsupportedToolCount ?? 0;
-    const supportedTools  = workflow?.supportedToolCount ?? Math.max(totalTools - unsupportedTools, 0);
+    const supportedTools = workflow?.supportedToolCount ?? Math.max(totalTools - unsupportedTools, 0);
     const automationScore = safePercent(supportedTools, totalTools);
     return { totalTools, supportedTools, unsupportedTools, automationScore };
   }, [workflow]);
 
-  const pieSlices            = useMemo(() => buildPieSlices(workflow), [workflow]);
-  const conversionSteps      = analysis?.mquery?.conversion_steps || [];
-  const generation           = analysis?.mquery || {};
-  const generationMethod     = generation.generation_method  || "rule_based";
-  const generationLabel      = generation.generation_label   || "Rule-based mapping";
-  const generationReason     = generation.routing_reason     || "Low-complexity workflow with supported deterministic tool mappings.";
+  const pieSlices = useMemo(() => buildPieSlices(workflow), [workflow]);
+  const conversionSteps = analysis?.mquery?.conversion_steps || [];
+  const generation = analysis?.mquery || {};
+  const generationMethod = generation.generation_method || "rule_based";
+  const generationLabel = generation.generation_label || "Rule-based mapping";
+  const generationReason = generation.routing_reason || "Low-complexity workflow with supported deterministic tool mappings.";
   const generationIndicators = generation.complexity_indicators || [];
-  const generationStatus     = generation.llm_status         || "not_required";
+  const generationStatus = generation.llm_status || "not_required";
   const canConvertAndPublish = Boolean(batchId && analysis?.mquery?.combined_mquery);
-  const mqueryPreview         = analysis?.mquery?.combined_mquery || sessionStorage.getItem("migration_mquery") || "";
-  const datasetName           = analysis?.mquery?.dataset_name || workflow?.name || "AlteryxDataset";
-  const sourceDetails        = workflow?.dataSources         || [];
+  const mqueryPreview = analysis?.mquery?.combined_mquery || sessionStorage.getItem("migration_mquery") || "";
+  const datasetName = analysis?.mquery?.dataset_name || workflow?.name || "AlteryxDataset";
+  const publishDuration = (location.state as any)?.publishDuration || "";
+  const sourceDetails = workflow?.dataSources || [];
 
   // ─── Actions ────────────────────────────────────────────────────────────────
 
@@ -482,11 +488,11 @@ export default function SummaryPage() {
     if (!batchId || !workflowId) return;
     setBrdLoading(true);
     try {
-      const html   = await fetchAlteryxBrdHtml(batchId, workflowId, sharePointUrl, fileName);
-      const blob   = new Blob([html], { type: "text/html;charset=utf-8" });
-      const url    = URL.createObjectURL(blob);
+      const html = await fetchAlteryxBrdHtml(batchId, workflowId, sharePointUrl, fileName);
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
-      anchor.href  = url;
+      anchor.href = url;
       anchor.download = `${(workflow?.name || "alteryx_workflow").replace(/[^a-z0-9]+/gi, "_")}_BRD.html`;
       anchor.click();
       URL.revokeObjectURL(url);
@@ -504,8 +510,8 @@ export default function SummaryPage() {
       );
       return;
     }
-    sessionStorage.setItem("summaryComplete",   "true");
-    sessionStorage.setItem("summaryActiveTab",  "mquery");
+    sessionStorage.setItem("summaryComplete", "true");
+    sessionStorage.setItem("summaryActiveTab", "mquery");
     navigate("/export");
   };
 
@@ -515,22 +521,80 @@ export default function SummaryPage() {
     setShowSourceMQuery(true);
   };
 
-  const publishSourceMQuery = () => {
+  // const publishSourceMQuery = () => {
+  //   if (!mqueryPreview) {
+  //     setError("No generated M Query is available for this workflow.");
+  //     return;
+  //   }
+
+  //   sessionStorage.setItem("summaryComplete", "true");
+  //   sessionStorage.setItem("exportComplete", "true");
+  //   sessionStorage.setItem("publishMethod", "M_QUERY");
+  //   navigate("/publish", {
+  //     state: {
+  //       workflowName: workflow?.name || "Alteryx workflow",
+  //       mquery: mqueryPreview,
+  //       datasetName,
+  //     },
+  //   });
+  // };
+
+  const [publishing, setPublishing] = useState(false);
+
+  // const publishSourceMQuery = async () => {
+  const publishSourceMQuery = async () => {
+    const publishStart = Date.now();
     if (!mqueryPreview) {
       setError("No generated M Query is available for this workflow.");
       return;
     }
 
-    sessionStorage.setItem("summaryComplete", "true");
-    sessionStorage.setItem("exportComplete", "true");
-    sessionStorage.setItem("publishMethod", "M_QUERY");
-    navigate("/publish", {
-      state: {
-        workflowName: workflow?.name || "Alteryx workflow",
-        mquery: mqueryPreview,
-        datasetName,
-      },
-    });
+    setPublishing(true);
+    setError("");
+
+    try {
+      const result = await publishAlteryxMQuery({
+        dataset_name: datasetName,
+        combined_mquery: mqueryPreview,
+        sharepoint_url: sharePointUrl,
+        data_source_path: sessionStorage.getItem("migration_data_source_path") || sharePointUrl,
+        access_token: sessionStorage.getItem("powerbi_access_token") || "",
+      });
+
+      // Save result to sessionStorage for PublishPage to read
+      sessionStorage.setItem("alteryx_publish_result", JSON.stringify(result));
+      sessionStorage.setItem("summaryComplete", "true");
+      sessionStorage.setItem("exportComplete", "true");
+      sessionStorage.setItem("publishMethod", "M_QUERY");
+
+      // navigate("/publish", {
+      //   state: {
+      //     workflowName: workflow?.name || "Alteryx workflow",
+      //     mquery: mqueryPreview,
+      //     datasetName,
+      //   },
+      // });
+      const publishDurationMs = Date.now() - publishStart;
+const publishMins = Math.floor(publishDurationMs / 60000);
+const publishSecs = Math.floor((publishDurationMs % 60000) / 1000);
+const publishDuration = publishMins > 0
+  ? `${publishMins}m ${publishSecs}s`
+  : `${publishSecs}s`;
+
+navigate("/publish", {
+  state: {
+    workflowName: workflow?.name || "Alteryx workflow",
+    mquery: mqueryPreview,
+    datasetName,
+    publishDuration,
+  },
+});
+
+    } catch (err: any) {
+      setError(err?.message || "Publish to Power BI failed. Please try again.");
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const downloadSourceMQuery = () => {
@@ -562,6 +626,15 @@ export default function SummaryPage() {
       />
     );
   }
+  
+  if (publishing) {
+  return (
+    <LoadingOverlay
+      isVisible={publishing}
+      message="Publishing to Power BI... This may take a few moments."
+    />
+  );
+}
 
   if (error) {
     return (
@@ -662,150 +735,153 @@ export default function SummaryPage() {
           </section>
         ) : (
           <>
-          {/* dev11 UI: interactive source-type cards */}
-          {!showSourceMQuery && (
-          <section className="source-type-grid">
+            {/* dev11 UI: interactive source-type cards */}
+            {!showSourceMQuery && (
+              <section className="source-type-grid">
 
-            {/* Database Card */}
-            <article
-              className={`source-type-card database ${selectedSource === "database" ? "selected" : "muted"}`}
-              onClick={() => {
-                setSelectedSource("database");
-                setShowSourceMQuery(false);
-              }}
-              style={{ cursor: "pointer" }}
-            >
-              <div className="source-card-head">
-                <span className={`source-radio ${selectedSource === "database" ? "selected" : ""}`} />
-                <span className="source-icon database-icon">🗄️</span>
-                <div>
-                  <h3>Database</h3>
-                  <p>Direct ODBC / JDBC connection</p>
-                </div>
-              </div>
-              <p className="source-card-desc">
-                Connect directly to the source database via ODBC. Schema is inferred
-                automatically. Best for live systems where data resides in SQL Server,
-                Oracle, or Snowflake.
-              </p>
-              <div className="source-tags default">
-                <span>ODBC / JDBC</span>
-                <span>LIVE SCHEMA</span>
-                <span>SQL SERVER · ORACLE</span>
-              </div>
-            </article>
-
-            {/* Scripts Card */}
-            <article
-              className={`source-type-card scripts ${selectedSource === "scripts" ? "selected" : ""}`}
-              onClick={() => setSelectedSource("scripts")}
-              style={{ cursor: "pointer" }}
-            >
-              <div className="source-card-head">
-                <span className={`source-radio ${selectedSource === "scripts" ? "selected" : ""}`} />
-                <span className="source-icon script-icon">📜</span>
-                <div>
-                  <h3>Scripts</h3>
-                  <p>Alteryx Worklflow → M-Query</p>
-                </div>
-              </div>
-              <p className="source-card-desc">
-                Parse the .YXMD/ .JSON/ .YXZP scripts from your workflow. Transforms complex Alteryx tools into Power Query M-code. Full schema and
-                relationship preservation.
-              </p>
-              <div className="source-tags recommended">
-                <span>M-QUERY</span>
-                <span>XMLA</span>
-                <span>RELATIONSHIPS</span>
-              </div>
-              {selectedSource === "scripts" && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openSourceMQuery();
+                {/* Database Card */}
+                <article
+                  className={`source-type-card database ${selectedSource === "database" ? "selected" : "muted"}`}
+                  onClick={() => {
+                    setSelectedSource("database");
+                    setShowSourceMQuery(false);
                   }}
+                  style={{ cursor: "pointer" }}
                 >
-                  Open M Query
-                </button>
-              )}
-            </article>
+                  <div className="source-card-head">
+                    <span className={`source-radio ${selectedSource === "database" ? "selected" : ""}`} />
+                    <span className="source-icon database-icon">🗄️</span>
+                    <div>
+                      <h3>Database</h3>
+                      <p>Direct ODBC / JDBC connection</p>
+                    </div>
+                  </div>
+                  <p className="source-card-desc">
+                    Connect directly to the source database via ODBC. Schema is inferred
+                    automatically. Best for live systems where data resides in SQL Server,
+                    Oracle, or Snowflake.
+                  </p>
+                  <div className="source-tags default">
+                    <span>ODBC / JDBC</span>
+                    <span>LIVE SCHEMA</span>
+                    <span>SQL SERVER · ORACLE</span>
+                  </div>
+                </article>
 
-            {/* Export CSV Card */}
-            <article
-              className={`source-type-card csv ${selectedSource === "csv" ? "selected" : ""}`}
-              onClick={() => {
-                setSelectedSource("csv");
-                setShowSourceMQuery(false);
-              }}
-              style={{ cursor: "pointer" }}
-            >
-              <div className="source-card-head">
-                <span className={`source-radio ${selectedSource === "csv" ? "selected" : ""}`} />
-                <span className="source-icon csv-icon">📦</span>
-                <div>
-                  <h3>Export CSV</h3>
-                  <p>Data export via REST API</p>
-                </div>
-              </div>
-              <p className="source-card-desc">
-                Export all table data as CSV and push to Power BI as a push dataset
-                via REST API. Works on any Power BI license. Ideal for flat tables
-                without complex transformations.
-              </p>
-              <div className="source-tags csv-tags">
-                <span>ANY LICENSE</span>
-                <span>REST API</span>
-                <span>FAST DEPLOY</span>
-              </div>
-              {selectedSource === "csv" && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    continueToExport();
+                {/* Scripts Card */}
+                <article
+                  className={`source-type-card scripts ${selectedSource === "scripts" ? "selected" : ""}`}
+                  onClick={() => setSelectedSource("scripts")}
+                  style={{ cursor: "pointer" }}
+                >
+                  <div className="source-card-head">
+                    <span className={`source-radio ${selectedSource === "scripts" ? "selected" : ""}`} />
+                    <span className="source-icon script-icon">📜</span>
+                    <div>
+                      <h3>Scripts</h3>
+                      <p>Alteryx Worklflow → M-Query</p>
+                    </div>
+                  </div>
+                  <p className="source-card-desc">
+                    Parse the .YXMD/ .JSON/ .YXZP scripts from your workflow. Transforms complex Alteryx tools into Power Query M-code. Full schema and
+                    relationship preservation.
+                  </p>
+                  <div className="source-tags recommended">
+                    <span>M-QUERY</span>
+                    <span>XMLA</span>
+                    <span>RELATIONSHIPS</span>
+                  </div>
+                  {selectedSource === "scripts" && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openSourceMQuery();
+                      }}
+                    >
+                      Open M Query
+                    </button>
+                  )}
+                </article>
+
+                {/* Export CSV Card */}
+                <article
+                  className={`source-type-card csv ${selectedSource === "csv" ? "selected" : ""}`}
+                  onClick={() => {
+                    setSelectedSource("csv");
+                    setShowSourceMQuery(false);
                   }}
+                  style={{ cursor: "pointer" }}
                 >
-                  Go to Export
-                </button>
-              )}
-            </article>
+                  <div className="source-card-head">
+                    <span className={`source-radio ${selectedSource === "csv" ? "selected" : ""}`} />
+                    <span className="source-icon csv-icon">📦</span>
+                    <div>
+                      <h3>Export CSV</h3>
+                      <p>Data export via REST API</p>
+                    </div>
+                  </div>
+                  <p className="source-card-desc">
+                    Export all table data as CSV and push to Power BI as a push dataset
+                    via REST API. Works on any Power BI license. Ideal for flat tables
+                    without complex transformations.
+                  </p>
+                  <div className="source-tags csv-tags">
+                    <span>ANY LICENSE</span>
+                    <span>REST API</span>
+                    <span>FAST DEPLOY</span>
+                  </div>
+                  {selectedSource === "csv" && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        continueToExport();
+                      }}
+                    >
+                      Go to Export
+                    </button>
+                  )}
+                </article>
 
-          </section>
-          )}
-          {showSourceMQuery && (
-            <section className="source-mquery-panel" ref={sourceMQueryPanelRef} tabIndex={-1}>
-              <div className="source-mquery-header">
-                <div>
-                  {/* <h2>{workflow.name}</h2> */}
-                  {/* <p>
+              </section>
+            )}
+            {showSourceMQuery && (
+              <section className="source-mquery-panel" ref={sourceMQueryPanelRef} tabIndex={-1}>
+                <div className="source-mquery-header">
+                  <div>
+                    {/* <h2>{workflow.name}</h2> */}
+                    {/* <p>
                     Generated Power Query uses the configured data source <strong>{fileName}</strong>.
                     The same mapper can emit connector stubs for CSV, Excel, database, and API inputs detected in Alteryx.
                   </p> */}
-                  <div className={`source-generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
-                    <span>LLM-ASSISTED MAPPING</span>
-                    <strong>Medium workflow complexity.</strong>
-                    <em>LLM status: expression_fallback_failed_fallback</em>
+                    <div className={`source-generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
+                      <span>LLM-ASSISTED MAPPING</span>
+                      <strong>Medium workflow complexity.</strong>
+                      <em>LLM status: expression_fallback_failed_fallback</em>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <pre className="source-mquery-preview">
-                {mqueryPreview || "No generated M Query is available for this workflow."}
-              </pre>
+                <pre className="source-mquery-preview">
+                  {mqueryPreview || "No generated M Query is available for this workflow."}
+                </pre>
 
-              <div className="source-mquery-actions">
-                <button
-                  className="source-mquery-download"
-                  onClick={downloadSourceMQuery}
-                  disabled={!mqueryPreview}
-                >
-                  Download M Query
-                </button>
-                <button onClick={publishSourceMQuery} disabled={!mqueryPreview}>
-                  Publish to Power BI
-                </button>
-              </div>
-            </section>
-          )}
+                <div className="source-mquery-actions">
+                  <button
+                    className="source-mquery-download"
+                    onClick={downloadSourceMQuery}
+                    disabled={!mqueryPreview}
+                  >
+                    Download M Query
+                  </button>
+                  {/* <button onClick={publishSourceMQuery} disabled={!mqueryPreview}>
+                    Publish to Power BI
+                  </button> */}
+                  <button onClick={publishSourceMQuery} disabled={!mqueryPreview || publishing}>
+                    {publishing ? "Publishing..." : "Publish to Power BI"}
+                  </button>
+                </div>
+              </section>
+            )}
           </>
         )
       )}
@@ -909,10 +985,10 @@ export default function SummaryPage() {
 
           {/* ✅ dev12 legend */}
           <div className="workflow-legend">
-            <span><i className="legend-input"     /> Source</span>
+            <span><i className="legend-input" /> Source</span>
             <span><i className="legend-transform" /> Transform</span>
-            <span><i className="legend-join"      /> Join / Union</span>
-            <span><i className="legend-output"    /> Output</span>
+            <span><i className="legend-join" /> Join / Union</span>
+            <span><i className="legend-output" /> Output</span>
           </div>
 
           {/* ✅ dev12 pill class */}

@@ -748,7 +748,7 @@
         "name": "DataSourcePath",
         "kind": "m",
         "expression": [
-          "\"\""
+          "\"sales_transactions_2023.csv\""
         ],
         "annotations": [
           {

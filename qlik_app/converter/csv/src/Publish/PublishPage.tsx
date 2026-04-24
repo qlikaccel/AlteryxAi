@@ -19,6 +19,7 @@ export default function PublishPage() {
     workflowName;
   const workspaceName = sessionStorage.getItem("alteryx_workspace_name") || "Power BI workspace";
   const workspaceId = sessionStorage.getItem("alteryx_workspace_id") || "";
+  const publishDuration = (location.state as any)?.publishDuration || "";
 
   const conversionSteps = useMemo(() => {
     const raw = sessionStorage.getItem("alteryx_conversion_steps");
@@ -67,11 +68,6 @@ export default function PublishPage() {
     { label: "Validate", complete: true },
     { label: "Publish", complete: true },
   ];
-
-  // const openPowerBi = () => {
-  //   window.location.assign(powerBiWorkspaceUrl);
-  // };
-
 
   const openPowerBi = () => {
     window.open(powerBiWorkspaceUrl, "_blank", "noopener,noreferrer");
@@ -133,7 +129,6 @@ export default function PublishPage() {
           <div className="publish-title-row">
             <h1>Publish to Power BI / Fabric</h1>
           </div>
-          {/* <p>{workflowName} - Published</p> */}
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             <p style={{ margin: 0, fontSize: "14px", color: "#475569" }}>
               {workflowName} - Published
@@ -157,6 +152,21 @@ export default function PublishPage() {
                 hour12: true
               })}
             </span>
+            {publishDuration && (
+              <span style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                background: "#e8f0fe",
+                color: "#1a56db",
+                fontSize: "12px",
+                fontWeight: 500,
+                padding: "3px 10px",
+                borderRadius: "999px"
+              }}>
+                ⏱ Publish Duration: {publishDuration}
+              </span>
+            )}
           </div>
         </div>
         <div className="publish-top-actions">
@@ -182,11 +192,10 @@ export default function PublishPage() {
         <section className="wire-card publish-target-card">
           <div className="wire-card-header">
             <h2>Publish target</h2>
-            {/* <button onClick={() => navigate("/export")}>Configure</button> */}
           </div>
           <div className="target-row">
             <span>Target</span>
-            <select value="Power BI Service (XMLA)" onChange={() => { }}>
+            <select value="Power BI Service (XMLA)" onChange={() => {}}>
               <option>Power BI Service (XMLA)</option>
               <option>Power BI / Fabric semantic model</option>
             </select>
