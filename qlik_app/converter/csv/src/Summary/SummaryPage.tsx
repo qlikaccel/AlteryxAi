@@ -631,7 +631,7 @@ navigate("/publish", {
   return (
     <LoadingOverlay
       isVisible={publishing}
-      message="Publishing to Power BI... This may take a few moments."
+      message="Publishing to Power BI..."
     />
   );
 }
@@ -746,7 +746,8 @@ navigate("/publish", {
                     setSelectedSource("database");
                     setShowSourceMQuery(false);
                   }}
-                  style={{ cursor: "pointer" }}
+                  // style={{ cursor: "pointer" }}
+                  style={{ cursor: "not-allowed", opacity: 0.45, pointerEvents: "none" }}
                 >
                   <div className="source-card-head">
                     <span className={`source-radio ${selectedSource === "database" ? "selected" : ""}`} />
@@ -810,7 +811,8 @@ navigate("/publish", {
                     setSelectedSource("csv");
                     setShowSourceMQuery(false);
                   }}
-                  style={{ cursor: "pointer" }}
+                  // style={{ cursor: "pointer" }}
+                  style={{ cursor: "not-allowed", opacity: 0.45, pointerEvents: "none" }}
                 >
                   <div className="source-card-head">
                     <span className={`source-radio ${selectedSource === "csv" ? "selected" : ""}`} />

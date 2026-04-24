@@ -65,8 +65,9 @@ export default function PublishPage() {
     { label: "Upload", complete: true },
     { label: "Tool mapping", complete: true },
     { label: "M Query gen", complete: true },
-    { label: "Validate", complete: true },
     { label: "Publish", complete: true },
+    { label: "Validate", complete: true },
+    
   ];
 
   const openPowerBi = () => {
@@ -193,13 +194,13 @@ export default function PublishPage() {
           <div className="wire-card-header">
             <h2>Publish target</h2>
           </div>
-          <div className="target-row">
+          {/* <div className="target-row">
             <span>Target</span>
             <select value="Power BI Service (XMLA)" onChange={() => {}}>
               <option>Power BI Service (XMLA)</option>
               <option>Power BI / Fabric semantic model</option>
             </select>
-          </div>
+          </div> */}
           <div className="target-row">
             <span>Workspace</span>
             <strong>
@@ -225,7 +226,7 @@ export default function PublishPage() {
           <h2>Publish summary</h2>
           <div className="summary-row"><span>Queries to deploy</span><strong>1 of 1</strong></div>
           <div className="summary-row"><span>Total tables</span><strong>{deployedTables}</strong></div>
-          <div className="summary-row"><span>Relationships</span><strong>0 inferred</strong></div>
+          {/* <div className="summary-row"><span>Relationships</span><strong>0 inferred</strong></div> */}
           <div className="summary-row">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
               <span>Validation & Reconciliation</span>
@@ -252,7 +253,7 @@ export default function PublishPage() {
                 <tr>
                   <th>Alteryx Tool</th>
                   <th>Power Query Mapping</th>
-                  <th>Status</th>
+                  {/* <th>Status</th> */}
                 </tr>
               </thead>
               <tbody>
@@ -260,11 +261,11 @@ export default function PublishPage() {
                   <tr key={`${step.node_id}-${step.tool}-${index}`}>
                     <td>{step.tool}</td>
                     <td>{step.m_function}</td>
-                    <td>
-                      <span className={`status-badge ${step.mapped ? "mapped" : "review"}`}>
-                        {step.mapped ? "Mapped" : "Manual review"}
-                      </span>
-                    </td>
+                    {/* <td> */}
+                      {/* <span className={`status-badge ${step.mapped ? "mapped" : "review"}`}> */}
+                        {/* {step.mapped ? "Mapped" : "Manual review"} */}
+                      {/* </span> */}
+                    {/* </td> */}
                   </tr>
                 ))}
               </tbody>
