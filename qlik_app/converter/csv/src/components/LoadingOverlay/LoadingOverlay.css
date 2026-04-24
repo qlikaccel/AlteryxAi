@@ -133,6 +133,7 @@
 .loading-message {
   font-size: 18px;
   font-weight: 600;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #2c3e50;
   margin: 0;
   letter-spacing: 0.3px;
@@ -169,6 +170,7 @@
 .timer-label {
   color: #2a9d8f;
   font-weight: 600;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .timer-value {
