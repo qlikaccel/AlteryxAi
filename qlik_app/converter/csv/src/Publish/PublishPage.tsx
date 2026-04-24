@@ -37,6 +37,17 @@
     const sharePointUrl = sessionStorage.getItem("alteryx_sharepoint_url") || "";
     const fileName = sessionStorage.getItem("alteryx_file_name") || datasetName;
     const workspaceName = sessionStorage.getItem("alteryx_workspace_name") || "Power BI workspace";
+    
+    // Retrieve conversion steps from sessionStorage
+    const conversionSteps = useMemo(() => {
+      const raw = sessionStorage.getItem("alteryx_conversion_steps");
+      if (!raw) return [];
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return [];
+      }
+    }, []);
 
     const [publishing, setPublishing] = useState(false);
     const [publishError, setPublishError] = useState("");
@@ -197,12 +208,12 @@
           <div>
             <div className="publish-title-row">
               <h1>Publish to Power BI / Fabric</h1>
-              <span>Step 5 of 6</span>
+              {/* <span>Step 5 of 6</span> */}
             </div>
             <p>{workflowName} · {publishResult?.success ? "Published" : "Ready to deploy"}</p>
           </div>
           <div className="publish-top-actions">
-            <button className="outline-btn" onClick={downloadBim} disabled={!mquery}>Download .bim</button>
+            {/* <button className="outline-btn" onClick={downloadBim} disabled={!mquery}>Download .bim</button> */}
             <button className="dark-btn" onClick={publishNow} disabled={!mquery || publishing}>
               {publishing ? "Publishing..." : "Publish now"}
             </button>
@@ -251,10 +262,10 @@
                 <button onClick={copyPublishUrl} disabled={!publishUrl}>{copyStatus || "Copy"}</button>
               </div>
             </div>
-            <div className="target-row">
+            {/* <div className="target-row">
               <span>Overwrite existing</span>
               <input className="checkbox-input" type="checkbox" checked readOnly />
-            </div>
+            </div> */}
           </section>
 
           <section className="wire-card publish-summary-card">
@@ -268,13 +279,13 @@
                 {validationWarningCount ? `${validationWarningCount} warning remain` : finalLayerStatus}
               </strong>
             </button>
-            <div className="summary-row"><span>Estimated raw rows</span><strong>{rawExpectedLabel}</strong></div>
-            <div className="summary-row"><span>Final output rows</span><strong>{actualPowerBiRows ?? (expectedRowCount || "Run validation")}</strong></div>
+            {/* <div className="summary-row"><span>Estimated raw rows</span><strong>{rawExpectedLabel}</strong></div> */}
+            {/* <div className="summary-row"><span>Final output rows</span><strong>{actualPowerBiRows ?? (expectedRowCount || "Run validation")}</strong></div> */}
             {reportStatus && <p className="report-status">{reportStatus}</p>}
           </section>
         </main>
 
-        <section className="wire-card layer-summary-card publish-layer-card">
+        {/* <section className="wire-card layer-summary-card publish-layer-card">
           <div className="layer-summary-header">
             <div>
               <span>Reconciliation Layers</span>
@@ -319,15 +330,47 @@
               <strong className={finalLayerStatus.toLowerCase()}>{finalLayerStatus}</strong>
             </div>
           </div>
-        </section>
+        </section> */}
 
-        <section className="wire-card mquery-snapshot">
+        {/* <section className="wire-card mquery-snapshot">
           <div>
             <h2>Deployment artifact</h2>
             <p>{lineCount} generated M Query line(s) from {fileName}</p>
           </div>
           <pre>{mquery || "No Power Query conversion plan was found. Return to Export and generate the plan again."}</pre>
-        </section>
+        </section> */}
+
+        {/* Tool Mapping Table */}
+        {conversionSteps.length > 0 && (
+          <section className="wire-card tool-mapping-card">
+            <h2>Alteryx Tool Mapping</h2>
+            <p>Tool conversion mapping from Alteryx workflow to Power Query</p>
+            <div className="mapping-table-wrap">
+              <table className="tool-mapping-table">
+                <thead>
+                  <tr>
+                    <th>Alteryx Tool</th>
+                    <th>Power Query Mapping</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {conversionSteps.slice(0, 14).map((step: any, index: number) => (
+                    <tr key={`${step.node_id}-${step.tool}-${index}`}>
+                      <td>{step.tool}</td>
+                      <td>{step.m_function}</td>
+                      <td>
+                        <span className={`status-badge ${step.mapped ? "mapped" : "review"}`}>
+                          {step.mapped ? "Mapped" : "Manual review"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
       </div>
     );
   }

@@ -504,7 +504,7 @@
 
 .apps-search {
   min-width: 270px;
-  padding: 14px 14px;
+  padding: 8px 14px;
   border: 1px solid #d1d5db;
   border-radius: 15px;
   outline: none;
@@ -708,7 +708,7 @@
   min-width: 0;
   max-width: min(420px, 42vw);
   margin-left: 0;
-  padding: 14px 12px;
+  padding: 8px 12px;
   font-size: 14px;
   font-weight: 600;
   flex: 0 1 auto;
