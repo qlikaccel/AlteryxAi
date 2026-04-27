@@ -1,6 +1,6 @@
 import "./PublishPage.css";
 import { useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { downloadValidationReportPdf, validatePowerBiMigration } from "../api/alteryxApi";
 
 const safeFileName = (value: string) =>
@@ -8,7 +8,6 @@ const safeFileName = (value: string) =>
 
 export default function PublishPage() {
   const location = useLocation();
-  const navigate = useNavigate();
   const workflowName =
     (location.state as any)?.workflowName ||
     sessionStorage.getItem("alteryx_workflow_name") ||
