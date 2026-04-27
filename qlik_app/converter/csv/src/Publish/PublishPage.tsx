@@ -65,8 +65,6 @@ export default function PublishPage() {
     { label: "Tool mapping", complete: true },
     { label: "M Query gen", complete: true },
     { label: "Publish", complete: true },
-    { label: "Validate", complete: true },
-    
   ];
 
   const openPowerBi = () => {
