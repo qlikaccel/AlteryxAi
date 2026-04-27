@@ -43,5 +43,4 @@ Thumbs.db
 qlik_app/qlik/qlik-fastapi-backend/.env
 *.env
 .powerbi_token_cache.json
-qlik_app/qlik/qlik-fastapi-backend/app/token_storage.json
 .env.example

@@ -11,8 +11,223 @@
     "sourceQueryCulture": "en-US",
     "tables": [
       {
+        "name": "sales_data_1M_raw",
+        "columns": [
+          {
+            "name": "CustomerID",
+            "dataType": "string",
+            "sourceColumn": "CustomerID",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "CustomerName",
+            "dataType": "string",
+            "sourceColumn": "CustomerName",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Region",
+            "dataType": "string",
+            "sourceColumn": "Region",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "City",
+            "dataType": "string",
+            "sourceColumn": "City",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "ProductCategory",
+            "dataType": "string",
+            "sourceColumn": "ProductCategory",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "ProductName",
+            "dataType": "string",
+            "sourceColumn": "ProductName",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Quantity",
+            "dataType": "string",
+            "sourceColumn": "Quantity",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "UnitPrice",
+            "dataType": "string",
+            "sourceColumn": "UnitPrice",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "SalesAmount",
+            "dataType": "string",
+            "sourceColumn": "SalesAmount",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Discount",
+            "dataType": "string",
+            "sourceColumn": "Discount",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "OrderDate",
+            "dataType": "string",
+            "sourceColumn": "OrderDate",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Status",
+            "dataType": "string",
+            "sourceColumn": "Status",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "PaymentMethod",
+            "dataType": "string",
+            "sourceColumn": "PaymentMethod",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "sales_data_1M_raw-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    __Base = (let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_data_1M.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_data_1M.csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, {{\"CustomerID\", type text}, {\"CustomerName\", type text}, {\"Region\", type text}, {\"City\", type text}, {\"ProductCategory\", type text}, {\"ProductName\", type text}, {\"Quantity\", type text}, {\"UnitPrice\", type text}, {\"SalesAmount\", type text}, {\"Discount\", type text}, {\"OrderDate\", type text}, {\"Status\", type text}, {\"PaymentMethod\", type text}})",
+                "in",
+                "    ChangedTypes),",
+                "    __ExpectedColumns = {\"CustomerID\", \"CustomerName\", \"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"},",
+                "    __WithRequiredColumns = List.Accumulate(",
+                "        List.Difference(__ExpectedColumns, Table.ColumnNames(__Base)),",
+                "        __Base,",
+                "        (state, col) => Table.AddColumn(state, col, each null, type any)",
+                "    ),",
+                "    __ProjectedColumns = Table.SelectColumns(__WithRequiredColumns, __ExpectedColumns, MissingField.UseNull)",
+                "in",
+                "    __ProjectedColumns"
+              ]
+            }
+          }
+        ]
+      },
+      {
         "name": "Sales_data_1M",
         "columns": [
+          {
+            "name": "CustomerID",
+            "dataType": "string",
+            "sourceColumn": "CustomerID",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "CustomerName",
+            "dataType": "string",
+            "sourceColumn": "CustomerName",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
           {
             "name": "Region",
             "dataType": "string",
@@ -160,13 +375,13 @@
                 "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_data_1M.csv\" else MatchingFiles{0}[Content],",
                 "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
                 "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
-                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text})),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, {{\"CustomerID\", type text}, {\"CustomerName\", type text}, {\"Region\", type text}, {\"City\", type text}, {\"ProductCategory\", type text}, {\"ProductName\", type text}, {\"Quantity\", type text}, {\"UnitPrice\", type text}, {\"SalesAmount\", type text}, {\"Discount\", type text}, {\"OrderDate\", type text}, {\"Status\", type text}, {\"PaymentMethod\", type text}}),",
                 "    Checkpoint_1 = ChangedTypes,",
                 "    SelectedFields_2 = let cols = Table.ColumnNames(Checkpoint_1), ops = {{\"CustomerID\", type text}, {\"CustomerName\", type text}, {\"Region\", type text}, {\"City\", type text}, {\"ProductCategory\", type text}, {\"ProductName\", type text}, {\"Quantity\", type text}, {\"UnitPrice\", type text}, {\"SalesAmount\", type text}, {\"Discount\", type text}, {\"OrderDate\", type text}, {\"Status\", type text}, {\"PaymentMethod\", type text}}, TypedColumns = Table.TransformColumnTypes(Checkpoint_1, List.Select(ops, each List.Contains(cols, _{0}))) in Table.SelectColumns(TypedColumns, {\"CustomerID\", \"CustomerName\", \"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"}, MissingField.UseNull),",
                 "    Checkpoint_3 = SelectedFields_2",
                 "in",
                 "    Checkpoint_3),",
-                "    __ExpectedColumns = {\"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"},",
+                "    __ExpectedColumns = {\"CustomerID\", \"CustomerName\", \"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"},",
                 "    __WithRequiredColumns = List.Accumulate(",
                 "        List.Difference(__ExpectedColumns, Table.ColumnNames(__Base)),",
                 "        __Base,",
@@ -181,7 +396,18 @@
         ]
       }
     ],
-    "relationships": [],
+    "relationships": [
+      {
+        "name": "Sales_data_1M_CustomerID_sales_data_1M_raw_CustomerID",
+        "fromTable": "Sales_data_1M",
+        "fromColumn": "CustomerID",
+        "toTable": "sales_data_1M_raw",
+        "toColumn": "CustomerID",
+        "crossFilteringBehavior": "oneDirection",
+        "fromCardinality": "many",
+        "toCardinality": "one"
+      }
+    ],
     "expressions": [
       {
         "name": "DataSourcePath",

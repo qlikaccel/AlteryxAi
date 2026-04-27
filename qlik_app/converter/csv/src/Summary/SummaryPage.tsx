@@ -1502,22 +1502,22 @@ export default function SummaryPage() {
 
   // ─── Derived values ─────────────────────────────────────────────────────────
 
-  const assessment = useMemo(() => {
-    const totalTools = workflow?.toolCount ?? 0;
-    const unsupportedTools = workflow?.unsupportedToolCount ?? 0;
-    const supportedTools = workflow?.supportedToolCount ?? Math.max(totalTools - unsupportedTools, 0);
-    const automationScore = safePercent(supportedTools, totalTools);
-    return { totalTools, supportedTools, unsupportedTools, automationScore };
-  }, [workflow]);
+  // const assessment = useMemo(() => {
+  //   const totalTools = workflow?.toolCount ?? 0;
+  //   const unsupportedTools = workflow?.unsupportedToolCount ?? 0;
+  //   const supportedTools = workflow?.supportedToolCount ?? Math.max(totalTools - unsupportedTools, 0);
+  //   const automationScore = safePercent(supportedTools, totalTools);
+  //   return { totalTools, supportedTools, unsupportedTools, automationScore };
+  // }, [workflow]);
 
   const pieSlices = useMemo(() => buildPieSlices(workflow), [workflow]);
-  const conversionSteps = analysis?.mquery?.conversion_steps || [];
+  // const conversionSteps = analysis?.mquery?.conversion_steps || [];
   const generation = analysis?.mquery || {};
   const generationMethod = generation.generation_method || "rule_based";
-  const generationLabel = generation.generation_label || "Rule-based mapping";
-  const generationReason = generation.routing_reason || "Low-complexity workflow with supported deterministic tool mappings.";
-  const generationIndicators = generation.complexity_indicators || [];
-  const generationStatus = generation.llm_status || "not_required";
+  // const generationLabel = generation.generation_label || "Rule-based mapping";
+  // const generationReason = generation.routing_reason || "Low-complexity workflow with supported deterministic tool mappings.";
+  // const generationIndicators = generation.complexity_indicators || [];
+  // const generationStatus = generation.llm_status || "not_required";
   const canConvertAndPublish = Boolean(batchId && analysis?.mquery?.combined_mquery);
   const mqueryPreview = analysis?.mquery?.combined_mquery || sessionStorage.getItem("migration_mquery") || "";
   const datasetName = analysis?.mquery?.dataset_name || workflow?.name || "AlteryxDataset";
@@ -1951,7 +1951,7 @@ navigate("/publish", {
               ))}
             </ul>
           </div>
-          <div className="metric-grid alteryx-metrics">
+          {/* <div className="metric-grid alteryx-metrics">
             <div className="metric-card"><span>Total Tools</span>    <strong>{assessment.totalTools}</strong></div>
             <div className="metric-card"><span>Supported Tools</span><strong>{assessment.supportedTools}</strong></div>
             <div className="metric-card"><span>Needs Review</span>   <strong>{assessment.unsupportedTools}</strong></div>
@@ -2002,7 +2002,7 @@ navigate("/publish", {
                 </tbody>
               </table>
             </div>
-          )}
+          )} */}
         </section>
       )}
 
