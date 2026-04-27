@@ -963,8 +963,55 @@ def _is_file_input_source(source: dict[str, Any]) -> bool:
     return any(ext in combined for ext in (".csv", ".xlsx", ".xls", ".json"))
 
 
+def _input_fields_by_file_name(workflow: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    fields_by_file: dict[str, list[dict[str, str]]] = {}
+    type_tokens = {"string", "v_wstring", "int64", "integer", "double", "fixeddecimal", "date", "datetime", "bool", "boolean"}
+    stop_tokens = {"output", "false", "true", "list_connections"}
+    file_pattern = re.compile(r'[^\\/\n]+\.(?:csv|xlsx|xls|json)\b', re.IGNORECASE)
+
+    for node in workflow.get("workflowNodes") or []:
+        if "input" not in str(node.get("plugin") or "").lower():
+            continue
+        lines = [line.strip() for line in str(node.get("configurationText") or "").splitlines() if line.strip()]
+        if not lines:
+            continue
+
+        file_name = ""
+        for line in lines:
+            matches = file_pattern.findall(line)
+            if matches:
+                file_name = matches[-1].replace("\\", "/").split("/")[-1]
+                break
+        if not file_name:
+            continue
+
+        fields: list[dict[str, str]] = []
+        seen: set[str] = set()
+        index = 1 if lines and lines[0] == str(node.get("id") or "") else 0
+        while index < len(lines):
+            name = lines[index].strip()
+            if file_pattern.search(name) or name.lower() in stop_tokens:
+                break
+            if index + 2 < len(lines):
+                raw_type = lines[index + 1].strip()
+                friendly_type = lines[index + 2].strip()
+                if raw_type.lower() in type_tokens or friendly_type.lower() in type_tokens:
+                    if name and name.lower() not in seen:
+                        seen.add(name.lower())
+                        fields.append({"name": name, "type": friendly_type or raw_type or "String"})
+                    index += 3
+                    continue
+            index += 1
+
+        if fields:
+            fields_by_file[file_name.lower()] = fields
+
+    return fields_by_file
+
+
 def _workflow_file_sources(workflow: dict[str, Any]) -> list[dict[str, Any]]:
     by_file_name: dict[str, dict[str, Any]] = {}
+    fields_by_file_name = _input_fields_by_file_name(workflow)
     for source in workflow.get("dataSources") or []:
         if not isinstance(source, dict) or not _is_file_input_source(source):
             continue
@@ -985,6 +1032,8 @@ def _workflow_file_sources(workflow: dict[str, Any]) -> list[dict[str, Any]]:
         item["name"] = name
         item["path"] = path
         item["siteUrl"] = sharepoint_site(str(item.get("siteUrl") or path))
+        if not item.get("fields") and fields_by_file_name.get(name.lower()):
+            item["fields"] = fields_by_file_name[name.lower()]
 
         key = name.lower()
         existing = by_file_name.get(key)
