@@ -1064,7 +1064,7 @@ const DEFAULT_FILE_NAME = sessionStorage.getItem("alteryx_file_name") || "";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type SummaryTab = "sourceTypes" | "summary" | "brd" | "diagram";
-type SourceType = "database" | "scripts" | "csv";
+type SourceType = "database" | "scripts";
 
 // ─── Tab Config ───────────────────────────────────────────────────────────────
 
@@ -1272,7 +1272,7 @@ function WorkflowGraph({
       <div className="workflow-empty-state">
         <strong>Workflow graph is not available yet.</strong>
         <span>
-          Upload the exported .yxmd/.yxzp package so the accelerator can parse
+          Upload the .yxmd/.yxzp package so the accelerator can parse
           tool nodes and draw the lineage diagram.
         </span>
       </div>
@@ -1431,13 +1431,13 @@ export default function SummaryPage() {
             materializeError
               ? `The app attempted to download the full workflow package/XML but Alteryx Cloud did not return a parseable artifact: ${materializeError}`
               : "Full tool-level parsing requires the workflow XML/package content, which the current Cloud API response does not include.",
-            "Use Bulk Upload with the .yxmd/.yxzp export to convert and publish this workflow until a full workflow download endpoint is wired.",
+            "Use Bulk Upload with the .yxmd/.yxzp package to convert and publish this workflow until a full workflow download endpoint is wired.",
           ],
         },
         mquery: null,
         diagram: {
           mermaid:
-            "graph LR\n  Cloud[Alteryx Cloud workflow metadata] --> Export[Export .yxmd/.yxzp]\n  Export --> Convert[Parse and convert]\n  Convert --> PowerBI[Publish to Power BI]",
+            "graph LR\n  Cloud[Alteryx Cloud workflow metadata] --> Package[.yxmd/.yxzp package]\n  Package --> Convert[Parse and convert]\n  Convert --> PowerBI[Publish to Power BI]",
         },
       });
       sessionStorage.removeItem("migration_mquery");
@@ -1518,7 +1518,6 @@ export default function SummaryPage() {
   // const generationReason = generation.routing_reason || "Low-complexity workflow with supported deterministic tool mappings.";
   // const generationIndicators = generation.complexity_indicators || [];
   // const generationStatus = generation.llm_status || "not_required";
-  const canConvertAndPublish = Boolean(batchId && analysis?.mquery?.combined_mquery);
   const mqueryPreview = analysis?.mquery?.combined_mquery || sessionStorage.getItem("migration_mquery") || "";
   const datasetName = analysis?.mquery?.dataset_name || workflow?.name || "AlteryxDataset";
   const sourceDetails = workflow?.dataSources || [];
@@ -1542,18 +1541,6 @@ export default function SummaryPage() {
     } finally {
       setBrdLoading(false);
     }
-  };
-
-  const continueToExport = () => {
-    if (!canConvertAndPublish) {
-      setError(
-        "This Cloud API workflow contains metadata only. Please use Bulk Upload with the exported .yxmd/.yxzp file to parse, convert, and publish it."
-      );
-      return;
-    }
-    sessionStorage.setItem("summaryComplete", "true");
-    sessionStorage.setItem("summaryActiveTab", "mquery");
-    navigate("/export");
   };
 
   const openSourceMQuery = () => {
@@ -1772,7 +1759,7 @@ navigate("/publish", {
             <div className="cloud-next-step">
               <strong>Migration-ready next step</strong>
               <span>
-                Export this workflow from Alteryx as .yxmd/.yxzp and use Bulk Upload.
+                Download this workflow from Alteryx as .yxmd/.yxzp and use Bulk Upload.
                 That path provides the XML needed for Scripts, Summary, BRD, validation,
                 and Power BI publishing.
               </span>
@@ -1845,46 +1832,6 @@ navigate("/publish", {
                       }}
                     >
                       Open M Query
-                    </button>
-                  )}
-                </article>
-
-                {/* Export CSV Card */}
-                <article
-                  className={`source-type-card csv ${selectedSource === "csv" ? "selected" : ""}`}
-                  onClick={() => {
-                    setSelectedSource("csv");
-                    setShowSourceMQuery(false);
-                  }}
-                  // style={{ cursor: "pointer" }}
-                  style={{ cursor: "not-allowed", opacity: 0.45, pointerEvents: "none" }}
-                >
-                  <div className="source-card-head">
-                    <span className={`source-radio ${selectedSource === "csv" ? "selected" : ""}`} />
-                    <span className="source-icon csv-icon">📦</span>
-                    <div>
-                      <h3>Export CSV</h3>
-                      <p>Data export via REST API</p>
-                    </div>
-                  </div>
-                  <p className="source-card-desc">
-                    Export all table data as CSV and push to Power BI as a push dataset
-                    via REST API. Works on any Power BI license. Ideal for flat tables
-                    without complex transformations.
-                  </p>
-                  <div className="source-tags csv-tags">
-                    <span>ANY LICENSE</span>
-                    <span>REST API</span>
-                    <span>FAST DEPLOY</span>
-                  </div>
-                  {selectedSource === "csv" && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        continueToExport();
-                      }}
-                    >
-                      Go to Export
                     </button>
                   )}
                 </article>
@@ -2022,7 +1969,7 @@ navigate("/publish", {
               <div className="cloud-next-step">
                 <strong>Use Bulk Upload for BRD</strong>
                 <span>
-                  Upload the exported .yxmd/.yxzp file for this workflow, then this tab
+                  Upload the .yxmd/.yxzp file for this workflow, then this tab
                   will generate the full workflow-specific BRD.
                 </span>
               </div>
