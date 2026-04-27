@@ -1092,7 +1092,10 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
 
             # Enrich fields from M expressions
             try:
-                from powerbi_publisher import _extract_fields_from_m
+                from app.services.powerbi_publisher import (
+                    _extract_fields_from_m,
+                    _infer_alteryx_csv_fields,
+                )
                 for t in tables_m:
                     if not t.get("fields") or len(t["fields"]) == 0:
                         extracted_fields = _extract_fields_from_m(t.get("m_expression", ""))
@@ -1100,6 +1103,17 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
                             t["fields"] = extracted_fields
                             logger.info("[publish_mquery] Extracted %d fields from '%s' M expression", 
                                        len(extracted_fields), t["name"])
+                        elif str(t.get("name", "")).lower().endswith("_raw"):
+                            inferred_fields = _infer_alteryx_csv_fields(
+                                t.get("name", ""),
+                                t.get("m_expression", ""),
+                            )
+                            if inferred_fields:
+                                t["fields"] = inferred_fields
+                                logger.info(
+                                    "[publish_mquery] Inferred %d fields for '%s' from Alteryx CSV source name",
+                                    len(inferred_fields), t["name"],
+                                )
             except Exception as extract_exc:
                 logger.warning("[publish_mquery] Field extraction failed: %s", extract_exc)
 
