@@ -128,10 +128,10 @@ export default function PublishPage() {
       <header className="publish-topbar">
         <div>
           <div className="publish-title-row">
-            <h1>Publish to Power BI / Fabric</h1>
+            {/* <h1>Publish to Power BI / Fabric</h1> */}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-            <p style={{ margin: 0, fontSize: "14px", color: "#475569" }}>
+            <p style={{ margin: 0, fontSize: "1.22rem", fontWeight: 700, color: "#080e17" }}>
               {workflowName} - Published
             </p>
             <span style={{
@@ -276,3 +276,8 @@ export default function PublishPage() {
     </div>
   );
 }
+
+
+
+
+
