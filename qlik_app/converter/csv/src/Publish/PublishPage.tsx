@@ -1,7 +1,7 @@
 import "./PublishPage.css";
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { downloadValidationReportPdf } from "../api/alteryxApi";
+import { downloadValidationReportPdf, validatePowerBiMigration } from "../api/alteryxApi";
 
 const safeFileName = (value: string) =>
   (value || "alteryx_workflow").replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "");
@@ -83,9 +83,37 @@ export default function PublishPage() {
   const downloadValidationReport = async () => {
     setReportStatus("Preparing report...");
     try {
-      const powerBiRows = validationResult?.actual?.RowCount ?? 0;
-      const expectedRows = validationResult?.expected?.RowCount ?? powerBiRows;
-      const columnCount = validationResult?.available_columns?.length || 5;
+      // Try to get validation data from sessionStorage first
+      let validationData = validationResult;
+      
+      // If no validation data and we have a dataset_id, try to fetch it
+      if (!validationData && publishResult?.dataset_id) {
+        try {
+          setReportStatus("Fetching validation data from Power BI...");
+          const validation = await validatePowerBiMigration({
+            dataset_id: publishResult.dataset_id,
+            table_name: validationResult?.table_name || validationTableName,
+          });
+          validationData = validation;
+        } catch (err: any) {
+          console.warn("Could not fetch validation data:", err);
+          setReportStatus("Note: Using stored data (validation pending)");
+        }
+      }
+      
+      // Extract row count data with fallbacks
+      const powerBiRows = validationData?.actual?.RowCount ?? 
+                         publishResult?.actual_row_count ?? 
+                         (Number(sessionStorage.getItem("migration_row_count")) || 0);
+      
+      const rowCountCheck = validationData?.checks?.find((c: any) => c.name === "Row count");
+      const expectedRows = rowCountCheck?.expected ?? 
+                          publishResult?.expected_row_count ??
+                          (Number(sessionStorage.getItem("migration_row_count")) || powerBiRows);
+      
+      const columnCount = validationData?.available_columns?.length || 
+                         publishResult?.available_columns?.length ||
+                         5;
 
       const pdfBlob = await downloadValidationReportPdf({
         table_name: validationResult?.table_name || validationTableName,
@@ -96,7 +124,7 @@ export default function PublishPage() {
         qlik_metrics: {
           row_count: expectedRows,
           total_records: expectedRows,
-          table_count: 1,
+          table_count: deployedTables,
           column_count: columnCount,
           certification_status: "Pass",
         },
@@ -172,7 +200,7 @@ export default function PublishPage() {
         </div>
         <div className="publish-top-actions">
           <button className="dark-btn" onClick={openPowerBi}>
-            Open Power BI
+            Open In Power BI
           </button>
         </div>
       </header>
