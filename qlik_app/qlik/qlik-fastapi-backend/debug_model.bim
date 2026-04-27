@@ -1,5 +1,5 @@
 {
-  "name": "Tourisom_data",
+  "name": "Sales_data_1M",
   "compatibilityLevel": 1550,
   "model": {
     "culture": "en-US",
@@ -11,51 +11,170 @@
     "sourceQueryCulture": "en-US",
     "tables": [
       {
-        "name": "dim_client_raw",
-        "columns": [],
-        "partitions": [
+        "name": "Sales_data_1M",
+        "columns": [
           {
-            "name": "dim_client_raw-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
-                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"dim_client.csv\"),",
-                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: dim_client.csv\" else MatchingFiles{0}[Content],",
-                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
-                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
-                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text}))",
-                "in",
-                "    ChangedTypes"
-              ]
-            }
+            "name": "Region",
+            "dataType": "string",
+            "sourceColumn": "Region",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "City",
+            "dataType": "string",
+            "sourceColumn": "City",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "ProductCategory",
+            "dataType": "string",
+            "sourceColumn": "ProductCategory",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "ProductName",
+            "dataType": "string",
+            "sourceColumn": "ProductName",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Quantity",
+            "dataType": "string",
+            "sourceColumn": "Quantity",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "UnitPrice",
+            "dataType": "string",
+            "sourceColumn": "UnitPrice",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "SalesAmount",
+            "dataType": "string",
+            "sourceColumn": "SalesAmount",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Discount",
+            "dataType": "string",
+            "sourceColumn": "Discount",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "OrderDate",
+            "dataType": "string",
+            "sourceColumn": "OrderDate",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Status",
+            "dataType": "string",
+            "sourceColumn": "Status",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "PaymentMethod",
+            "dataType": "string",
+            "sourceColumn": "PaymentMethod",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
           }
-        ]
-      },
-      {
-        "name": "Tourisom_data",
-        "columns": [],
+        ],
         "partitions": [
           {
-            "name": "Tourisom_data-Partition",
+            "name": "Sales_data_1M-Partition",
             "mode": "import",
             "source": {
               "type": "m",
               "expression": [
                 "let",
+                "    __Base = (let",
                 "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
-                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"dim_client.csv\"),",
-                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: dim_client.csv\" else MatchingFiles{0}[Content],",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_data_1M.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_data_1M.csv\" else MatchingFiles{0}[Content],",
                 "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
                 "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
                 "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text})),",
                 "    Checkpoint_1 = ChangedTypes,",
-                "    CleanedText_2 = Table.TransformColumns(Checkpoint_1, List.Transform(Table.ColumnNames(Checkpoint_1), each {_, each if _ is text then Text.Clean(Text.Trim(_)) else _, type any})),",
-                "    Checkpoint_3 = CleanedText_2",
+                "    SelectedFields_2 = let cols = Table.ColumnNames(Checkpoint_1), ops = {{\"CustomerID\", type text}, {\"CustomerName\", type text}, {\"Region\", type text}, {\"City\", type text}, {\"ProductCategory\", type text}, {\"ProductName\", type text}, {\"Quantity\", type text}, {\"UnitPrice\", type text}, {\"SalesAmount\", type text}, {\"Discount\", type text}, {\"OrderDate\", type text}, {\"Status\", type text}, {\"PaymentMethod\", type text}}, TypedColumns = Table.TransformColumnTypes(Checkpoint_1, List.Select(ops, each List.Contains(cols, _{0}))) in Table.SelectColumns(TypedColumns, {\"CustomerID\", \"CustomerName\", \"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"}, MissingField.UseNull),",
+                "    Checkpoint_3 = SelectedFields_2",
                 "in",
-                "    Checkpoint_3"
+                "    Checkpoint_3),",
+                "    __ExpectedColumns = {\"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"},",
+                "    __WithRequiredColumns = List.Accumulate(",
+                "        List.Difference(__ExpectedColumns, Table.ColumnNames(__Base)),",
+                "        __Base,",
+                "        (state, col) => Table.AddColumn(state, col, each null, type any)",
+                "    ),",
+                "    __ProjectedColumns = Table.SelectColumns(__WithRequiredColumns, __ExpectedColumns, MissingField.UseNull)",
+                "in",
+                "    __ProjectedColumns"
               ]
             }
           }
@@ -68,7 +187,7 @@
         "name": "DataSourcePath",
         "kind": "m",
         "expression": [
-          "\"s://sorim-alteryx-trial-2hcg/178337/uploads/d771022b-7439-4438-bf65-32cc86239d64/dim_client.csv\""
+          "\"s://sorim-alteryx-trial-2hcg/178337/uploads/41f5e5fd-9005-49c1-98ed-91362742cda9/sales_data_1M.csv\""
         ],
         "annotations": [
           {
