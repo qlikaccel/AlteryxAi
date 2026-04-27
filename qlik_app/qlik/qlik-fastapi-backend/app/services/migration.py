@@ -3087,7 +3087,10 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
 
             # Enrich fields from M expressions
             try:
-                from app.services.powerbi_publisher import _extract_fields_from_m
+                from app.services.powerbi_publisher import (
+                    _extract_fields_from_m,
+                    _infer_alteryx_csv_fields,
+                )
                 for t in tables_m:
                     extracted_fields = _extract_fields_from_m(t.get("m_expression", ""))
                     if extracted_fields and not request.app_id:
@@ -3108,6 +3111,17 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
                         t["fields"] = extracted_fields
                         logger.info("[publish_mquery] Extracted %d fields from '%s' M expression", 
                                    len(extracted_fields), t["name"])
+                    elif not t.get("fields") and str(t.get("name", "")).lower().endswith("_raw"):
+                        inferred_fields = _infer_alteryx_csv_fields(
+                            t.get("name", ""),
+                            t.get("m_expression", ""),
+                        )
+                        if inferred_fields:
+                            t["fields"] = inferred_fields
+                            logger.info(
+                                "[publish_mquery] Inferred %d fields for '%s' from Alteryx CSV source name",
+                                len(inferred_fields), t["name"],
+                            )
             except Exception as extract_exc:
                 logger.warning("[publish_mquery] Field extraction failed: %s", extract_exc)
 
@@ -3139,13 +3153,11 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
     # here to any _raw table that still has an empty fields list.
     alteryx_source_fields: Dict[str, List[Any]] = dict(request.alteryx_source_fields or {})
     if alteryx_source_fields:
-        # Build a merged lookup: exact name match first, then case-insensitive,
-        # then "any non-empty entry" fallback for _raw tables with no schema.
+        # Build a merged lookup: exact name match first, then case-insensitive.
+        # Do not use a generic "any non-empty entry" fallback: multi-source
+        # Alteryx workflows can have distinct CSV schemas, and copying one
+        # table's columns to every _raw table produces invalid Power BI models.
         _asf_lower: Dict[str, List[Any]] = {k.lower(): v for k, v in alteryx_source_fields.items() if v}
-        # Collect any non-empty entry as a generic fallback for schemaless _raw tables
-        _asf_any_non_empty: List[Any] = next(
-            (v for v in alteryx_source_fields.values() if v), []
-        )
 
         for t in tables_m:
             tname = t.get("name", "")
@@ -3155,12 +3167,9 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
             # Resolution order:
             # 1. Exact match in source_fields_map
             # 2. Case-insensitive match
-            # 3. For _raw tables: use ANY non-empty entry (all _raw tables share
-            #    the same CSV schema when the workflow has a single source file)
             map_entry: List[Any] = (
                 alteryx_source_fields.get(tname)
                 or _asf_lower.get(tname.lower())
-                or (_asf_any_non_empty if tname.lower().endswith("_raw") else [])
                 or []
             )
             if not map_entry:

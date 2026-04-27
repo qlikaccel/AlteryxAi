@@ -1473,50 +1473,11 @@ def convert_workflow_to_m(
     # pipeline can inject static column lists into the BIM even when the CSV
     # files carry no schema in the Alteryx workflow JSON (fields_count == 0).
     #
-    # When source.fields is empty, we mine the workflow graph (Select, Summarize,
-    # Formula nodes) to collect column names that flow through the workflow.
-    # This ensures Power BI receives real column definitions instead of empty tables.
+    # Only per-source fields are safe here. A multi-input workflow can combine
+    # sales, customers, and products files with different schemas; workflow-level
+    # inferred columns belong to downstream transforms and must not be copied to
+    # every raw source table.
     source_fields_map: dict[str, list[dict[str, Any]]] = {}
-
-    def _mine_workflow_columns(wf: dict[str, Any]) -> list[dict[str, str]]:
-        """
-        Walk Select, Summarize, Formula nodes and collect every named column
-        referenced in the workflow graph.  Used as fallback field schema when
-        the Alteryx dataSources entry has no fields list.
-        """
-        seen: dict[str, str] = {}  # col_name_lower -> canonical {name, type}
-        for node in (wf.get("workflowNodes") or []):
-            cfg = node.get("config") if isinstance(node.get("config"), dict) else {}
-            # Select tool: selectedFields list
-            for item in (cfg.get("selectedFields") or []):
-                if not isinstance(item, dict):
-                    continue
-                col = str(item.get("name") or "").strip()
-                typ = str(item.get("type") or "string").strip()
-                if col and col.lower() not in seen:
-                    seen[col.lower()] = col
-            # Summarize: groupBy + aggregations
-            for col in (cfg.get("groupBy") or []):
-                col = str(col).strip()
-                if col and col.lower() not in seen:
-                    seen[col.lower()] = col
-            for agg in (cfg.get("aggregations") or []):
-                if not isinstance(agg, dict):
-                    continue
-                col = str(agg.get("field") or agg.get("rename") or "").strip()
-                if col and col.lower() not in seen:
-                    seen[col.lower()] = col
-            # Formula tool
-            for formula in (cfg.get("formulas") or []):
-                if not isinstance(formula, dict):
-                    continue
-                col = str(formula.get("field") or "").strip()
-                if col and col.lower() not in seen:
-                    seen[col.lower()] = col
-        return [{"name": v, "type": "string"} for v in seen.values()] if seen else []
-
-    # Pre-compute inferred columns from workflow graph (used as fallback)
-    _inferred_columns = _mine_workflow_columns(workflow)
 
     for rq in raw_source_queries:
         rq_name = rq.get("name", "")
@@ -1526,9 +1487,6 @@ def convert_workflow_to_m(
             for f in (rq_source.get("fields") or [])
             if isinstance(f, dict) and str(f.get("name") or "").strip()
         ]
-        # Fallback: if no schema in source, use workflow-inferred columns
-        if not rq_fields and _inferred_columns:
-            rq_fields = _inferred_columns
         if rq_name:
             source_fields_map[rq_name] = rq_fields
 

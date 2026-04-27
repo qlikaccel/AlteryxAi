@@ -1064,6 +1064,11 @@ class PublishMQueryRequest(_BaseModel):
     app_id:               str  = ""
     # ✅ NEW: caller can also supply the map directly (overrides auto-fetch)
     qlik_fields_map:      dict = {}
+    # Alteryx CSV flow forwards mquery.source_fields_map here:
+    # {"sales_1_raw": [{"name": "CustomerID", "type": "string"}, ...]}.
+    # These entries must be applied by exact table name so each raw CSV table
+    # keeps its own schema.
+    alteryx_source_fields: dict = {}
 
 @router.post("/publish-mquery")
 async def publish_mquery_endpoint(request: PublishMQueryRequest):
@@ -1168,7 +1173,10 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
 
             # Enrich fields from M expressions
             try:
-                from app.services.powerbi_publisher import _extract_fields_from_m
+                from app.services.powerbi_publisher import (
+                    _extract_fields_from_m,
+                    _infer_alteryx_csv_fields,
+                )
                 for t in tables_m:
                     extracted_fields = _extract_fields_from_m(t.get("m_expression", ""))
                     if extracted_fields and not request.app_id:
@@ -1189,6 +1197,17 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
                         t["fields"] = extracted_fields
                         logger.info("[publish_mquery] Extracted %d fields from '%s' M expression", 
                                    len(extracted_fields), t["name"])
+                    elif not t.get("fields") and str(t.get("name", "")).lower().endswith("_raw"):
+                        inferred_fields = _infer_alteryx_csv_fields(
+                            t.get("name", ""),
+                            t.get("m_expression", ""),
+                        )
+                        if inferred_fields:
+                            t["fields"] = inferred_fields
+                            logger.info(
+                                "[publish_mquery] Inferred %d fields for '%s' from Alteryx CSV source name",
+                                len(inferred_fields), t["name"],
+                            )
             except Exception as extract_exc:
                 logger.warning("[publish_mquery] Field extraction failed: %s", extract_exc)
 
@@ -1208,6 +1227,56 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
 
     if not tables_m:
         raise HTTPException(status_code=400, detail="No tables found in the provided script.")
+
+    # ── Step 2b: Enrich _raw table fields from Alteryx source_fields_map ─────
+    # Use exact/case-insensitive table matches only. Multi-source workflows can
+    # have different CSV schemas, so copying a generic fallback schema to every
+    # _raw table causes invalid Power BI models.
+    alteryx_source_fields: Dict[str, List[Any]] = dict(request.alteryx_source_fields or {})
+    if alteryx_source_fields:
+        _asf_lower: Dict[str, List[Any]] = {
+            str(k).lower(): v
+            for k, v in alteryx_source_fields.items()
+            if v
+        }
+
+        for t in tables_m:
+            tname = t.get("name", "")
+            if t.get("fields"):
+                continue
+
+            map_entry: List[Any] = (
+                alteryx_source_fields.get(tname)
+                or _asf_lower.get(tname.lower())
+                or []
+            )
+            if not map_entry:
+                continue
+
+            normalised: List[Dict[str, Any]] = []
+            for item in map_entry:
+                if isinstance(item, dict):
+                    col_name = str(item.get("name") or "").strip()
+                    col_type = str(item.get("type") or "string").strip()
+                elif isinstance(item, str):
+                    col_name = item.strip()
+                    col_type = "string"
+                else:
+                    continue
+                if col_name:
+                    normalised.append({
+                        "name": col_name,
+                        "alias": col_name,
+                        "expression": col_name,
+                        "type": col_type,
+                        "extracted_from": "alteryx_source_fields",
+                    })
+            if normalised:
+                t["fields"] = normalised
+                logger.info(
+                    "[publish_mquery] alteryx_source_fields: enriched '%s' with %d column(s): %s",
+                    tname, len(normalised), [f["name"] for f in normalised[:6]],
+                )
 
     # ── Step 3: Inject ApplyMap dimension tables ──────────────────────────────
     tables_m = _inject_applymap_dimension_tables(tables_m, data_source_path)

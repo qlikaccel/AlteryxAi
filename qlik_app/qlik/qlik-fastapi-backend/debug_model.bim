@@ -1,5 +1,5 @@
 {
-  "name": "Complex_Workflow",
+  "name": "Tourisom_data",
   "compatibilityLevel": 1550,
   "model": {
     "culture": "en-US",
@@ -11,44 +11,19 @@
     "sourceQueryCulture": "en-US",
     "tables": [
       {
-        "name": "sales_1_raw",
-        "columns": [
-          {
-            "name": "Region",
-            "dataType": "string",
-            "sourceColumn": "Region",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "Total_Sales",
-            "dataType": "string",
-            "sourceColumn": "Total_Sales",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
+        "name": "dim_client_raw",
+        "columns": [],
         "partitions": [
           {
-            "name": "sales_1_raw-Partition",
+            "name": "dim_client_raw-Partition",
             "mode": "import",
             "source": {
               "type": "m",
               "expression": [
                 "let",
                 "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
-                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_1.csv\"),",
-                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_1.csv\" else MatchingFiles{0}[Content],",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"dim_client.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: dim_client.csv\" else MatchingFiles{0}[Content],",
                 "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
                 "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
                 "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text}))",
@@ -60,255 +35,27 @@
         ]
       },
       {
-        "name": "sales_2_raw",
-        "columns": [
-          {
-            "name": "Region",
-            "dataType": "string",
-            "sourceColumn": "Region",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "Total_Sales",
-            "dataType": "string",
-            "sourceColumn": "Total_Sales",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
+        "name": "Tourisom_data",
+        "columns": [],
         "partitions": [
           {
-            "name": "sales_2_raw-Partition",
+            "name": "Tourisom_data-Partition",
             "mode": "import",
             "source": {
               "type": "m",
               "expression": [
                 "let",
                 "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
-                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_2.csv\"),",
-                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_2.csv\" else MatchingFiles{0}[Content],",
-                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
-                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
-                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text}))",
-                "in",
-                "    ChangedTypes"
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "name": "sales_3_raw",
-        "columns": [
-          {
-            "name": "Region",
-            "dataType": "string",
-            "sourceColumn": "Region",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "Total_Sales",
-            "dataType": "string",
-            "sourceColumn": "Total_Sales",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
-        "partitions": [
-          {
-            "name": "sales_3_raw-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
-                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_3.csv\"),",
-                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_3.csv\" else MatchingFiles{0}[Content],",
-                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
-                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
-                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text}))",
-                "in",
-                "    ChangedTypes"
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "name": "customers_2__raw",
-        "columns": [
-          {
-            "name": "Region",
-            "dataType": "string",
-            "sourceColumn": "Region",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "Total_Sales",
-            "dataType": "string",
-            "sourceColumn": "Total_Sales",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
-        "partitions": [
-          {
-            "name": "customers_2__raw-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
-                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"customers (2).csv\"),",
-                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: customers (2).csv\" else MatchingFiles{0}[Content],",
-                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
-                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
-                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text}))",
-                "in",
-                "    ChangedTypes"
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "name": "products_1__raw",
-        "columns": [
-          {
-            "name": "Region",
-            "dataType": "string",
-            "sourceColumn": "Region",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "Total_Sales",
-            "dataType": "string",
-            "sourceColumn": "Total_Sales",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
-        "partitions": [
-          {
-            "name": "products_1__raw-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
-                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"products (1).csv\"),",
-                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: products (1).csv\" else MatchingFiles{0}[Content],",
-                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
-                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
-                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text}))",
-                "in",
-                "    ChangedTypes"
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "name": "Complex_Workflow",
-        "columns": [
-          {
-            "name": "Region",
-            "dataType": "string",
-            "sourceColumn": "Region",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "Total_Sales",
-            "dataType": "string",
-            "sourceColumn": "Total_Sales",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          }
-        ],
-        "partitions": [
-          {
-            "name": "Complex_Workflow-Partition",
-            "mode": "import",
-            "source": {
-              "type": "m",
-              "expression": [
-                "let",
-                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
-                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_1.csv\"),",
-                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_1.csv\" else MatchingFiles{0}[Content],",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"dim_client.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: dim_client.csv\" else MatchingFiles{0}[Content],",
                 "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
                 "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
                 "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text})),",
                 "    Checkpoint_1 = ChangedTypes,",
-                "    UnionPrepared_2 = Checkpoint_1,",
-                "    SelectedFields_3 = let cols = Table.ColumnNames(UnionPrepared_2), ops = {{\"CustomerID\", type text}, {\"Region\", type text}, {\"Sales\", Int64.Type}, {\"Product\", type text}, {\"OrderDate\", type datetime}}, TypedColumns = Table.TransformColumnTypes(UnionPrepared_2, List.Select(ops, each List.Contains(cols, _{0}))) in Table.SelectColumns(TypedColumns, {\"CustomerID\", \"Region\", \"Sales\", \"Product\", \"OrderDate\"}, MissingField.UseNull),",
-                "    CleanedText_4 = Table.TransformColumns(SelectedFields_3, List.Transform(Table.ColumnNames(SelectedFields_3), each {_, each if _ is text then Text.Clean(Text.Trim(_)) else _, type any})),",
-                "    FilteredRows_5 = let required = {\"Sales\"}, existing = Table.ColumnNames(CleanedText_4), missing = List.Difference(required, existing) in if List.Count(missing) > 0 then CleanedText_4 else Table.SelectRows(CleanedText_4, each try ([Sales] > 5000) otherwise false),",
-                "    JoinPrepared_6 = FilteredRows_5,",
-                "    JoinPrepared_7 = JoinPrepared_6,",
-                "    Calculated_ValueType_8 = let Input = let required = {\"Sales\"}, existing = Table.ColumnNames(JoinPrepared_7), missing = List.Difference(required, existing) in List.Accumulate(missing, JoinPrepared_7, (state, col) => Table.AddColumn(state, col, each null, type any)) in Table.AddColumn(Input, \"ValueType\", each try (if [Sales] > 50000 then \"High Value\" else \"Low Value\") otherwise null, type text),",
-                "    GroupedData_9 = let Input = let required = {\"Region\", \"Sales\"}, existing = Table.ColumnNames(Calculated_ValueType_8), missing = List.Difference(required, existing) in List.Accumulate(missing, Calculated_ValueType_8, (state, col) => Table.AddColumn(state, col, each null, type any)) in Table.Group(Input, {\"Region\"}, {{\"Total_Sales\", each List.Sum([Sales]), type number}}),",
-                "    Checkpoint_10 = GroupedData_9",
+                "    CleanedText_2 = Table.TransformColumns(Checkpoint_1, List.Transform(Table.ColumnNames(Checkpoint_1), each {_, each if _ is text then Text.Clean(Text.Trim(_)) else _, type any})),",
+                "    Checkpoint_3 = CleanedText_2",
                 "in",
-                "    Checkpoint_10"
+                "    Checkpoint_3"
               ]
             }
           }
@@ -321,7 +68,7 @@
         "name": "DataSourcePath",
         "kind": "m",
         "expression": [
-          "\"s://sorim-alteryx-trial-2hcg/178337/uploads/5a5690b1-8876-4f96-96c5-af50d4d98c2f/sales_1.csv\""
+          "\"s://sorim-alteryx-trial-2hcg/178337/uploads/d771022b-7439-4438-bf65-32cc86239d64/dim_client.csv\""
         ],
         "annotations": [
           {
