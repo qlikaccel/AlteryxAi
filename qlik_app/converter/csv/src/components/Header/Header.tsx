@@ -57,11 +57,11 @@
 import "./Header.css";
 import logoImage from "../../assets/alteryx-logo.png";
 import { useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState } from "react";
  
 export default function Header() {
   const navigate = useNavigate();
-  const [userInfo, setUserInfo] = useState<any>(null);
+  const [userInfo] = useState<{ name?: string; email?: string } | null>(null);
  
   // useEffect(() => {
   //   const workspaceName = sessionStorage.getItem("alteryx_workspace_name");

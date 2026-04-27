@@ -122,10 +122,6 @@ export async function publishAlteryxMQuery(payload: {
   data_source_path?: string;
   sharepoint_url?: string;
   access_token?: string;
-  // FIX: source_fields_map from convert_workflow_to_m — maps _raw table name
-  // to its field list so the BIM builder can emit real column definitions for
-  // CSV source tables that carry no field schema in the Alteryx workflow JSON.
-  alteryx_source_fields?: Record<string, Array<{ name: string; type?: string }>>;
 }): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/migration/publish-mquery`, {
     method: "POST",
@@ -138,7 +134,6 @@ export async function publishAlteryxMQuery(payload: {
       access_token: payload.access_token || sessionStorage.getItem("powerbi_access_token") || "",
       qlik_fields_map: {},
       app_id: "",
-      alteryx_source_fields: payload.alteryx_source_fields || {},
     }),
   });
   const data = await res.json().catch(() => ({}));
