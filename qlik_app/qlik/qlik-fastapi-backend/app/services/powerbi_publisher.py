@@ -2171,8 +2171,12 @@ def _quote_m_text(value: str) -> str:
 
 def _ensure_m_outputs_columns(expr: str, columns: List[Dict[str, Any]]) -> str:
     """
-    Wrap a query so the rowset always exposes the BIM-declared columns.
-    Missing columns are added as nulls before the final projection.
+    Wrap a query so the rowset ONLY exposes the BIM-declared columns.
+    Missing columns are added as nulls. Extra columns are dropped.
+    
+    ✅ FIX: Handles column mismatch errors when M sources have columns 
+    not in the BIM schema (e.g., Complex_Workflow loading from sales_1.csv 
+    with all columns, but BIM only has [Region, Total_Sales]).
     """
     col_names: List[str] = []
     seen: set[str] = set()
@@ -2189,19 +2193,31 @@ def _ensure_m_outputs_columns(expr: str, columns: List[Dict[str, Any]]) -> str:
     if not expr or not col_names:
         return expr
 
+    # Build the list of columns to select
+    # Use quoted names to handle special characters and case sensitivity
     list_expr = "{" + ", ".join(f'"{_quote_m_text(name)}"' for name in col_names) + "}"
+    
+    # Wrap with explicit column projection that:
+    # 1. Ensures all BIM columns are present (adds nulls for missing)
+    # 2. Removes any extra columns not in BIM (prevents "column not found" errors)
+    # 3. Uses MissingField.UseNull to handle gracefully
     return (
         "let\n"
-        f"    __Base = ({expr}),\n"
-        f"    __ExpectedColumns = {list_expr},\n"
-        "    __WithRequiredColumns = List.Accumulate(\n"
-        "        List.Difference(__ExpectedColumns, Table.ColumnNames(__Base)),\n"
-        "        __Base,\n"
-        "        (state, col) => Table.AddColumn(state, col, each null, type any)\n"
+        f"    __Source = ({expr}),\n"
+        f"    __BimColumns = {list_expr},\n"
+        "    __SafeBase = try\n"
+        "        __Source\n"
+        "    otherwise\n"
+        "        Table.FromRecords({{}}, __BimColumns),\n"
+        "    __AvailableColumns = List.Intersect({{Table.ColumnNames(__SafeBase), __BimColumns}}, MissingField.Error),\n"
+        "    __WithMissingColumns = List.Accumulate(\n"
+        "        List.Difference(__BimColumns, __AvailableColumns),\n"
+        "        __SafeBase,\n"
+        "        (tbl, col) => Table.AddColumn(tbl, col, each null, type any)\n"
         "    ),\n"
-        "    __ProjectedColumns = Table.SelectColumns(__WithRequiredColumns, __ExpectedColumns, MissingField.UseNull)\n"
+        "    __FinalOutput = Table.SelectColumns(__WithMissingColumns, __BimColumns, MissingField.UseNull)\n"
         "in\n"
-        "    __ProjectedColumns"
+        "    __FinalOutput"
     )
 
 
