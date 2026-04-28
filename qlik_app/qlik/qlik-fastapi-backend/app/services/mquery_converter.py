@@ -1595,12 +1595,13 @@ class MQueryConverter:
                     f"        \"{join_table}\",\n"
                     f"        {join_kind}\n"
                     f"    ),\n"
-                    f"    {expand_step} = Table.ExpandTableColumn(\n"
-                    f"        {merge_step},\n"
-                    f"        \"{join_table}\",\n"
-                    f"        Table.ColumnNames(#{join_table}),\n"
-                    f"        Table.ColumnNames(#{join_table})\n"
-                    f"    )"
+                    f"    {expand_step} = let\n"
+                    f"        __RightColumns = Table.ColumnNames(#{join_table}),\n"
+                    f"        __LeftColumns = Table.ColumnNames({prev_step}),\n"
+                    f"        __ExpandColumns = List.Difference(__RightColumns, __LeftColumns, Comparer.OrdinalIgnoreCase)\n"
+                    f"    in\n"
+                    f"        if List.Count(__ExpandColumns) = 0 then {merge_step}\n"
+                    f"        else Table.ExpandTableColumn({merge_step}, \"{join_table}\", __ExpandColumns, __ExpandColumns)"
                 )
                 logger.info("[_detect_and_apply_join] Applied JOIN %s on key=%s", join_table, join_key)
                 return transform, expand_step
@@ -1781,12 +1782,13 @@ class MQueryConverter:
                 cols_literal = ", ".join(f'\"{col}\"' for col in expanded_columns)
                 expand_step = f"#\"Expanded Helper {idx}\""
                 transform_steps += (
-                    f",\n    {expand_step} = Table.ExpandTableColumn(\n"
-                    f"        {current_step},\n"
-                    f"        \"{helper_name}\",\n"
-                    f"        {{{cols_literal}}},\n"
-                    f"        {{{cols_literal}}}\n"
-                    f"    )"
+                    f",\n    {expand_step} = let\n"
+                    f"        __RightColumns = {{{cols_literal}}},\n"
+                    f"        __LeftColumns = Table.ColumnNames({current_step}),\n"
+                    f"        __ExpandColumns = List.Difference(__RightColumns, __LeftColumns, Comparer.OrdinalIgnoreCase)\n"
+                    f"    in\n"
+                    f"        if List.Count(__ExpandColumns) = 0 then {current_step}\n"
+                    f"        else Table.ExpandTableColumn({current_step}, \"{helper_name}\", __ExpandColumns, __ExpandColumns)"
                 )
                 current_step = expand_step
 

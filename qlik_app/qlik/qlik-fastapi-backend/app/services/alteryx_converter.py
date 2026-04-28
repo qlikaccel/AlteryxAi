@@ -1203,9 +1203,9 @@ def _ensure_columns_expr(step_name: str, columns: list[str]) -> str:
     return (
         f"let required = {{{column_list}}}, "
         f"existing = Table.ColumnNames({step_name}), "
-        f"missing = List.Difference(required, existing) "
+        f"missing = List.Select(required, each not List.Contains(existing, _, Comparer.OrdinalIgnoreCase)) "
         f"in List.Accumulate(missing, {step_name}, "
-        f"(state, col) => Table.AddColumn(state, col, each null, type any))"
+        f"(state, col) => if Table.HasColumns(state, col) then state else Table.AddColumn(state, col, each null, type any))"
     )
 
 
@@ -1264,7 +1264,7 @@ def _step_for_tool(
         guarded_filter = (
             f"let required = {{{required_list}}}, "
             f"existing = Table.ColumnNames({current}), "
-            f"missing = List.Difference(required, existing) "
+            f"missing = List.Select(required, each not List.Contains(existing, _, Comparer.OrdinalIgnoreCase)) "
             f"in if List.Count(missing) > 0 "
             f"then {current} "
             f"else Table.SelectRows({current}, each try ({expression}) otherwise false)"

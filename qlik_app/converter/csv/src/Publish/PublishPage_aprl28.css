@@ -1417,13 +1417,14 @@
 } */
 
 .publish-stepper {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(110px, 1fr));
-  gap: 0;
-  padding: 28px 48px 28px 200px;
-  margin: 0 auto;
-  background: #fff;
-  box-sizing: border-box;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    padding: 28px 185px 28px 300px;
+    background: #fff;
+
+    max-width: 1000px;      /* control width */
+    margin: 0 auto;         /* center horizontally */
 }
 
 .wire-step {
@@ -1610,53 +1611,6 @@
 
 .publish-summary-card h2 {
   margin-bottom: 16px;
-}
-
-.publish-summary-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  min-width: 0;
-  margin-bottom: 16px;
-  white-space: nowrap;
-}
-
-.publish-summary-heading h2 {
-  flex: 0 0 auto;
-  margin-bottom: 0;
-}
-
-.publish-summary-meta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.publish-meta-badge {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.35;
-  white-space: nowrap;
-}
-
-.publish-meta-badge-date {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-
-.publish-meta-badge-duration {
-  background: #e8f0fe;
-  color: #1a56db;
 }
 
 .summary-row {
