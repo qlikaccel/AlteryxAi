@@ -210,7 +210,7 @@ export default function ConnectPage() {
               cursor: (connectMode === "upload" ? canUploadPackages : canConnectAlteryx) ? "pointer" : "not-allowed",
             }}
           >
-            {loading ? "Working..." : connectMode === "upload" ? "Upload & Assess" : "Connect"}
+            {loading ? "Connecting..." : connectMode === "upload" ? "Upload & Assess" : "Connect"}
           </button>
         </div>
       </div>

@@ -65,7 +65,6 @@ export default function PublishPage() {
     { label: "Tool mapping", complete: true },
     { label: "M Query gen", complete: true },
     { label: "Publish", complete: true },
-    { label: "Validate", complete: true },
   ];
 
   const openPowerBi = () => {
@@ -156,10 +155,44 @@ export default function PublishPage() {
           <div className="publish-title-row">
             {/* <h1>Publish to Power BI / Fabric</h1> */}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             <p style={{ margin: 0, fontSize: "1.22rem", fontWeight: 700, color: "#080e17" }}>
               {workflowName} - Published
             </p>
+            <span style={{
+              display: "inline-flex",
+              alignItems: "center",
+              background: "#e8f5e9",
+              color: "#2e7d32",
+              fontSize: "12px",
+              fontWeight: 500,
+              padding: "3px 10px",
+              borderRadius: "999px"
+            }}>
+              {publishedAt.toLocaleString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: true
+              })}
+            </span>
+            {publishDuration && (
+              <span style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                background: "#e8f0fe",
+                color: "#1a56db",
+                fontSize: "12px",
+                fontWeight: 500,
+                padding: "3px 10px",
+                borderRadius: "999px"
+              }}>
+                ⏱ Publish Duration: {publishDuration}
+              </span>
+            )}
           </div>
         </div>
         <div className="publish-top-actions">
@@ -215,26 +248,7 @@ export default function PublishPage() {
         </section>
 
         <section className="wire-card publish-summary-card">
-          <div className="publish-summary-heading">
-            <h2>Publish summary</h2>
-            <div className="publish-summary-meta">
-              <span className="publish-meta-badge publish-meta-badge-date">
-                {publishedAt.toLocaleString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: true
-                })}
-              </span>
-              {publishDuration && (
-                <span className="publish-meta-badge publish-meta-badge-duration">
-                  Publish Duration: {publishDuration}
-                </span>
-              )}
-            </div>
-          </div>
+          <h2>Publish summary</h2>
           <div className="summary-row"><span>Queries to deploy</span><strong>1 of 1</strong></div>
           <div className="summary-row"><span>Total tables</span><strong>{deployedTables}</strong></div>
           {/* <div className="summary-row"><span>Relationships</span><strong>0 inferred</strong></div> */}
