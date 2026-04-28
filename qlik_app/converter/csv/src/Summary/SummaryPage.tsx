@@ -1071,7 +1071,7 @@ type SourceType = "database" | "scripts";
 const TABS: Array<{ id: SummaryTab; label: string; icon: string }> = [
   { id: "sourceTypes", label: "Source Types", icon: "" },
   { id: "summary", label: "Summary", icon: "" },
-  { id: "brd", label: "App BRD", icon: "" },
+  { id: "brd", label: "BRD", icon: "" },
   { id: "diagram", label: "Workflow Diagram", icon: "" },
 ];
 
@@ -1648,6 +1648,220 @@ navigate("/publish", {
     URL.revokeObjectURL(url);
   };
 
+  const downloadWorkflowDiagram = () => {
+    const nodes = workflow?.workflowNodes || [];
+    const edges = workflow?.workflowEdges || [];
+    if (!nodes.length) {
+      setError("Workflow diagram is not available to download.");
+      return;
+    }
+
+    const { positions, canvasWidth, canvasHeight } = buildWorkflowLayout(nodes, edges);
+    const width = Math.ceil(canvasWidth);
+    const height = Math.ceil(canvasHeight);
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(window.devicePixelRatio || 2, 3);
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    const ctx = canvas.getContext("2d");
+
+    if (!ctx) {
+      setError("Failed to get canvas context.");
+      return;
+    }
+
+    ctx.scale(scale, scale);
+
+    const drawRoundRect = (
+      x: number,
+      y: number,
+      rectWidth: number,
+      rectHeight: number,
+      radius: number
+    ) => {
+      const r = Math.min(radius, rectWidth / 2, rectHeight / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + rectWidth - r, y);
+      ctx.quadraticCurveTo(x + rectWidth, y, x + rectWidth, y + r);
+      ctx.lineTo(x + rectWidth, y + rectHeight - r);
+      ctx.quadraticCurveTo(x + rectWidth, y + rectHeight, x + rectWidth - r, y + rectHeight);
+      ctx.lineTo(x + r, y + rectHeight);
+      ctx.quadraticCurveTo(x, y + rectHeight, x, y + rectHeight - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    };
+
+    const drawEllipsizedText = (text: string, x: number, y: number, maxWidth: number) => {
+      let rendered = text;
+      while (rendered.length > 1 && ctx.measureText(rendered).width > maxWidth) {
+        rendered = rendered.slice(0, -2);
+      }
+      if (rendered !== text) rendered = `${rendered}...`;
+      ctx.fillText(rendered, x, y);
+    };
+
+    const iconColors = (family: string) => {
+      if (family === "input") return { background: "#d1fae5", color: "#047857" };
+      if (family === "output") return { background: "#fee2e2", color: "#b91c1c" };
+      if (family === "union" || family === "join") return { background: "#ede9fe", color: "#6d28d9" };
+      if (["filter", "select", "cleanse", "summarize", "formula", "shape"].includes(family)) {
+        return { background: "#dbeafe", color: "#0369a1" };
+      }
+      return { background: "#e8f2ff", color: "#075985" };
+    };
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+
+    const background = ctx.createLinearGradient(0, 0, width, height);
+    background.addColorStop(0, "#f7fbff");
+    background.addColorStop(1, "#eef5fb");
+    ctx.fillStyle = background;
+    drawRoundRect(0.5, 0.5, width - 1, height - 1, 22);
+    ctx.fill();
+
+    ctx.save();
+    drawRoundRect(0.5, 0.5, width - 1, height - 1, 22);
+    ctx.clip();
+    ctx.fillStyle = "rgba(100, 116, 139, 0.16)";
+    for (let x = 18; x < width; x += 28) {
+      for (let y = 18; y < height; y += 28) {
+        ctx.beginPath();
+        ctx.arc(x, y, 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+
+    ctx.strokeStyle = "#d7e3f2";
+    ctx.lineWidth = 1;
+    drawRoundRect(0.5, 0.5, width - 1, height - 1, 22);
+    ctx.stroke();
+
+    edges
+      .filter((edge) => positions.has(String(edge.from || "")) && positions.has(String(edge.to || "")))
+      .forEach((edge) => {
+        const from = positions.get(String(edge.from || ""))!;
+        const to = positions.get(String(edge.to || ""))!;
+        const startX = from.x + from.width;
+        const startY = from.y + from.height / 2;
+        const endX = to.x;
+        const endY = to.y + to.height / 2;
+        const curve = Math.max(58, Math.min(120, (endX - startX) / 2));
+
+        ctx.strokeStyle = "#71819a";
+        ctx.lineWidth = 2.1;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.bezierCurveTo(startX + curve, startY, endX - curve, endY, endX, endY);
+        ctx.stroke();
+
+        const angle = Math.atan2(endY - startY, endX - startX);
+        ctx.fillStyle = "#71819a";
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(endX - 10 * Math.cos(angle - Math.PI / 7), endY - 10 * Math.sin(angle - Math.PI / 7));
+        ctx.lineTo(endX - 10 * Math.cos(angle + Math.PI / 7), endY - 10 * Math.sin(angle + Math.PI / 7));
+        ctx.closePath();
+        ctx.fill();
+      });
+
+    nodes.forEach((node, index) => {
+      const id = String(node.id || index);
+      const position = positions.get(id) || { x: 24, y: 24 + index * 92, width: 156, height: 78 };
+      const family = toolFamily(String(node.plugin || ""));
+      const colors = iconColors(family);
+
+      ctx.save();
+      ctx.shadowColor = "rgba(15, 23, 42, 0.12)";
+      ctx.shadowBlur = 28;
+      ctx.shadowOffsetY = 15;
+      ctx.fillStyle = node.supported === false ? "#fffafb" : "rgba(255, 255, 255, 0.95)";
+      drawRoundRect(position.x, position.y, position.width, position.height, 18);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.strokeStyle = node.supported === false ? "#fecdd3" : "rgba(15, 23, 42, 0.12)";
+      ctx.lineWidth = 1;
+      drawRoundRect(position.x, position.y, position.width, position.height, 18);
+      ctx.stroke();
+
+      ctx.fillStyle = "#f8fbff";
+      ctx.strokeStyle = "#9fb0c6";
+      ctx.lineWidth = 2;
+      [position.x - 1, position.x + position.width + 1].forEach((connectorX) => {
+        ctx.beginPath();
+        ctx.arc(connectorX, position.y + position.height / 2, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+
+      const iconX = position.x + 16;
+      const iconY = position.y + (position.height - 42) / 2;
+      ctx.fillStyle = colors.background;
+      drawRoundRect(iconX, iconY, 42, 42, 13);
+      ctx.fill();
+
+      ctx.fillStyle = colors.color;
+      ctx.font = "900 10px system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(toolIcon(family), iconX + 21, iconY + 21);
+
+      const textX = position.x + 68;
+      const textMaxWidth = position.width - 82;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "600 14px system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+      drawEllipsizedText(shortToolName(String(node.plugin || "")), textX, position.y + 31, textMaxWidth);
+
+      ctx.fillStyle = "#64748b";
+      ctx.font = "800 11px system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+      drawEllipsizedText(`#${id}`, textX, position.y + 51, textMaxWidth);
+
+      ctx.fillStyle = "#475569";
+      ctx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+      drawEllipsizedText(nodeSubtitle(node, sourceDetails), textX, position.y + 70, textMaxWidth);
+
+      if (node.supported === false) {
+        ctx.fillStyle = "#fff1f2";
+        const badgeWidth = 48;
+        drawRoundRect(position.x + position.width - badgeWidth - 10, position.y + position.height - 10, badgeWidth, 20, 10);
+        ctx.fill();
+        ctx.fillStyle = "#be123c";
+        ctx.font = "900 10px system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("REVIEW", position.x + position.width - badgeWidth / 2 - 10, position.y + position.height);
+      }
+    });
+
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setError("Failed to create image blob.");
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const safeName = (workflow?.name || "workflow_diagram")
+        .replace(/[^a-z0-9]+/gi, "_")
+        .replace(/^_+|_+$/g, "")
+        || "workflow_diagram";
+      anchor.href = url;
+      anchor.download = `${safeName}_diagram.png`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  };
+
   // ─── Early returns ──────────────────────────────────────────────────────────
 
   if (loading) {
@@ -1958,7 +2172,7 @@ navigate("/publish", {
       ══════════════════════════════════════════════════════ */}
       {activeTab === "brd" && (
         <section className="assessment-panel alteryx-brd-panel">
-          <h2>Workflow BRD</h2>
+          <h2>BRD</h2>
           {isCloudApiWorkflow ? (
             <>
               <p>
@@ -1986,7 +2200,7 @@ navigate("/publish", {
                 onClick={downloadBrd}
                 disabled={brdLoading}
               >
-                {brdLoading ? "Generating BRD..." : "Download Workflow BRD"}
+                {brdLoading ? "Generating BRD..." : "Download BRD"}
               </button>
             </>
           )}
@@ -1998,10 +2212,21 @@ navigate("/publish", {
       ══════════════════════════════════════════════════════ */}
       {activeTab === "diagram" && (
         <section className="assessment-panel alteryx-diagram-panel">
-          <h2>Workflow Diagram</h2>
-          <p>
-            Accelerator shows the Alteryx workflow graph containing multiple relational tables and join keys, so reviewers can validate transformation lineage before publishing.
-          </p>
+          <div className="diagram-section-header">
+            <div>
+              <h2>Workflow Diagram</h2>
+              <p>
+                Accelerator shows the Alteryx workflow graph containing multiple relational tables and join keys, so reviewers can validate transformation lineage before publishing.
+              </p>
+            </div>
+            <button
+              className="diagram-download-btn"
+              onClick={downloadWorkflowDiagram}
+              title="Download workflow diagram as PNG"
+            >
+              Download as PNG
+            </button>
+          </div>
 
           {/* ✅ dev12 WorkflowGraph replaces dev11's <pre> tag */}
           <WorkflowGraph workflow={workflow} sourceDetails={sourceDetails} />
