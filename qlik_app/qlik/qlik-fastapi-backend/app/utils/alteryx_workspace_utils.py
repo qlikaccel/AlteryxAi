@@ -249,11 +249,26 @@ def refresh_access_token(refresh_token: str) -> tuple[str, Optional[str]]:
 
 
 def persist_alteryx_tokens(access_token: str, refresh_token: Optional[str] = None) -> None:
-    """Persist the current token pair so backend restarts do not reuse stale tokens."""
+    """
+    Persist the current token pair so backend restarts do not reuse stale tokens.
+
+    RENDER FIX: Always update os.environ first (in-memory), then attempt file persistence.
+    This ensures fresh tokens are available for the lifetime of the current container,
+    even if .env file is not writable.
+    """
     TokenManager.save_tokens(access_token, refresh_token)
+
+    # Always update os.environ immediately (for current container lifetime)
+    if access_token:
+        os.environ["ALTERYX_ACCESS_TOKEN"] = access_token
+    if refresh_token:
+        os.environ["ALTERYX_REFRESH_TOKEN"] = refresh_token
+    print("✅ [persist_alteryx_tokens] Tokens updated in os.environ")
+
+    # Attempt to persist to .env file (may not exist or be writable on Render)
     try:
         if not os.path.exists(ALTERYX_ENV_FILE):
-            print(f"⚠️  [persist_alteryx_tokens] .env not found: {ALTERYX_ENV_FILE}")
+            print(f"⚠️  [persist_alteryx_tokens] .env not found: {ALTERYX_ENV_FILE} (continuing anyway)")
             return
 
         with open(ALTERYX_ENV_FILE, "r", encoding="utf-8") as env_file:
@@ -267,17 +282,15 @@ def persist_alteryx_tokens(access_token: str, refresh_token: Optional[str] = Non
 
         if access_token:
             content = set_env_value(content, "ALTERYX_ACCESS_TOKEN", access_token)
-            os.environ["ALTERYX_ACCESS_TOKEN"] = access_token
         if refresh_token:
             content = set_env_value(content, "ALTERYX_REFRESH_TOKEN", refresh_token)
-            os.environ["ALTERYX_REFRESH_TOKEN"] = refresh_token
 
         with open(ALTERYX_ENV_FILE, "w", encoding="utf-8") as env_file:
             env_file.write(content)
 
-        print("✅ [persist_alteryx_tokens] Stored latest Alteryx tokens in .env")
+        print("✅ [persist_alteryx_tokens] Tokens also persisted to .env file")
     except Exception as exc:
-        print(f"⚠️  [persist_alteryx_tokens] Could not update .env: {exc}")
+        print(f"⚠️  [persist_alteryx_tokens] Could not update .env file (not critical on Render): {exc}")
 
 
 # ── Token expiry check ───────────────────────────────────────────────────────
@@ -542,6 +555,34 @@ def list_alteryx_workflows(session: AlteryxSession, workspace_id: Optional[str] 
     )
 
 
+def _try_proactive_refresh_env_tokens(env_access: str, env_refresh: Optional[str]) -> tuple[str, Optional[str]]:
+    """
+    RENDER FIX: On container restart, .env tokens may have a stale refresh_token
+    (already used/rotated on previous container). Proactively refresh them BEFORE
+    validation to ensure we get fresh tokens from Ping Identity.
+
+    Returns (fresh_access, fresh_refresh) or raises on failure.
+    """
+    if not env_refresh:
+        return env_access, None
+
+    print(f"\n🔄 [RENDER FIX] Proactively refreshing .env tokens (may be stale on restart)...")
+    try:
+        new_access, new_refresh = refresh_access_token(env_refresh)
+        # Update os.environ immediately so future requests use fresh tokens
+        os.environ["ALTERYX_ACCESS_TOKEN"] = new_access
+        if new_refresh:
+            os.environ["ALTERYX_REFRESH_TOKEN"] = new_refresh
+        print(f"   ✅ Successfully refreshed — os.environ updated")
+        return new_access, new_refresh or env_refresh
+    except Exception as exc:
+        print(f"   ⚠️  Refresh failed: {exc}")
+        print(f"   Falling back to .env tokens (may be stale)")
+        # Fall back to original .env tokens and let the validation attempt fail
+        # with a more informative error
+        return env_access, env_refresh
+
+
 def create_alteryx_session(
     access_token: str,
     workspace_name: str,
@@ -555,6 +596,7 @@ def create_alteryx_session(
     Token resolution order:
       1. UI/request token override
       2. ALTERYX_ACCESS_TOKEN / ALTERYX_REFRESH_TOKEN in .env
+         [RENDER FIX] Proactively refresh .env tokens before use (may be stale)
       3. token_storage.json as a last fallback
     """
     request_access = (access_token or "").strip()
@@ -585,6 +627,19 @@ def create_alteryx_session(
     last_error: Optional[Exception] = None
     for source, resolved_access, resolved_refresh in candidates:
         print(f"🔐 [create_alteryx_session] Trying Alteryx tokens from {source}")
+
+        # RENDER FIX: If loading from .env (may be stale on container restart),
+        # proactively refresh to ensure we have fresh tokens
+        if source == ".env" and resolved_refresh:
+            try:
+                resolved_access, resolved_refresh = _try_proactive_refresh_env_tokens(
+                    resolved_access, resolved_refresh
+                )
+            except Exception as exc:
+                # If refresh fails, log but continue with original tokens
+                # (validation will fail with a better error message)
+                print(f"   Proactive refresh failed: {exc}")
+
         session = AlteryxSession(
             access_token=resolved_access,
             refresh_token=resolved_refresh,

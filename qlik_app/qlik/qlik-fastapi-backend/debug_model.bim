@@ -178,7 +178,7 @@
               "type": "m",
               "expression": [
                 "let",
-                "    __Base = (let",
+                "    __Source = (let",
                 "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
                 "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_data_1M.csv\"),",
                 "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_data_1M.csv\" else MatchingFiles{0}[Content],",
@@ -187,15 +187,20 @@
                 "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, {{\"CustomerID\", type text}, {\"CustomerName\", type text}, {\"Region\", type text}, {\"City\", type text}, {\"ProductCategory\", type text}, {\"ProductName\", type text}, {\"Quantity\", type text}, {\"UnitPrice\", type text}, {\"SalesAmount\", type text}, {\"Discount\", type text}, {\"OrderDate\", type text}, {\"Status\", type text}, {\"PaymentMethod\", type text}})",
                 "in",
                 "    ChangedTypes),",
-                "    __ExpectedColumns = {\"CustomerID\", \"CustomerName\", \"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"},",
-                "    __WithRequiredColumns = List.Accumulate(",
-                "        List.Difference(__ExpectedColumns, Table.ColumnNames(__Base)),",
-                "        __Base,",
-                "        (state, col) => Table.AddColumn(state, col, each null, type any)",
+                "    __BimColumns = {\"CustomerID\", \"CustomerName\", \"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"},",
+                "    __SafeBase = try",
+                "        __Source",
+                "    otherwise",
+                "        Table.FromRecords({{}}, __BimColumns),",
+                "    __AvailableColumns = List.Intersect({{Table.ColumnNames(__SafeBase), __BimColumns}}, MissingField.Error),",
+                "    __WithMissingColumns = List.Accumulate(",
+                "        List.Difference(__BimColumns, __AvailableColumns),",
+                "        __SafeBase,",
+                "        (tbl, col) => Table.AddColumn(tbl, col, each null, type any)",
                 "    ),",
-                "    __ProjectedColumns = Table.SelectColumns(__WithRequiredColumns, __ExpectedColumns, MissingField.UseNull)",
+                "    __FinalOutput = Table.SelectColumns(__WithMissingColumns, __BimColumns, MissingField.UseNull)",
                 "in",
-                "    __ProjectedColumns"
+                "    __FinalOutput"
               ]
             }
           }
@@ -369,7 +374,7 @@
               "type": "m",
               "expression": [
                 "let",
-                "    __Base = (let",
+                "    __Source = (let",
                 "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
                 "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_data_1M.csv\"),",
                 "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_data_1M.csv\" else MatchingFiles{0}[Content],",
@@ -381,15 +386,20 @@
                 "    Checkpoint_3 = SelectedFields_2",
                 "in",
                 "    Checkpoint_3),",
-                "    __ExpectedColumns = {\"CustomerID\", \"CustomerName\", \"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"},",
-                "    __WithRequiredColumns = List.Accumulate(",
-                "        List.Difference(__ExpectedColumns, Table.ColumnNames(__Base)),",
-                "        __Base,",
-                "        (state, col) => Table.AddColumn(state, col, each null, type any)",
+                "    __BimColumns = {\"CustomerID\", \"CustomerName\", \"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"},",
+                "    __SafeBase = try",
+                "        __Source",
+                "    otherwise",
+                "        Table.FromRecords({{}}, __BimColumns),",
+                "    __AvailableColumns = List.Intersect({{Table.ColumnNames(__SafeBase), __BimColumns}}, MissingField.Error),",
+                "    __WithMissingColumns = List.Accumulate(",
+                "        List.Difference(__BimColumns, __AvailableColumns),",
+                "        __SafeBase,",
+                "        (tbl, col) => Table.AddColumn(tbl, col, each null, type any)",
                 "    ),",
-                "    __ProjectedColumns = Table.SelectColumns(__WithRequiredColumns, __ExpectedColumns, MissingField.UseNull)",
+                "    __FinalOutput = Table.SelectColumns(__WithMissingColumns, __BimColumns, MissingField.UseNull)",
                 "in",
-                "    __ProjectedColumns"
+                "    __FinalOutput"
               ]
             }
           }
