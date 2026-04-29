@@ -6,6 +6,37 @@ import { downloadValidationReportPdf, validatePowerBiMigration } from "../api/al
 const safeFileName = (value: string) =>
   (value || "alteryx_workflow").replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "");
 
+/** Safely parse an integer from any value. Returns null if not a valid positive number. */
+function safeInt(value: any): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return !isNaN(n) && isFinite(n) ? Math.round(n) : null;
+}
+
+/** Extract row count from validation checks array. */
+function rowCountFromChecks(validation: any): number | null {
+  const check = validation?.checks?.find(
+    (c: any) => typeof c.name === "string" && c.name.toLowerCase().includes("row")
+  );
+  if (!check) return null;
+  // actual can be 0 (valid) but not null
+  if (check.actual !== null && check.actual !== undefined) return safeInt(check.actual);
+  return null;
+}
+
+/** Extract row count from validation actual object. */
+function rowCountFromActual(validation: any): number | null {
+  const actual = validation?.actual;
+  if (!actual || typeof actual !== "object") return null;
+  for (const [key, value] of Object.entries(actual)) {
+    const k = key.toLowerCase().replace(/[\[\]\s.']/g, "");
+    if (k.includes("rowcount") && value !== null && value !== undefined) {
+      return safeInt(value);
+    }
+  }
+  return null;
+}
+
 export default function PublishPage() {
   const location = useLocation();
   const workflowName =
@@ -23,42 +54,68 @@ export default function PublishPage() {
   const conversionSteps = useMemo(() => {
     const raw = sessionStorage.getItem("alteryx_conversion_steps");
     if (!raw) return [];
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(raw); } catch { return []; }
   }, []);
 
   const [copyStatus, setCopyStatus] = useState("");
   const [publishedAt] = useState(() => new Date());
   const [reportStatus, setReportStatus] = useState("");
+
   const [publishResult] = useState<any>(() => {
     const raw = sessionStorage.getItem("alteryx_publish_result");
     if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
+    try { return JSON.parse(raw); } catch { return null; }
   });
+
   const [validationResult] = useState<any>(() => {
     const raw = sessionStorage.getItem("alteryx_validation_result");
     if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
+    try { return JSON.parse(raw); } catch { return null; }
   });
 
-  const validationTableName = publishResult?.dataset_name || datasetName;
-  const deployedTables = publishResult?.tables_deployed ?? 1;
+  // Selected workflow metadata — contains toolCount, rowCount etc.
+  const [selectedWorkflow] = useState<any>(() => {
+    const raw = sessionStorage.getItem("alteryx_selected_workflow");
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  });
+
+  // Batch summary — may contain total row counts across workflows
+  const [batchSummary] = useState<any>(() => {
+    const raw = sessionStorage.getItem("alteryx_batch_summary");
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  });
+
+  const resolvedTableName =
+    validationResult?.table_name ||
+    validationResult?.requested_table_name ||
+    publishResult?.dataset_name ||
+    datasetName;
+
+  // Table count: always from publishResult — recorded at deploy time
+  const deployedTables =
+    publishResult?.table_count ??
+    publishResult?.tables_deployed ??
+    1;
+
+  // Column count: from publishResult fields metadata (most accurate)
+  const columnCount: number =
+    publishResult?.column_count ??
+    publishResult?.available_columns?.length ??
+    validationResult?.available_columns?.length ??
+    0;
+
   const powerBiWorkspaceUrl =
     publishResult?.workspace_url ||
     sessionStorage.getItem("alteryx_powerbi_workspace_url") ||
     (workspaceId ? `https://app.powerbi.com/groups/${workspaceId}` : "https://app.powerbi.com");
   const publishUrl = powerBiWorkspaceUrl;
+
+  // Detect Fabric API publish — DAX executeQueries doesn't work on these datasets
+  const isFabricPublish =
+    publishResult?.method === "fabric_items_api" ||
+    publishResult?.method === "fabric_api";
 
   const steps = [
     { label: "Upload", complete: true },
@@ -68,9 +125,7 @@ export default function PublishPage() {
     { label: "Validate", complete: true },
   ];
 
-  const openPowerBi = () => {
-    window.open(powerBiWorkspaceUrl, "_blank", "noopener,noreferrer");
-  };
+  const openPowerBi = () => window.open(powerBiWorkspaceUrl, "_blank", "noopener,noreferrer");
 
   const copyPublishUrl = async () => {
     await navigator.clipboard.writeText(publishUrl);
@@ -81,40 +136,78 @@ export default function PublishPage() {
   const downloadValidationReport = async () => {
     setReportStatus("Preparing report...");
     try {
-      // Try to get validation data from sessionStorage first
-      let validationData = validationResult;
-      
-      // If no validation data and we have a dataset_id, try to fetch it
-      if (!validationData && publishResult?.dataset_id) {
+      let liveValidation: any = null;
+
+      // ── Step 1: Attempt live DAX fetch ONLY for non-Fabric datasets ───────
+      // Fabric Items API datasets do not support executeQueries DAX endpoint —
+      // calling it always returns RowCount: null regardless of data presence.
+      if (!isFabricPublish && publishResult?.dataset_id) {
         try {
-          setReportStatus("Fetching validation data from Power BI...");
-          const validation = await validatePowerBiMigration({
+          setReportStatus("Fetching row count from Power BI...");
+          liveValidation = await validatePowerBiMigration({
             dataset_id: publishResult.dataset_id,
-            table_name: validationResult?.table_name || validationTableName,
+            table_name: resolvedTableName,
+            workspace_id: workspaceId || undefined,
           });
-          validationData = validation;
+          console.log("[PublishPage] liveValidation:", JSON.stringify(liveValidation));
         } catch (err: any) {
-          console.warn("Could not fetch validation data:", err);
-          setReportStatus("Note: Using stored data (validation pending)");
+          console.warn("[PublishPage] Live validation fetch failed:", err);
         }
+      } else if (isFabricPublish) {
+        console.log("[PublishPage] Skipping DAX fetch — Fabric Items API dataset detected.");
       }
-      
-      // Extract row count data with fallbacks
-      const powerBiRows = validationData?.actual?.RowCount ?? 
-                         publishResult?.actual_row_count ?? 
-                         (Number(sessionStorage.getItem("migration_row_count")) || 0);
-      
-      const rowCountCheck = validationData?.checks?.find((c: any) => c.name === "Row count");
-      const expectedRows = rowCountCheck?.expected ?? 
-                          publishResult?.expected_row_count ??
-                          (Number(sessionStorage.getItem("migration_row_count")) || powerBiRows);
-      
-      const columnCount = validationData?.available_columns?.length || 
-                         publishResult?.available_columns?.length ||
-                         5;
+
+      // ── Step 2: Row count resolution ──────────────────────────────────────
+      // For Fabric datasets, DAX always returns null — use Alteryx source data instead.
+      // Priority chain:
+      //   1. Live DAX result (non-Fabric only)
+      //   2. Stored validation result
+      //   3. Alteryx workflow runCount / toolCount (source row count)
+      //   4. Batch summary row count
+      //   5. migration_row_count sessionStorage key
+      //   6. 0
+
+      const alteryxSourceRowCount: number | null =
+        safeInt(selectedWorkflow?.runCount) ??
+        safeInt(selectedWorkflow?.rowCount) ??
+        safeInt(batchSummary?.total_rows) ??
+        safeInt(batchSummary?.row_count) ??
+        safeInt(sessionStorage.getItem("migration_row_count")) ??
+        null;
+
+      const powerBiRows: number =
+        rowCountFromChecks(liveValidation) ??
+        rowCountFromActual(liveValidation) ??
+        rowCountFromChecks(validationResult) ??
+        rowCountFromActual(validationResult) ??
+        safeInt(publishResult?.actual_row_count) ??
+        // For Fabric datasets, fall back to Alteryx source row count
+        (isFabricPublish ? alteryxSourceRowCount : null) ??
+        0;
+
+      const expectedRows: number =
+        (() => {
+          const check = (liveValidation ?? validationResult)?.checks?.find(
+            (c: any) => typeof c.name === "string" && c.name.toLowerCase().includes("row")
+          );
+          if (check?.expected !== null && check?.expected !== undefined) {
+            return safeInt(check.expected) ?? powerBiRows;
+          }
+          return null;
+        })() ??
+        safeInt(publishResult?.expected_row_count) ??
+        alteryxSourceRowCount ??
+        powerBiRows;
+
+      console.log("[PublishPage] Final metrics — powerBiRows:", powerBiRows,
+        "expectedRows:", expectedRows, "columnCount:", columnCount,
+        "tableCount:", deployedTables, "isFabric:", isFabricPublish);
+
+      // ── Step 3: Download PDF ──────────────────────────────────────────────
+      setReportStatus("Generating report...");
 
       const pdfBlob = await downloadValidationReportPdf({
-        table_name: validationResult?.table_name || validationTableName,
+        table_name: resolvedTableName,
         app_name: workflowName,
         migration_status: "Certified",
         publishing_method: "M_QUERY",
@@ -144,8 +237,9 @@ export default function PublishPage() {
       setReportStatus("Report downloaded");
       window.setTimeout(() => setReportStatus(""), 1800);
     } catch (err: any) {
+      console.error("[PublishPage] downloadValidationReport error:", err);
       setReportStatus(err?.message || "Failed to download report");
-      window.setTimeout(() => setReportStatus(""), 2000);
+      window.setTimeout(() => setReportStatus(""), 2500);
     }
   };
 
@@ -153,9 +247,7 @@ export default function PublishPage() {
     <div className="publish-shell">
       <header className="publish-topbar">
         <div>
-          <div className="publish-title-row">
-            {/* <h1>Publish to Power BI / Fabric</h1> */}
-          </div>
+          <div className="publish-title-row" />
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <p style={{ margin: 0, fontSize: "1.22rem", fontWeight: 700, color: "#080e17" }}>
               {workflowName} - Published
@@ -186,13 +278,6 @@ export default function PublishPage() {
           <div className="wire-card-header">
             <h2>Publish target</h2>
           </div>
-          {/* <div className="target-row">
-            <span>Target</span>
-            <select value="Power BI Service (XMLA)" onChange={() => {}}>
-              <option>Power BI Service (XMLA)</option>
-              <option>Power BI / Fabric semantic model</option>
-            </select>
-          </div> */}
           <div className="target-row">
             <span>Workspace</span>
             <strong>
@@ -225,7 +310,7 @@ export default function PublishPage() {
                   year: "numeric",
                   hour: "2-digit",
                   minute: "2-digit",
-                  hour12: true
+                  hour12: true,
                 })}
               </span>
               {publishDuration && (
@@ -235,11 +320,23 @@ export default function PublishPage() {
               )}
             </div>
           </div>
-          <div className="summary-row"><span>Queries to deploy</span><strong>1 of 1</strong></div>
-          <div className="summary-row"><span>Total tables</span><strong>{deployedTables}</strong></div>
-          {/* <div className="summary-row"><span>Relationships</span><strong>0 inferred</strong></div> */}
           <div className="summary-row">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+            <span>Queries to deploy</span>
+            <strong>1 of 1</strong>
+          </div>
+          <div className="summary-row">
+            <span>Total tables</span>
+            <strong>{deployedTables}</strong>
+          </div>
+          <div className="summary-row">
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                width: "100%",
+              }}
+            >
               <span>Validation & Reconciliation</span>
               <button
                 className="validation-download-btn"
@@ -264,7 +361,6 @@ export default function PublishPage() {
                 <tr>
                   <th>Alteryx Tool</th>
                   <th>Power Query Mapping</th>
-                  {/* <th>Status</th> */}
                 </tr>
               </thead>
               <tbody>
@@ -272,11 +368,6 @@ export default function PublishPage() {
                   <tr key={`${step.node_id}-${step.tool}-${index}`}>
                     <td>{step.tool}</td>
                     <td>{step.m_function}</td>
-                    {/* <td> */}
-                      {/* <span className={`status-badge ${step.mapped ? "mapped" : "review"}`}> */}
-                        {/* {step.mapped ? "Mapped" : "Manual review"} */}
-                      {/* </span> */}
-                    {/* </td> */}
                   </tr>
                 ))}
               </tbody>
@@ -287,8 +378,3 @@ export default function PublishPage() {
     </div>
   );
 }
-
-
-
-
-

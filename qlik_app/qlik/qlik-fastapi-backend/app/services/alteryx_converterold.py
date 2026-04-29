@@ -963,8 +963,55 @@ def _is_file_input_source(source: dict[str, Any]) -> bool:
     return any(ext in combined for ext in (".csv", ".xlsx", ".xls", ".json"))
 
 
+def _input_fields_by_file_name(workflow: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    fields_by_file: dict[str, list[dict[str, str]]] = {}
+    type_tokens = {"string", "v_wstring", "int64", "integer", "double", "fixeddecimal", "date", "datetime", "bool", "boolean"}
+    stop_tokens = {"output", "false", "true", "list_connections"}
+    file_pattern = re.compile(r'[^\\/\n]+\.(?:csv|xlsx|xls|json)\b', re.IGNORECASE)
+
+    for node in workflow.get("workflowNodes") or []:
+        if "input" not in str(node.get("plugin") or "").lower():
+            continue
+        lines = [line.strip() for line in str(node.get("configurationText") or "").splitlines() if line.strip()]
+        if not lines:
+            continue
+
+        file_name = ""
+        for line in lines:
+            matches = file_pattern.findall(line)
+            if matches:
+                file_name = matches[-1].replace("\\", "/").split("/")[-1]
+                break
+        if not file_name:
+            continue
+
+        fields: list[dict[str, str]] = []
+        seen: set[str] = set()
+        index = 1 if lines and lines[0] == str(node.get("id") or "") else 0
+        while index < len(lines):
+            name = lines[index].strip()
+            if file_pattern.search(name) or name.lower() in stop_tokens:
+                break
+            if index + 2 < len(lines):
+                raw_type = lines[index + 1].strip()
+                friendly_type = lines[index + 2].strip()
+                if raw_type.lower() in type_tokens or friendly_type.lower() in type_tokens:
+                    if name and name.lower() not in seen:
+                        seen.add(name.lower())
+                        fields.append({"name": name, "type": friendly_type or raw_type or "String"})
+                    index += 3
+                    continue
+            index += 1
+
+        if fields:
+            fields_by_file[file_name.lower()] = fields
+
+    return fields_by_file
+
+
 def _workflow_file_sources(workflow: dict[str, Any]) -> list[dict[str, Any]]:
     by_file_name: dict[str, dict[str, Any]] = {}
+    fields_by_file_name = _input_fields_by_file_name(workflow)
     for source in workflow.get("dataSources") or []:
         if not isinstance(source, dict) or not _is_file_input_source(source):
             continue
@@ -985,6 +1032,8 @@ def _workflow_file_sources(workflow: dict[str, Any]) -> list[dict[str, Any]]:
         item["name"] = name
         item["path"] = path
         item["siteUrl"] = sharepoint_site(str(item.get("siteUrl") or path))
+        if not item.get("fields") and fields_by_file_name.get(name.lower()):
+            item["fields"] = fields_by_file_name[name.lower()]
 
         key = name.lower()
         existing = by_file_name.get(key)
@@ -1154,9 +1203,9 @@ def _ensure_columns_expr(step_name: str, columns: list[str]) -> str:
     return (
         f"let required = {{{column_list}}}, "
         f"existing = Table.ColumnNames({step_name}), "
-        f"missing = List.Difference(required, existing) "
+        f"missing = List.Select(required, each not List.Contains(existing, _, Comparer.OrdinalIgnoreCase)) "
         f"in List.Accumulate(missing, {step_name}, "
-        f"(state, col) => Table.AddColumn(state, col, each null, type any))"
+        f"(state, col) => if Table.HasColumns(state, col) then state else Table.AddColumn(state, col, each null, type any))"
     )
 
 
@@ -1215,7 +1264,7 @@ def _step_for_tool(
         guarded_filter = (
             f"let required = {{{required_list}}}, "
             f"existing = Table.ColumnNames({current}), "
-            f"missing = List.Difference(required, existing) "
+            f"missing = List.Select(required, each not List.Contains(existing, _, Comparer.OrdinalIgnoreCase)) "
             f"in if List.Count(missing) > 0 "
             f"then {current} "
             f"else Table.SelectRows({current}, each try ({expression}) otherwise false)"
@@ -1468,11 +1517,34 @@ def convert_workflow_to_m(
             statuses = sorted({str(item.get("status") or "unknown") for item in llm_expression_conversions})
             llm_metadata["llm_status"] = "expression_fallback_" + "_".join(statuses[:3])
 
+    # Build source_fields_map: raw_table_name -> [{"name": ..., "type": ...}, ...]
+    # This carries the field schema for every _raw source table so the publish
+    # pipeline can inject static column lists into the BIM even when the CSV
+    # files carry no schema in the Alteryx workflow JSON (fields_count == 0).
+    #
+    # Only per-source fields are safe here. A multi-input workflow can combine
+    # sales, customers, and products files with different schemas; workflow-level
+    # inferred columns belong to downstream transforms and must not be copied to
+    # every raw source table.
+    source_fields_map: dict[str, list[dict[str, Any]]] = {}
+
+    for rq in raw_source_queries:
+        rq_name = rq.get("name", "")
+        rq_source = rq.get("source", {})
+        rq_fields = [
+            {"name": str(f.get("name") or "").strip(), "type": str(f.get("type") or "string")}
+            for f in (rq_source.get("fields") or [])
+            if isinstance(f, dict) and str(f.get("name") or "").strip()
+        ]
+        if rq_name:
+            source_fields_map[rq_name] = rq_fields
+
     return {
         "dataset_name": table_name,
         "table_name": table_name,
         "source": source,
         "source_queries": raw_source_queries,
+        "source_fields_map": source_fields_map,
         "source_count": len(detected_file_sources) or (1 if source else 0),
         "combined_mquery": combined_mquery,
         "raw_script": "",

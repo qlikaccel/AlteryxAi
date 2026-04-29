@@ -156,6 +156,7 @@ export async function publishAlteryxMQuery(payload: {
 export async function validatePowerBiMigration(payload: {
   dataset_id: string;
   table_name: string;
+  workspace_id?: string;
   numeric_columns?: string[];
   expected_row_count?: number | null;
   expected_totals?: Record<string, number>;
@@ -166,6 +167,7 @@ export async function validatePowerBiMigration(payload: {
     body: JSON.stringify({
       dataset_id: payload.dataset_id,
       table_name: payload.table_name,
+      workspace_id: payload.workspace_id || sessionStorage.getItem("alteryx_workspace_id") || "",
       numeric_columns: payload.numeric_columns || [],
       expected_row_count: payload.expected_row_count ?? null,
       expected_totals: payload.expected_totals || {},

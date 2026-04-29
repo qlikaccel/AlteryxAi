@@ -17,6 +17,7 @@ CHANGES FROM ORIGINAL
 """
 
 import logging
+from urllib.parse import quote
 import os
 import re
 from collections import Counter
@@ -705,7 +706,7 @@ def _should_disable_alteryx_relationship_inference(tables_m: List[Dict[str, Any]
     if app_id:
         return False
     raw_count = sum(1 for table in tables_m if _is_alteryx_raw_source_table(table.get("name", "")))
-    return raw_count >= 2
+    return raw_count >= 1
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1423,6 +1424,40 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
             raise HTTPException(status_code=500, detail=result.get("error", "Publish failed"))
 
         logger.info("[publish_mquery] Published via %s", result.get("method"))
+        
+        # Extract metadata from tables for validation reporting
+        # Collect all unique columns across all tables from both fields and M expressions
+        all_columns = []
+        seen_cols = set()
+        
+        for table in tables_m:
+            # First, collect from explicit fields
+            for field in table.get("fields", []):
+                col_name = field.get("name") if isinstance(field, dict) else str(field)
+                col_key = str(col_name).lower()
+                if col_key and col_key not in seen_cols:
+                    seen_cols.add(col_key)
+                    all_columns.append(col_name)
+        
+        # If no columns were found from fields, try to extract from M expressions
+        if not all_columns:
+            try:
+                for table in tables_m:
+                    m_expr = table.get("m_expression", "")
+                    if not m_expr:
+                        continue
+                    # Look for column selections like {col1, col2} or column references in brackets
+                    import re as re_module
+                    # Match patterns like [ColumnName] or quoted "ColumnName"
+                    col_patterns = re_module.findall(r'\[([^\]]+)\]', m_expr)
+                    for col_name in col_patterns:
+                        col_key = str(col_name).lower()
+                        if col_key and col_key not in seen_cols and not col_key.startswith('_') and col_key != 'data':
+                            seen_cols.add(col_key)
+                            all_columns.append(col_name)
+            except Exception as col_exc:
+                logger.warning("[publish_mquery] Column extraction from M expressions failed: %s", col_exc)
+        
         return {
             "success":            True,
             "dataset_id":         result.get("dataset_id", ""),
@@ -1432,6 +1467,9 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
             "workspace_url":      result.get("workspace_url", ""),
             "dataset_url":        result.get("dataset_url", ""),
             "qlik_fields_map_used": len(qlik_fields_map),
+            "available_columns":  all_columns,
+            "column_count":       len(all_columns),
+            "table_count":        len(tables_m),
             "message":            result.get("message", f"Published {dataset_name} to Power BI"),
         }
 
@@ -1450,13 +1488,13 @@ class GeneratePbitRequest(_BaseModel):
     relationships:    list = []
 
 
-class PowerBiValidationRequest(_BaseModel):
-    dataset_id: str
-    table_name: str
-    workspace_id: str = ""
-    numeric_columns: List[str] = []
-    expected_row_count: Optional[int] = None
-    expected_totals: Dict[str, float] = {}
+# class PowerBiValidationRequest(_BaseModel):
+#     dataset_id: str
+#     table_name: str
+#     workspace_id: str = ""
+#     numeric_columns: List[str] = []
+#     expected_row_count: Optional[int] = None
+#     expected_totals: Dict[str, float] = {}
 
 
 def _dax_table(name: str) -> str:
@@ -1558,9 +1596,285 @@ def _post_execute_dax(query_url: str, headers: Dict[str, str], dax: str) -> requ
     return requests.post(query_url, headers=headers, json=body, timeout=60)
 
 
+# @router.post("/validate-powerbi")
+# async def validate_powerbi_dataset_endpoint(request: PowerBiValidationRequest):
+#     """Return actual row count/totals from the published Power BI semantic model."""
+#     workspace_id = request.workspace_id or os.getenv("POWERBI_WORKSPACE_ID", "")
+#     if not workspace_id:
+#         raise HTTPException(status_code=400, detail="POWERBI_WORKSPACE_ID is not configured.")
+#     if not request.dataset_id:
+#         raise HTTPException(status_code=400, detail="dataset_id is required.")
+#     if not request.table_name:
+#         raise HTTPException(status_code=400, detail="table_name is required.")
+
+#     token = _acquire_sp_token("https://analysis.windows.net/powerbi/api/.default")
+#     if not token:
+#         raise HTTPException(status_code=500, detail="Unable to acquire Power BI service principal token.")
+
+#     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+#     available_metadata = _get_powerbi_table_metadata(workspace_id, request.dataset_id, headers)
+#     available_tables = [table.get("name", "") for table in available_metadata if table.get("name")]
+#     actual_table_name = _resolve_powerbi_table_name(request.table_name, available_metadata)
+#     actual_columns = next(
+#         (table.get("columns", []) for table in available_metadata if table.get("name") == actual_table_name),
+#         [],
+#     )
+#     numeric_columns, skipped_columns = _resolve_powerbi_columns(request.numeric_columns or [], actual_columns)
+#     table_ref = _dax_table(actual_table_name)
+#     row_items = [f'"RowCount", COUNTROWS({table_ref})']
+#     for col in numeric_columns:
+#         if not col:
+#             continue
+#         col_ref = f"{table_ref}{_dax_column(col)}"
+#         # Columns from CSV semantic models are often stored as text in BIM, so
+#         # VALUE() keeps totals useful even when Power BI imported string columns.
+#         row_items.append(
+#             f'"{col}", SUMX({table_ref}, IFERROR(VALUE({col_ref}), BLANK()))'
+#         )
+#     dax = "EVALUATE ROW(" + ", ".join(row_items) + ")"
+
+#     query_url = (
+#         f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}"
+#         f"/datasets/{request.dataset_id}/executeQueries"
+#     )
+#     refresh_status: Dict[str, Any] = {}
+#     try:
+#         refresh_url = (
+#             f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}"
+#             f"/datasets/{request.dataset_id}/refreshes?$top=1"
+#         )
+#         refresh_resp = requests.get(refresh_url, headers=headers, timeout=30)
+#         if refresh_resp.ok:
+#             latest = (refresh_resp.json().get("value") or [{}])[0]
+#             refresh_status = {
+#                 "status": latest.get("status", "Unknown"),
+#                 "startTime": latest.get("startTime"),
+#                 "endTime": latest.get("endTime"),
+#                 "serviceExceptionJson": latest.get("serviceExceptionJson"),
+#             }
+#     except Exception as exc:
+#         logger.warning("[validate_powerbi] Refresh status lookup failed: %s", exc)
+
+#     resp = _post_execute_dax(query_url, headers, dax)
+#     if not resp.ok and actual_table_name == request.table_name:
+#         fallback_candidates = [
+#             request.table_name.replace("_", " "),
+#             request.table_name.replace("_", ""),
+#             request.table_name.title().replace("_", " "),
+#         ]
+#         for candidate in fallback_candidates:
+#             if not candidate or candidate == actual_table_name:
+#                 continue
+#             candidate_ref = _dax_table(candidate)
+#             candidate_items = [f'"RowCount", COUNTROWS({candidate_ref})']
+#             for col in numeric_columns:
+#                 if col:
+#                     col_ref = f"{candidate_ref}{_dax_column(col)}"
+#                     candidate_items.append(f'"{col}", SUMX({candidate_ref}, IFERROR(VALUE({col_ref}), BLANK()))')
+#             candidate_dax = "EVALUATE ROW(" + ", ".join(candidate_items) + ")"
+#             candidate_resp = _post_execute_dax(query_url, headers, candidate_dax)
+#             if candidate_resp.ok:
+#                 actual_table_name = candidate
+#                 table_ref = candidate_ref
+#                 dax = candidate_dax
+#                 resp = candidate_resp
+#                 break
+
+#     if not resp.ok:
+#         raise HTTPException(
+#             status_code=resp.status_code,
+#             detail=(
+#                 f"Power BI executeQueries failed for table '{actual_table_name}'. "
+#                 f"Available tables: {available_tables or 'not returned by Power BI'}. "
+#                 f"Available columns: {actual_columns or 'not returned by Power BI'}. "
+#                 f"Response: {resp.text[:500]}"
+#             ),
+#         )
+
+#     result = resp.json()
+#     rows = (
+#         result.get("results", [{}])[0]
+#         .get("tables", [{}])[0]
+#         .get("rows", [])
+#     )
+#     actual = _normalize_execute_query_row(rows[0] if rows else {})
+#     actual_row_count = int(actual.get("RowCount") or 0)
+
+#     checks: List[Dict[str, Any]] = []
+#     if request.expected_row_count is not None:
+#         checks.append({
+#             "name": "Row count",
+#             "expected": request.expected_row_count,
+#             "actual": actual_row_count,
+#             "variance": actual_row_count - request.expected_row_count,
+#             "status": "PASS" if actual_row_count == request.expected_row_count else "WARNING",
+#         })
+#     else:
+#         checks.append({
+#             "name": "Row count",
+#             "expected": None,
+#             "actual": actual_row_count,
+#             "variance": None,
+#             "status": "INFO",
+#         })
+
+#     for col, expected in (request.expected_totals or {}).items():
+#         resolved_col = next(
+#             (candidate for candidate in numeric_columns if _table_match_key(candidate) == _table_match_key(col)),
+#             "",
+#         )
+#         if not resolved_col:
+#             checks.append({
+#                 "name": f"Total {col}",
+#                 "expected": expected,
+#                 "actual": None,
+#                 "variance": None,
+#                 "status": "WARNING",
+#                 "message": f"Column '{col}' was not found in Power BI table '{actual_table_name}'.",
+#             })
+#             continue
+#         actual_value = float(actual.get(resolved_col) or 0)
+#         variance = actual_value - float(expected)
+#         checks.append({
+#             "name": f"Total {col}",
+#             "expected": expected,
+#             "actual": actual_value,
+#             "variance": variance,
+#             "status": "PASS" if abs(variance) < 0.0001 else "WARNING",
+#         })
+
+#     return {
+#         "success": True,
+#         "dataset_id": request.dataset_id,
+#         "table_name": actual_table_name,
+#         "requested_table_name": request.table_name,
+#         "available_tables": available_tables,
+#         "available_columns": actual_columns,
+#         "queried_numeric_columns": numeric_columns,
+#         "skipped_numeric_columns": skipped_columns,
+#         "workspace_id": workspace_id,
+#         "dax": dax,
+#         "actual": actual,
+#         "refresh": refresh_status,
+#         "checks": checks,
+#     }
+
+class PowerBiValidationRequest(_BaseModel):
+    dataset_id: str
+    table_name: str
+    workspace_id: str = ""
+    numeric_columns: List[str] = []
+    expected_row_count: Optional[int] = None
+    expected_totals: Dict[str, float] = {}
+    use_rest_api: Optional[bool] = None  # ← NEW: force REST API for Fabric datasets
+
+
+def _get_powerbi_row_count_via_rest(
+    workspace_id: str,
+    dataset_id: str,
+    table_name: str,
+    headers: Dict[str, str],
+) -> Optional[int]:
+    """
+    Fetch row count using the Power BI REST API rows endpoint.
+    Works for Fabric Items API datasets where DAX executeQueries returns null.
+    Uses $top=1 to get minimal data — we only need the @odata.count.
+    """
+    try:
+        # Try dataset rows endpoint (works for push datasets and some Fabric models)
+        url = (
+            f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}"
+            f"/datasets/{dataset_id}/tables/{quote(table_name, safe='')}/rows"
+            f"?$top=1"
+        )
+        resp = requests.get(url, headers=headers, timeout=30)
+        if resp.ok:
+            data = resp.json()
+            count = data.get("@odata.count") or data.get("count")
+            if count is not None:
+                logger.info("[validate_powerbi] REST rows count for '%s': %s", table_name, count)
+                return int(count)
+            # If no count header, at least we got rows — count them as fallback
+            rows = data.get("value", [])
+            if rows is not None:
+                logger.info("[validate_powerbi] REST rows endpoint returned data for '%s'", table_name)
+                return len(rows)
+        else:
+            logger.warning("[validate_powerbi] REST rows endpoint failed: %d %s", resp.status_code, resp.text[:200])
+    except Exception as exc:
+        logger.warning("[validate_powerbi] REST rows count failed: %s", exc)
+    return None
+
+
+def _get_powerbi_row_count_via_scanner(
+    workspace_id: str,
+    dataset_id: str,
+    table_name: str,
+    headers: Dict[str, str],
+) -> Optional[int]:
+    """
+    Use the Power BI Scanner API to get table row count metadata.
+    Works for Fabric semantic models that block DAX executeQueries.
+    """
+    try:
+        # Trigger a workspace scan
+        scan_url = f"https://api.powerbi.com/v1.0/myorg/admin/workspaces/getInfo"
+        scan_body = {
+            "workspaces": [workspace_id],
+            "datasetExpressions": False,
+            "datasetSchema": True,
+            "datasourceDetails": False,
+            "getArtifactUsers": False,
+            "lineage": False,
+        }
+        scan_resp = requests.post(scan_url, headers=headers, json=scan_body, timeout=30)
+        if not scan_resp.ok:
+            logger.warning("[validate_powerbi] Scanner API trigger failed: %d", scan_resp.status_code)
+            return None
+
+        scan_id = scan_resp.json().get("id")
+        if not scan_id:
+            return None
+
+        import time
+        # Poll scan status
+        status_url = f"https://api.powerbi.com/v1.0/myorg/admin/workspaces/scanStatus/{scan_id}"
+        for _ in range(6):
+            time.sleep(2)
+            status_resp = requests.get(status_url, headers=headers, timeout=15)
+            if status_resp.ok and status_resp.json().get("status") == "Succeeded":
+                break
+
+        # Get scan result
+        result_url = f"https://api.powerbi.com/v1.0/myorg/admin/workspaces/scanResult/{scan_id}"
+        result_resp = requests.get(result_url, headers=headers, timeout=30)
+        if not result_resp.ok:
+            return None
+
+        workspaces = result_resp.json().get("workspaces", [])
+        for ws in workspaces:
+            for ds in ws.get("datasets", []):
+                if ds.get("id") == dataset_id:
+                    for tbl in ds.get("tables", []):
+                        if _table_match_key(tbl.get("name", "")) == _table_match_key(table_name):
+                            row_count = tbl.get("rowCount") or tbl.get("rows")
+                            if row_count is not None:
+                                logger.info("[validate_powerbi] Scanner row count for '%s': %s", table_name, row_count)
+                                return int(row_count)
+    except Exception as exc:
+        logger.warning("[validate_powerbi] Scanner API failed: %s", exc)
+    return None
+
+
 @router.post("/validate-powerbi")
 async def validate_powerbi_dataset_endpoint(request: PowerBiValidationRequest):
-    """Return actual row count/totals from the published Power BI semantic model."""
+    """
+    Return actual row count/totals from the published Power BI semantic model.
+    
+    For Fabric Items API datasets (method=fabric_items_api), DAX executeQueries
+    always returns RowCount: null due to a Microsoft platform limitation.
+    When use_rest_api=True is passed, we use REST API endpoints instead.
+    """
     workspace_id = request.workspace_id or os.getenv("POWERBI_WORKSPACE_ID", "")
     if not workspace_id:
         raise HTTPException(status_code=400, detail="POWERBI_WORKSPACE_ID is not configured.")
@@ -1574,6 +1888,8 @@ async def validate_powerbi_dataset_endpoint(request: PowerBiValidationRequest):
         raise HTTPException(status_code=500, detail="Unable to acquire Power BI service principal token.")
 
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    # ── Step 1: Discover available tables ─────────────────────────────────────
     available_metadata = _get_powerbi_table_metadata(workspace_id, request.dataset_id, headers)
     available_tables = [table.get("name", "") for table in available_metadata if table.get("name")]
     actual_table_name = _resolve_powerbi_table_name(request.table_name, available_metadata)
@@ -1581,24 +1897,15 @@ async def validate_powerbi_dataset_endpoint(request: PowerBiValidationRequest):
         (table.get("columns", []) for table in available_metadata if table.get("name") == actual_table_name),
         [],
     )
-    numeric_columns, skipped_columns = _resolve_powerbi_columns(request.numeric_columns or [], actual_columns)
-    table_ref = _dax_table(actual_table_name)
-    row_items = [f'"RowCount", COUNTROWS({table_ref})']
-    for col in numeric_columns:
-        if not col:
-            continue
-        col_ref = f"{table_ref}{_dax_column(col)}"
-        # Columns from CSV semantic models are often stored as text in BIM, so
-        # VALUE() keeps totals useful even when Power BI imported string columns.
-        row_items.append(
-            f'"{col}", SUMX({table_ref}, IFERROR(VALUE({col_ref}), BLANK()))'
-        )
-    dax = "EVALUATE ROW(" + ", ".join(row_items) + ")"
 
-    query_url = (
-        f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}"
-        f"/datasets/{request.dataset_id}/executeQueries"
+    logger.info(
+        "[validate_powerbi] Resolved table '%s' → '%s'. Available: %s. use_rest_api=%s",
+        request.table_name, actual_table_name, available_tables, request.use_rest_api
     )
+
+    numeric_columns, skipped_columns = _resolve_powerbi_columns(request.numeric_columns or [], actual_columns)
+
+    # ── Step 2: Get refresh status ─────────────────────────────────────────────
     refresh_status: Dict[str, Any] = {}
     try:
         refresh_url = (
@@ -1617,51 +1924,147 @@ async def validate_powerbi_dataset_endpoint(request: PowerBiValidationRequest):
     except Exception as exc:
         logger.warning("[validate_powerbi] Refresh status lookup failed: %s", exc)
 
-    resp = _post_execute_dax(query_url, headers, dax)
-    if not resp.ok and actual_table_name == request.table_name:
-        fallback_candidates = [
-            request.table_name.replace("_", " "),
-            request.table_name.replace("_", ""),
-            request.table_name.title().replace("_", " "),
-        ]
-        for candidate in fallback_candidates:
-            if not candidate or candidate == actual_table_name:
-                continue
-            candidate_ref = _dax_table(candidate)
-            candidate_items = [f'"RowCount", COUNTROWS({candidate_ref})']
-            for col in numeric_columns:
-                if col:
-                    col_ref = f"{candidate_ref}{_dax_column(col)}"
-                    candidate_items.append(f'"{col}", SUMX({candidate_ref}, IFERROR(VALUE({col_ref}), BLANK()))')
-            candidate_dax = "EVALUATE ROW(" + ", ".join(candidate_items) + ")"
-            candidate_resp = _post_execute_dax(query_url, headers, candidate_dax)
-            if candidate_resp.ok:
-                actual_table_name = candidate
-                table_ref = candidate_ref
-                dax = candidate_dax
-                resp = candidate_resp
-                break
+    # ── Step 3: Row count resolution ──────────────────────────────────────────
+    # For Fabric datasets, DAX executeQueries always returns RowCount: null.
+    # Strategy:
+    #   1. If use_rest_api=True → try REST rows endpoint first
+    #   2. Try DAX executeQueries (works for non-Fabric)
+    #   3. Fallback: REST rows endpoint
+    #   4. Fallback: Scanner API
+    
+    actual_row_count: int = 0
+    dax: str = ""
+    actual: Dict[str, Any] = {}
+    rest_row_count: Optional[int] = None
 
-    if not resp.ok:
-        raise HTTPException(
-            status_code=resp.status_code,
-            detail=(
-                f"Power BI executeQueries failed for table '{actual_table_name}'. "
-                f"Available tables: {available_tables or 'not returned by Power BI'}. "
-                f"Available columns: {actual_columns or 'not returned by Power BI'}. "
-                f"Response: {resp.text[:500]}"
-            ),
+    table_ref = _dax_table(actual_table_name)
+    row_items = [f'"RowCount", COUNTROWS({table_ref})']
+    for col in numeric_columns:
+        if not col:
+            continue
+        col_ref = f"{table_ref}{_dax_column(col)}"
+        row_items.append(
+            f'"{col}", SUMX({table_ref}, IFERROR(VALUE({col_ref}), BLANK()))'
         )
-
-    result = resp.json()
-    rows = (
-        result.get("results", [{}])[0]
-        .get("tables", [{}])[0]
-        .get("rows", [])
+    dax = "EVALUATE ROW(" + ", ".join(row_items) + ")"
+    query_url = (
+        f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}"
+        f"/datasets/{request.dataset_id}/executeQueries"
     )
-    actual = _normalize_execute_query_row(rows[0] if rows else {})
-    actual_row_count = int(actual.get("RowCount") or 0)
 
+    if request.use_rest_api:
+        # For Fabric — try REST API first, fall back to DAX
+        logger.info("[validate_powerbi] use_rest_api=True — trying REST rows endpoint first")
+        rest_row_count = _get_powerbi_row_count_via_rest(
+            workspace_id, request.dataset_id, actual_table_name, headers
+        )
+        if rest_row_count is None:
+            # Try all available table names in case table resolution was off
+            for tbl_name in available_tables:
+                if tbl_name == actual_table_name:
+                    continue
+                rest_row_count = _get_powerbi_row_count_via_rest(
+                    workspace_id, request.dataset_id, tbl_name, headers
+                )
+                if rest_row_count is not None:
+                    actual_table_name = tbl_name
+                    logger.info("[validate_powerbi] Found REST row count via table '%s': %d", tbl_name, rest_row_count)
+                    break
+
+        if rest_row_count is not None:
+            actual_row_count = rest_row_count
+            actual = {"RowCount": actual_row_count}
+        else:
+            # REST failed — try Scanner API
+            logger.info("[validate_powerbi] REST rows failed — trying Scanner API")
+            scanner_count = _get_powerbi_row_count_via_scanner(
+                workspace_id, request.dataset_id, actual_table_name, headers
+            )
+            if scanner_count is not None:
+                actual_row_count = scanner_count
+                actual = {"RowCount": actual_row_count}
+            else:
+                # Final fallback: try DAX anyway (may return null for Fabric)
+                logger.info("[validate_powerbi] Scanner failed — trying DAX as last resort")
+                try:
+                    resp = _post_execute_dax(query_url, headers, dax)
+                    if resp.ok:
+                        result = resp.json()
+                        rows = (
+                            result.get("results", [{}])[0]
+                            .get("tables", [{}])[0]
+                            .get("rows", [])
+                        )
+                        actual = _normalize_execute_query_row(rows[0] if rows else {})
+                        actual_row_count = int(actual.get("RowCount") or 0)
+                except Exception as dax_exc:
+                    logger.warning("[validate_powerbi] DAX fallback also failed: %s", dax_exc)
+
+    else:
+        # Standard path: try DAX executeQueries
+        resp = _post_execute_dax(query_url, headers, dax)
+
+        # Try fallback table name candidates if DAX fails
+        if not resp.ok and actual_table_name == request.table_name:
+            fallback_candidates = [
+                request.table_name.replace("_", " "),
+                request.table_name.replace("_", ""),
+                request.table_name.title().replace("_", " "),
+            ]
+            for candidate in fallback_candidates:
+                if not candidate or candidate == actual_table_name:
+                    continue
+                candidate_ref = _dax_table(candidate)
+                candidate_items = [f'"RowCount", COUNTROWS({candidate_ref})']
+                for col in numeric_columns:
+                    if col:
+                        col_ref = f"{candidate_ref}{_dax_column(col)}"
+                        candidate_items.append(f'"{col}", SUMX({candidate_ref}, IFERROR(VALUE({col_ref}), BLANK()))')
+                candidate_dax = "EVALUATE ROW(" + ", ".join(candidate_items) + ")"
+                candidate_resp = _post_execute_dax(query_url, headers, candidate_dax)
+                if candidate_resp.ok:
+                    actual_table_name = candidate
+                    table_ref = candidate_ref
+                    dax = candidate_dax
+                    resp = candidate_resp
+                    break
+
+        if not resp.ok:
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail=(
+                    f"Power BI executeQueries failed for table '{actual_table_name}'. "
+                    f"Available tables: {available_tables or 'not returned by Power BI'}. "
+                    f"Response: {resp.text[:500]}"
+                ),
+            )
+
+        result = resp.json()
+        rows = (
+            result.get("results", [{}])[0]
+            .get("tables", [{}])[0]
+            .get("rows", [])
+        )
+        actual = _normalize_execute_query_row(rows[0] if rows else {})
+        actual_row_count = int(actual.get("RowCount") or 0)
+
+        # If DAX returned null (Fabric limitation), try REST as fallback
+        if actual_row_count == 0 and not numeric_columns:
+            logger.info("[validate_powerbi] DAX returned 0 — trying REST rows as fallback")
+            rest_fallback = _get_powerbi_row_count_via_rest(
+                workspace_id, request.dataset_id, actual_table_name, headers
+            )
+            if rest_fallback is not None and rest_fallback > 0:
+                actual_row_count = rest_fallback
+                actual["RowCount"] = actual_row_count
+                logger.info("[validate_powerbi] REST fallback row count: %d", actual_row_count)
+
+    logger.info(
+        "[validate_powerbi] Final row count for '%s': %d (use_rest_api=%s)",
+        actual_table_name, actual_row_count, request.use_rest_api
+    )
+
+    # ── Step 4: Build checks ───────────────────────────────────────────────────
     checks: List[Dict[str, Any]] = []
     if request.expected_row_count is not None:
         checks.append({
@@ -1720,6 +2123,8 @@ async def validate_powerbi_dataset_endpoint(request: PowerBiValidationRequest):
         "refresh": refresh_status,
         "checks": checks,
     }
+
+
 
 
 @router.post("/generate-pbit")

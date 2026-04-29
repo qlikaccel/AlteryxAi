@@ -2618,7 +2618,7 @@ def _should_disable_alteryx_relationship_inference(tables_m: List[Dict[str, Any]
     if app_id:
         return False
     raw_count = sum(1 for table in tables_m if _is_alteryx_raw_source_table(table.get("name", "")))
-    return raw_count >= 2
+    return raw_count >= 1
 
 
 # ─────────────────────────────────────────────────────────────────────────────
