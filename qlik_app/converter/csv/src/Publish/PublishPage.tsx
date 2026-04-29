@@ -60,6 +60,25 @@ export default function PublishPage() {
     (workspaceId ? `https://app.powerbi.com/groups/${workspaceId}` : "https://app.powerbi.com");
   const publishUrl = powerBiWorkspaceUrl;
 
+  const { columnCount, totalRecords } = useMemo(() => {
+    let validationData = validationResult;
+
+    const powerBiRows =
+      validationData?.actual?.RowCount ??
+      publishResult?.actual_row_count ??
+      (Number(sessionStorage.getItem("migration_row_count")) || 0);
+
+    const columnCountValue =
+      validationData?.available_columns?.length ||
+      publishResult?.available_columns?.length ||
+      0;
+
+    return {
+      columnCount: columnCountValue,
+      totalRecords: powerBiRows,
+    };
+  }, [validationResult, publishResult]);
+
   const steps = [
     { label: "Upload", complete: true },
     { label: "Tool mapping", complete: true },
@@ -242,8 +261,9 @@ export default function PublishPage() {
 
         <section className="wire-card publish-summary-card">
           <h2>Publish summary</h2>
-          <div className="summary-row"><span>Queries to deploy</span><strong>1 of 1</strong></div>
-          <div className="summary-row"><span>Total tables</span><strong>{deployedTables}</strong></div>
+          <div className="summary-row"><span>Table Count</span><strong>{deployedTables}</strong></div>
+          <div className="summary-row"><span>Column Count</span><strong>{columnCount}</strong></div>
+          <div className="summary-row"><span>Total Records</span><strong>{totalRecords}</strong></div>
           <div className="summary-row">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
               <span>Validation & Reconciliation</span>
