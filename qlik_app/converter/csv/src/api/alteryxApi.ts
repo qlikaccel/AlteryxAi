@@ -180,6 +180,38 @@ export async function validatePowerBiMigration(payload: {
   return data;
 }
 
+export async function validateAlteryxPowerBiRecordCounts(payload: {
+  batch_id: string;
+  workflow_id: string;
+  dataset_id: string;
+  table_name: string;
+  workspace_id?: string;
+  numeric_columns?: string[];
+  expected_row_count?: number | null;
+}): Promise<any> {
+  const res = await fetch(
+    `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(payload.batch_id)}/workflows/${encodeURIComponent(payload.workflow_id)}/record-count-validation`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataset_id: payload.dataset_id,
+        table_name: payload.table_name,
+        workspace_id: payload.workspace_id || "",
+        numeric_columns: payload.numeric_columns || [],
+        expected_row_count: payload.expected_row_count ?? null,
+      }),
+    }
+  );
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.detail || `Record count validation failed (${res.status})`);
+  }
+
+  return data;
+}
+
 export async function downloadValidationReportPdf(payload: {
   table_name: string;
   app_name: string;

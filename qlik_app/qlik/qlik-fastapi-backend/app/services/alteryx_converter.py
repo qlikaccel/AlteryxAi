@@ -1050,6 +1050,65 @@ def _workflow_file_sources(workflow: dict[str, Any]) -> list[dict[str, Any]]:
     return list(by_file_name.values())
 
 
+def _file_name_from_input_node(node: dict[str, Any]) -> str:
+    if detect_tool_key(str(node.get("plugin") or "")) != "input data":
+        return ""
+    file_pattern = re.compile(r'[^\\/\n]+\.(?:csv|xlsx|xls|json)\b', re.IGNORECASE)
+    for line in str(node.get("configurationText") or "").splitlines():
+        matches = file_pattern.findall(line.strip())
+        if matches:
+            return matches[-1].replace("\\", "/").split("/")[-1]
+    return ""
+
+
+def _raw_query_name_for_source(source: dict[str, Any], index: int, table_name: str, emitted: set[str]) -> str:
+    raw_name = safe_name(
+        f"{os.path.splitext(str(source.get('name') or f'Source_{index}'))[0]}_raw",
+        f"Source_{index}_raw",
+    )
+    if raw_name == table_name:
+        raw_name = f"{raw_name}_source"
+    base = raw_name
+    counter = 2
+    while raw_name.lower() in emitted:
+        raw_name = f"{base}_{counter}"
+        counter += 1
+    emitted.add(raw_name.lower())
+    return raw_name
+
+
+def _union_source_refs_by_node(
+    workflow: dict[str, Any],
+    raw_name_by_file_name: dict[str, str],
+) -> dict[str, list[str]]:
+    nodes = workflow.get("workflowNodes") or []
+    edges = workflow.get("workflowEdges") or []
+    node_by_id = {str(node.get("id")): node for node in nodes}
+    refs_by_union: dict[str, list[str]] = {}
+
+    for node in nodes:
+        node_id = str(node.get("id") or "")
+        if detect_tool_key(str(node.get("plugin") or "")) != "union":
+            continue
+        refs: list[str] = []
+        seen: set[str] = set()
+        for edge in edges:
+            if str(edge.get("to")) != node_id:
+                continue
+            upstream = node_by_id.get(str(edge.get("from") or ""))
+            if not upstream:
+                continue
+            file_name = _file_name_from_input_node(upstream).lower()
+            raw_name = raw_name_by_file_name.get(file_name)
+            if raw_name and raw_name.lower() not in seen:
+                seen.add(raw_name.lower())
+                refs.append(raw_name)
+        if len(refs) > 1:
+            refs_by_union[node_id] = refs
+
+    return refs_by_union
+
+
 def _source_with_sharepoint_context(source: dict[str, Any], sharepoint_url: str = "") -> dict[str, Any]:
     item = dict(source)
     if sharepoint_url:
@@ -1217,6 +1276,7 @@ def _step_for_tool(
     workflow: dict[str, Any],
     use_llm_expressions: bool = False,
     llm_expression_conversions: list[dict[str, Any]] | None = None,
+    union_source_refs_by_node: dict[str, list[str]] | None = None,
 ) -> tuple[str, str, str]:
     llm_expression_conversions = llm_expression_conversions if llm_expression_conversions is not None else []
     comment = f"{tool_key.title()} tool {node.get('id', index)} mapped to {ALTERYX_TOOL_MAPPINGS.get(tool_key, {}).get('m', 'manual review')}"
@@ -1362,6 +1422,10 @@ def _step_for_tool(
     if tool_key in {"join", "join multiple"}:
         return _next_name("JoinPrepared", index), current, comment + " - join partner tables must be bound during multi-stream conversion."
     if tool_key == "union":
+        union_refs = (union_source_refs_by_node or {}).get(str(node.get("id") or ""))
+        if union_refs:
+            refs = ", ".join(union_refs)
+            return _next_name("UnionCombined", index), f"Table.Combine({{{refs}}})", comment + f" - combined {len(union_refs)} incoming source stream(s)."
         return _next_name("UnionPrepared", index), current, comment + " - union requires graph-aware multi-input binding; preserved current stream."
     if tool_key == "append fields":
         return _next_name("AppendFieldsPrepared", index), current, comment + " - append-field cardinality must be validated."
@@ -1425,6 +1489,30 @@ def convert_workflow_to_m(
         source = detected_file_sources[0]
 
     table_name = safe_name(workflow.get("name") or source.get("name") or "AlteryxOutput", "AlteryxOutput")
+    raw_source_queries: list[dict[str, Any]] = []
+    raw_query_defs: list[str] = []
+    source_fields_map: dict[str, list[dict[str, Any]]] = {}
+    emitted_raw_names: set[str] = set()
+    raw_name_by_file_name: dict[str, str] = {}
+
+    for src_index, detected_source in enumerate(detected_file_sources, start=1):
+        raw_name = _raw_query_name_for_source(detected_source, src_index, table_name, emitted_raw_names)
+        raw_query_defs.append(_source_query_definition(detected_source, raw_name))
+        raw_source_queries.append({
+            "name": raw_name,
+            "source": detected_source,
+        })
+        file_key = str(detected_source.get("name") or "").strip().lower()
+        if file_key:
+            raw_name_by_file_name[file_key] = raw_name
+        rq_fields = [
+            {"name": str(f.get("name") or "").strip(), "type": str(f.get("type") or "string")}
+            for f in (detected_source.get("fields") or [])
+            if isinstance(f, dict) and str(f.get("name") or "").strip()
+        ]
+        source_fields_map[raw_name] = rq_fields
+
+    union_source_refs = _union_source_refs_by_node(workflow, raw_name_by_file_name)
     let_steps: list[tuple[str, str, str | None]] = [(name, expr, None) for name, expr in _source_steps(source, table_name)]
     current = let_steps[-1][0]
 
@@ -1451,6 +1539,7 @@ def convert_workflow_to_m(
             workflow,
             use_llm_expressions=use_llm_expressions,
             llm_expression_conversions=llm_expression_conversions,
+            union_source_refs_by_node=union_source_refs,
         )
         if name != current or expression != current:
             let_steps.append((name, expression, comment))
@@ -1480,21 +1569,6 @@ def convert_workflow_to_m(
         formatted.append(f"    {name} = {expression}{suffix}")
 
     output_mquery = f"{table_name} =\nlet\n" + "\n".join(formatted) + f"\nin\n    {current}"
-    raw_source_queries: list[dict[str, Any]] = []
-    raw_query_defs: list[str] = []
-    emitted_raw_names: set[str] = set()
-    for src_index, detected_source in enumerate(detected_file_sources, start=1):
-        raw_name = safe_name(f"{os.path.splitext(str(detected_source.get('name') or f'Source_{src_index}'))[0]}_raw", f"Source_{src_index}_raw")
-        if raw_name == table_name:
-            raw_name = f"{raw_name}_source"
-        if raw_name.lower() in emitted_raw_names:
-            continue
-        emitted_raw_names.add(raw_name.lower())
-        raw_query_defs.append(_source_query_definition(detected_source, raw_name))
-        raw_source_queries.append({
-            "name": raw_name,
-            "source": detected_source,
-        })
     combined_mquery = "\n\n".join([*raw_query_defs, output_mquery]) if raw_query_defs else output_mquery
     llm_metadata: dict[str, Any] = {}
     if strategy["generation_method"] == "llm":
@@ -1526,19 +1600,6 @@ def convert_workflow_to_m(
     # sales, customers, and products files with different schemas; workflow-level
     # inferred columns belong to downstream transforms and must not be copied to
     # every raw source table.
-    source_fields_map: dict[str, list[dict[str, Any]]] = {}
-
-    for rq in raw_source_queries:
-        rq_name = rq.get("name", "")
-        rq_source = rq.get("source", {})
-        rq_fields = [
-            {"name": str(f.get("name") or "").strip(), "type": str(f.get("type") or "string")}
-            for f in (rq_source.get("fields") or [])
-            if isinstance(f, dict) and str(f.get("name") or "").strip()
-        ]
-        if rq_name:
-            source_fields_map[rq_name] = rq_fields
-
     return {
         "dataset_name": table_name,
         "table_name": table_name,

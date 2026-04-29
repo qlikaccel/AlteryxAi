@@ -66,6 +66,30 @@ def _is_applymap_dimension_table(table_obj: Dict[str, Any]) -> bool:
     return isinstance(opts, dict) and bool(opts.get("is_applymap_dimension"))
 
 
+def _field_display_name(field: Any) -> str:
+    if isinstance(field, dict):
+        return str(field.get("alias") or field.get("name") or field.get("field") or "").strip()
+    return str(field or "").strip()
+
+
+def _publish_table_schema(tables_m: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    published_tables: List[Dict[str, Any]] = []
+    for table in tables_m or []:
+        table_name = str(table.get("name") or "").strip()
+        if not table_name:
+            continue
+        columns: List[str] = []
+        seen = set()
+        for field in table.get("fields") or []:
+            column_name = _field_display_name(field)
+            key = column_name.lower()
+            if column_name and column_name != "*" and key not in seen:
+                seen.add(key)
+                columns.append(column_name)
+        published_tables.append({"name": table_name, "columns": columns})
+    return published_tables
+
+
 def _parse_combined_mquery_fallback(combined_m: str) -> List[Dict[str, Any]]:
     """
     Parse simple combined Power Query sections without the legacy pbit_generator module.
@@ -705,7 +729,7 @@ def _should_disable_alteryx_relationship_inference(tables_m: List[Dict[str, Any]
     if app_id:
         return False
     raw_count = sum(1 for table in tables_m if _is_alteryx_raw_source_table(table.get("name", "")))
-    return raw_count >= 2
+    return raw_count >= 1
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1423,10 +1447,29 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
             raise HTTPException(status_code=500, detail=result.get("error", "Publish failed"))
 
         logger.info("[publish_mquery] Published via %s", result.get("method"))
+        published_tables = result.get("published_tables") or _publish_table_schema(tables_m)
+        dataset_key = re.sub(r"[^a-z0-9]+", "", str(dataset_name or "").lower())
+        final_table = next(
+            (
+                table for table in published_tables
+                if re.sub(r"[^a-z0-9]+", "", str(table.get("name") or "").lower()) == dataset_key
+            ),
+            None,
+        )
+        if final_table is None and published_tables:
+            non_system_tables = [
+                table for table in published_tables
+                if not str(table.get("name") or "").startswith(("LocalDateTable", "DateTableTemplate", "_"))
+            ]
+            final_table = non_system_tables[-1] if non_system_tables else published_tables[-1]
+
         return {
             "success":            True,
             "dataset_id":         result.get("dataset_id", ""),
             "dataset_name":       dataset_name,
+            "final_table_name":    (final_table or {}).get("name", dataset_name),
+            "published_tables":    published_tables,
+            "available_columns":   (final_table or {}).get("columns", []),
             "tables_deployed":    len(tables_m),
             "method":             result.get("method", ""),
             "workspace_url":      result.get("workspace_url", ""),
@@ -1509,6 +1552,31 @@ def _get_powerbi_table_metadata(workspace_id: str, dataset_id: str, headers: Dic
     return []
 
 
+def _get_debug_bim_table_columns(table_name: str) -> List[str]:
+    candidates = [
+        os.path.join(os.getcwd(), "debug_model.bim"),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../debug_model.bim")),
+    ]
+    requested_key = _table_match_key(table_name)
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                bim = json.load(handle)
+            for table in bim.get("model", {}).get("tables", []):
+                name = str(table.get("name") or "")
+                if name == table_name or _table_match_key(name) == requested_key:
+                    return [
+                        str(col.get("name") or "")
+                        for col in table.get("columns", [])
+                        if col.get("name")
+                    ]
+        except Exception as exc:
+            logger.debug("[validate_powerbi] debug_model.bim column lookup failed for %s: %s", path, exc)
+    return []
+
+
 def _resolve_powerbi_table_name(requested: str, available: List[Dict[str, Any]]) -> str:
     names = [table.get("name", "") for table in available if table.get("name")]
     if not names:
@@ -1556,6 +1624,53 @@ def _post_execute_dax(query_url: str, headers: Dict[str, str], dax: str) -> requ
         "serializerSettings": {"includeNulls": True},
     }
     return requests.post(query_url, headers=headers, json=body, timeout=60)
+
+
+def _extract_execute_query_row(response_json: Dict[str, Any]) -> Dict[str, Any]:
+    rows = (
+        response_json.get("results", [{}])[0]
+        .get("tables", [{}])[0]
+        .get("rows", [])
+    )
+    return _normalize_execute_query_row(rows[0] if rows else {})
+
+
+def _row_count_fallback_dax(table_ref: str, columns: List[str]) -> str:
+    count_items = [f'"RowCount", COUNTROWS({table_ref})']
+    for index, col in enumerate((columns or [])[:30], start=1):
+        col_ref = f"{table_ref}{_dax_column(col)}"
+        count_items.append(
+            f'"ColumnCount_{index}", COUNTROWS(FILTER({table_ref}, NOT(ISBLANK({col_ref}))))'
+        )
+    return "EVALUATE ROW(" + ", ".join(count_items) + ")"
+
+
+def _fallback_row_count_from_columns(
+    query_url: str,
+    headers: Dict[str, str],
+    table_ref: str,
+    columns: List[str],
+) -> tuple[Optional[int], Dict[str, Any], str]:
+    if not columns:
+        return None, {}, ""
+    fallback_dax = _row_count_fallback_dax(table_ref, columns)
+    fallback_resp = _post_execute_dax(query_url, headers, fallback_dax)
+    if not fallback_resp.ok:
+        logger.warning(
+            "[validate_powerbi] Column-count fallback failed: %d %s",
+            fallback_resp.status_code,
+            fallback_resp.text[:300],
+        )
+        return None, {}, fallback_dax
+    fallback_actual = _extract_execute_query_row(fallback_resp.json())
+    fallback_counts = [
+        int(value)
+        for key, value in fallback_actual.items()
+        if str(key).startswith("ColumnCount_") and isinstance(value, (int, float)) and int(value) > 0
+    ]
+    if not fallback_counts:
+        return None, fallback_actual, fallback_dax
+    return max(fallback_counts), fallback_actual, fallback_dax
 
 
 @router.post("/validate-powerbi")
@@ -1654,13 +1769,11 @@ async def validate_powerbi_dataset_endpoint(request: PowerBiValidationRequest):
         )
 
     result = resp.json()
-    rows = (
-        result.get("results", [{}])[0]
-        .get("tables", [{}])[0]
-        .get("rows", [])
-    )
-    actual = _normalize_execute_query_row(rows[0] if rows else {})
+    actual = _extract_execute_query_row(result)
     actual_row_count = int(actual.get("RowCount") or 0)
+    row_count_method = "countrows"
+    fallback_dax = ""
+    fallback_actual: Dict[str, Any] = {}
 
     checks: List[Dict[str, Any]] = []
     if request.expected_row_count is not None:
@@ -1711,11 +1824,14 @@ async def validate_powerbi_dataset_endpoint(request: PowerBiValidationRequest):
         "table_name": actual_table_name,
         "requested_table_name": request.table_name,
         "available_tables": available_tables,
-        "available_columns": actual_columns,
+        "available_columns": actual_columns or numeric_columns,
         "queried_numeric_columns": numeric_columns,
         "skipped_numeric_columns": skipped_columns,
         "workspace_id": workspace_id,
         "dax": dax,
+        "row_count_method": row_count_method,
+        "row_count_fallback_dax": fallback_dax,
+        "row_count_fallback_actual": fallback_actual,
         "actual": actual,
         "refresh": refresh_status,
         "checks": checks,

@@ -3,9 +3,11 @@
 import logging
 import json
 import base64
+import csv
 import os
 import requests
 import re
+from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Header, Query, Response, UploadFile
 from fastapi.responses import HTMLResponse
 from typing import Any, Optional
@@ -87,6 +89,211 @@ class CloudWorkflowMaterializeRequest(BaseModel):
     workflow_name: Optional[str] = None
     workspace_id: Optional[str] = None
     workspace_name: Optional[str] = None
+
+
+class AlteryxRecordCountValidationRequest(BaseModel):
+    dataset_id: str
+    table_name: str
+    workspace_id: Optional[str] = ""
+    expected_row_count: Optional[int] = None
+    numeric_columns: list[str] = []
+
+
+def _plugin_key(node: dict[str, Any]) -> str:
+    return str(node.get("plugin") or node.get("tool") or "").lower()
+
+
+def _node_blob(node: dict[str, Any]) -> str:
+    pieces = [
+        str(node.get("configurationText") or ""),
+        json.dumps(node.get("config") or {}, default=str),
+        json.dumps(node.get("configuration") or {}, default=str),
+        str(node.get("path") or ""),
+        str(node.get("name") or ""),
+    ]
+    return "\n".join(piece for piece in pieces if piece)
+
+
+def _terminal_output_nodes(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    nodes = workflow.get("workflowNodes") or []
+    if not nodes:
+        return []
+
+    output_nodes = [
+        node for node in nodes
+        if any(token in _plugin_key(node) for token in ("output", "browse"))
+    ]
+    if output_nodes:
+        return output_nodes
+
+    destinations = {str(edge.get("to") or "") for edge in workflow.get("workflowEdges") or []}
+    return [node for node in nodes if str(node.get("id") or "") not in destinations] or nodes[-1:]
+
+
+def _parse_count_hint(blob: str) -> Optional[int]:
+    patterns = [
+        r"~\s*([\d,.]+)\s*([kKmM]?)\s*(?:rows|records)\b",
+        r"\b([\d,.]+)\s*([kKmM])\s*(?:rows|records)\b",
+        r"\b(?:rows|records|row count|record count)\s*[:=]\s*([\d,.]+)\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, blob or "", flags=re.IGNORECASE)
+        if not match:
+            continue
+        value = float(match.group(1).replace(",", ""))
+        suffix = match.group(2).lower() if len(match.groups()) > 1 and match.group(2) else ""
+        if suffix == "k":
+            value *= 1_000
+        elif suffix == "m":
+            value *= 1_000_000
+        return int(round(value))
+    return None
+
+
+def _candidate_output_paths(node: dict[str, Any]) -> list[Path]:
+    blob = _node_blob(node)
+    candidates = [
+        match.group(0).strip().strip(";,'\")")
+        for match in re.finditer(
+            r"(?:[A-Za-z]:|\\\\|/|\\)?[^\n\"'<>]+\.(?:csv|txt|tsv)",
+            blob,
+            flags=re.IGNORECASE,
+        )
+    ]
+    paths: list[Path] = []
+    for raw in candidates:
+        if raw.lower().startswith(("http://", "https://", "tfs://")):
+            continue
+        path = Path(raw)
+        if not path.is_absolute():
+            paths.append(Path.cwd() / raw)
+            paths.append(Path.cwd() / "output" / Path(raw).name)
+        else:
+            paths.append(path)
+    return paths
+
+
+def _count_delimited_file(path: Path) -> Optional[int]:
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        with path.open("r", encoding="utf-8-sig", errors="ignore") as handle:
+            row_count = sum(1 for _ in handle)
+        return max(row_count - 1, 0)
+    except OSError:
+        return None
+
+
+def _delimited_file_columns(path: Path) -> list[str]:
+    if not path.exists() or not path.is_file():
+        return []
+    try:
+        with path.open("r", encoding="utf-8-sig", errors="ignore", newline="") as handle:
+            sample = handle.read(4096)
+            handle.seek(0)
+            dialect = csv.Sniffer().sniff(sample, delimiters=",\t|;") if sample.strip() else csv.excel
+            rows = csv.reader(handle, dialect)
+            return [str(col).strip() for col in next(rows, []) if str(col).strip()]
+    except Exception:
+        return []
+
+
+def _name_match_score(value: str, target: str) -> int:
+    value_key = re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+    target_key = re.sub(r"[^a-z0-9]+", "", str(target or "").lower())
+    if not value_key or not target_key:
+        return 0
+    if value_key == target_key:
+        return 100
+    if value_key in target_key or target_key in value_key:
+        return 80
+    value_parts = {part for part in re.split(r"[^a-z0-9]+", str(value or "").lower()) if len(part) > 2}
+    target_parts = {part for part in re.split(r"[^a-z0-9]+", str(target or "").lower()) if len(part) > 2}
+    overlap = value_parts & target_parts
+    return len(overlap) * 10
+
+
+def _resolve_alteryx_output_row_count(
+    workflow: dict[str, Any],
+    final_table_name: str = "",
+    fallback: Optional[int] = None,
+) -> dict[str, Any]:
+    counted_outputs: list[dict[str, Any]] = []
+    for node in reversed(_terminal_output_nodes(workflow)):
+        node_blob = _node_blob(node)
+        for path in _candidate_output_paths(node):
+            count = _count_delimited_file(path)
+            if count is None:
+                continue
+            score = max(
+                _name_match_score(path.stem, final_table_name),
+                _name_match_score(path.name, final_table_name),
+                _name_match_score(node_blob, final_table_name),
+            )
+            columns = _delimited_file_columns(path)
+            counted_outputs.append({
+                "row_count": count,
+                "column_count": len(columns) or None,
+                "columns": columns,
+                "method": "matched_output_file" if score >= 80 else "output_file",
+                "source": str(path),
+                "confidence": "high" if score >= 80 or not final_table_name else "medium",
+                "match_score": score,
+            })
+
+    if counted_outputs:
+        counted_outputs.sort(key=lambda item: (item.get("match_score", 0), item.get("confidence") == "high"), reverse=True)
+        best = counted_outputs[0]
+        if not final_table_name or best.get("match_score", 0) >= 80 or len(counted_outputs) == 1:
+            return best
+
+    def collect_hints(nodes: list[dict[str, Any]], confidence: str) -> list[dict[str, Any]]:
+        hints: list[dict[str, Any]] = []
+        for node in reversed(nodes):
+            node_blob = _node_blob(node)
+            count_hint = _parse_count_hint(node_blob)
+            if count_hint is None:
+                continue
+            hints.append({
+                "row_count": count_hint,
+                "method": "workflow_output_hint" if confidence == "medium" else "workflow_metadata_hint",
+                "source": "Workflow output metadata/configuration text",
+                "confidence": confidence,
+                "match_score": _name_match_score(node_blob, final_table_name),
+            })
+        return hints
+
+    hinted_outputs = collect_hints(_terminal_output_nodes(workflow), "medium")
+    if not hinted_outputs:
+        hinted_outputs = collect_hints(workflow.get("workflowNodes") or [], "low")
+
+    for hint in hinted_outputs:
+        hint["rank"] = (
+            1 if hint.get("confidence") == "medium" else 0,
+            hint.get("match_score", 0),
+            hint.get("row_count", 0),
+        )
+
+    if hinted_outputs:
+        hinted_outputs.sort(key=lambda item: item.get("rank", (0, 0, 0)), reverse=True)
+        best_hint = dict(hinted_outputs[0])
+        best_hint.pop("rank", None)
+        return best_hint
+
+    if fallback is not None:
+        return {
+            "row_count": fallback,
+            "method": "stored_expected_row_count",
+            "source": "stored expected_row_count",
+            "confidence": "low",
+        }
+
+    return {
+        "row_count": None,
+        "method": "unavailable",
+        "source": "No accessible final Alteryx output file matched the published table.",
+        "confidence": "none",
+    }
 
 
 class WorkflowJsonMaterializeRequest(BaseModel):
@@ -733,6 +940,72 @@ def get_alteryx_workflow_brd(
 def post_alteryx_workflow_validation(batch_id: str, workflow_id: str, publish_result: dict[str, Any] | None = None):
     workflow = _find_batch_workflow(batch_id, workflow_id)
     return validate_migration(workflow, publish_result=publish_result or {})
+
+
+@router.post("/batches/{batch_id}/workflows/{workflow_id}/record-count-validation")
+async def post_alteryx_record_count_validation(
+    batch_id: str,
+    workflow_id: str,
+    request: AlteryxRecordCountValidationRequest,
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    alteryx_count = _resolve_alteryx_output_row_count(
+        workflow,
+        final_table_name=request.table_name,
+        fallback=request.expected_row_count,
+    )
+    expected = alteryx_count.get("row_count")
+
+    powerbi_validation = None
+    if request.dataset_id and request.table_name:
+        from app.api.v1.endpoints.migration import (
+            PowerBiValidationRequest,
+            validate_powerbi_dataset_endpoint,
+        )
+
+        powerbi_validation = await validate_powerbi_dataset_endpoint(
+            PowerBiValidationRequest(
+                dataset_id=request.dataset_id,
+                table_name=request.table_name,
+                workspace_id=request.workspace_id or "",
+                numeric_columns=request.numeric_columns or [],
+                expected_row_count=expected,
+            )
+        )
+
+    row_check = next(
+        (check for check in (powerbi_validation or {}).get("checks", []) if check.get("name") == "Row count"),
+        {},
+    )
+    actual = row_check.get("actual") if row_check else None
+    variance = (
+        actual - expected
+        if isinstance(actual, int) and isinstance(expected, int)
+        else row_check.get("variance")
+    )
+    status = row_check.get("status") or (
+        "PASS" if isinstance(variance, int) and variance == 0 else "INFO"
+    )
+
+    return {
+        "success": True,
+        "workflow_id": workflow_id,
+        "workflow_name": workflow.get("name"),
+        "table_name": (powerbi_validation or {}).get("table_name") or request.table_name,
+        "alteryx": alteryx_count,
+        "powerbi": powerbi_validation,
+        "checks": [
+            {
+                "name": "Row count",
+                "expected": expected,
+                "actual": actual,
+                "variance": variance,
+                "status": status,
+                "alteryx_method": alteryx_count.get("method"),
+                "alteryx_confidence": alteryx_count.get("confidence"),
+            }
+        ],
+    }
 
 
 # ── Fetch workflows ───────────────────────────────────────────────────────────

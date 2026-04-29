@@ -3557,7 +3557,7 @@ async def download_pdf(payload: dict = Body(...)):
         
         # Get all metric keys - sorted for consistent order
         metric_order = ['row_count', 'table_count', 'column_count', 'total_records', 'certification_status']
-        excluded_keys = {'column_names', 'timestamp'}  # Explicitly exclude these
+        excluded_keys = {'column_names', 'timestamp'}
         all_keys = set(list(qlik_metrics.keys()) + list(powerbi_metrics.keys()))
         
         # Filter out excluded keys and sort by preferred order

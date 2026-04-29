@@ -3092,12 +3092,25 @@ class _Publisher:
                     ) if is_sharepoint else ""
 
                     bim_tables = bim_obj.get("model", {}).get("tables", [])
+                    published_tables = [
+                        {
+                            "name": str(tbl.get("name") or ""),
+                            "columns": [
+                                str(col.get("name") or "")
+                                for col in tbl.get("columns", [])
+                                if col.get("name")
+                            ],
+                        }
+                        for tbl in bim_tables
+                        if tbl.get("name")
+                    ]
                     return {
                         "success":          True,
                         "method":           "fabric_items_api",
                         "dataset_id":       dataset_id,
                         "dataset_name":     dataset_name,
                         "tables_published": len(bim_tables),
+                        "published_tables":  published_tables,
                         "workspace_url":    f"https://app.powerbi.com/groups/{self.workspace_id}",
                         "dataset_url": (
                             f"https://app.powerbi.com/groups/{self.workspace_id}"
