@@ -2224,7 +2224,7 @@ navigate("/publish", {
               onClick={downloadWorkflowDiagram}
               title="Download workflow diagram as PNG"
             >
-              Download as PNG
+              Export Workflow
             </button>
           </div>
 
