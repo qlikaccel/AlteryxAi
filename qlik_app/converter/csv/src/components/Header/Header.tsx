@@ -95,7 +95,7 @@ export default function Header() {
       </div>
  
       <div className="header-right">
-        <a href="#">Docs</a>
+        {/* <a href="#">Docs</a> */}
         <a href="#">Support</a>
         {userInfo ? (
           <div className="profile" onClick={handleLogout} style={{ cursor: "pointer" }} title="Click to logout">
