@@ -1,5 +1,5 @@
 {
-  "name": "sales_1M_workflow",
+  "name": "Complex_Workflow",
   "compatibilityLevel": 1550,
   "model": {
     "culture": "en-US",
@@ -11,7 +11,464 @@
     "sourceQueryCulture": "en-US",
     "tables": [
       {
-        "name": "sales_1M_workflow",
+        "name": "sales_1_raw",
+        "columns": [
+          {
+            "name": "CustomerID",
+            "dataType": "string",
+            "sourceColumn": "CustomerID",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Region",
+            "dataType": "string",
+            "sourceColumn": "Region",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Sales",
+            "dataType": "string",
+            "sourceColumn": "Sales",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Product",
+            "dataType": "string",
+            "sourceColumn": "Product",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "OrderDate",
+            "dataType": "string",
+            "sourceColumn": "OrderDate",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "sales_1_raw-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    __Source = (let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_1.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_1.csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, {{\"CustomerID\", type text}, {\"Region\", type text}, {\"Sales\", type text}, {\"Product\", type text}, {\"OrderDate\", type text}})",
+                "in",
+                "    ChangedTypes),",
+                "    __BimColumns = {\"CustomerID\", \"Region\", \"Sales\", \"Product\", \"OrderDate\"},",
+                "    __SafeBase = try",
+                "        __Source",
+                "    otherwise",
+                "        Table.FromRecords({{}}, __BimColumns),",
+                "    __ExistingColumns = Table.ColumnNames(__SafeBase),",
+                "    __MissingColumns = List.Select(__BimColumns, each not List.Contains(__ExistingColumns, _, Comparer.OrdinalIgnoreCase)),",
+                "    __WithMissingColumns = List.Accumulate(",
+                "        __MissingColumns,",
+                "        __SafeBase,",
+                "        (tbl, col) => if Table.HasColumns(tbl, col) then tbl else Table.AddColumn(tbl, col, each null, type any)",
+                "    ),",
+                "    __FinalOutput = Table.SelectColumns(__WithMissingColumns, __BimColumns, MissingField.UseNull)",
+                "in",
+                "    __FinalOutput"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "sales_2_raw",
+        "columns": [
+          {
+            "name": "CustomerID",
+            "dataType": "string",
+            "sourceColumn": "CustomerID",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Region",
+            "dataType": "string",
+            "sourceColumn": "Region",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Sales",
+            "dataType": "string",
+            "sourceColumn": "Sales",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Product",
+            "dataType": "string",
+            "sourceColumn": "Product",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "OrderDate",
+            "dataType": "string",
+            "sourceColumn": "OrderDate",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "sales_2_raw-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    __Source = (let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_2.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_2.csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, {{\"CustomerID\", type text}, {\"Region\", type text}, {\"Sales\", type text}, {\"Product\", type text}, {\"OrderDate\", type text}})",
+                "in",
+                "    ChangedTypes),",
+                "    __BimColumns = {\"CustomerID\", \"Region\", \"Sales\", \"Product\", \"OrderDate\"},",
+                "    __SafeBase = try",
+                "        __Source",
+                "    otherwise",
+                "        Table.FromRecords({{}}, __BimColumns),",
+                "    __ExistingColumns = Table.ColumnNames(__SafeBase),",
+                "    __MissingColumns = List.Select(__BimColumns, each not List.Contains(__ExistingColumns, _, Comparer.OrdinalIgnoreCase)),",
+                "    __WithMissingColumns = List.Accumulate(",
+                "        __MissingColumns,",
+                "        __SafeBase,",
+                "        (tbl, col) => if Table.HasColumns(tbl, col) then tbl else Table.AddColumn(tbl, col, each null, type any)",
+                "    ),",
+                "    __FinalOutput = Table.SelectColumns(__WithMissingColumns, __BimColumns, MissingField.UseNull)",
+                "in",
+                "    __FinalOutput"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "sales_3_raw",
+        "columns": [
+          {
+            "name": "CustomerID",
+            "dataType": "string",
+            "sourceColumn": "CustomerID",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Region",
+            "dataType": "string",
+            "sourceColumn": "Region",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Sales",
+            "dataType": "string",
+            "sourceColumn": "Sales",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Product",
+            "dataType": "string",
+            "sourceColumn": "Product",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "OrderDate",
+            "dataType": "string",
+            "sourceColumn": "OrderDate",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "sales_3_raw-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    __Source = (let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"sales_3.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_3.csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, {{\"CustomerID\", type text}, {\"Region\", type text}, {\"Sales\", type text}, {\"Product\", type text}, {\"OrderDate\", type text}})",
+                "in",
+                "    ChangedTypes),",
+                "    __BimColumns = {\"CustomerID\", \"Region\", \"Sales\", \"Product\", \"OrderDate\"},",
+                "    __SafeBase = try",
+                "        __Source",
+                "    otherwise",
+                "        Table.FromRecords({{}}, __BimColumns),",
+                "    __ExistingColumns = Table.ColumnNames(__SafeBase),",
+                "    __MissingColumns = List.Select(__BimColumns, each not List.Contains(__ExistingColumns, _, Comparer.OrdinalIgnoreCase)),",
+                "    __WithMissingColumns = List.Accumulate(",
+                "        __MissingColumns,",
+                "        __SafeBase,",
+                "        (tbl, col) => if Table.HasColumns(tbl, col) then tbl else Table.AddColumn(tbl, col, each null, type any)",
+                "    ),",
+                "    __FinalOutput = Table.SelectColumns(__WithMissingColumns, __BimColumns, MissingField.UseNull)",
+                "in",
+                "    __FinalOutput"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "customers_2__raw",
+        "columns": [
+          {
+            "name": "CustomerID",
+            "dataType": "string",
+            "sourceColumn": "CustomerID",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "CustomerName",
+            "dataType": "string",
+            "sourceColumn": "CustomerName",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Country",
+            "dataType": "string",
+            "sourceColumn": "Country",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "customers_2__raw-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    __Source = (let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"customers (2).csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: customers (2).csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, {{\"CustomerID\", type text}, {\"CustomerName\", type text}, {\"Country\", type text}})",
+                "in",
+                "    ChangedTypes),",
+                "    __BimColumns = {\"CustomerID\", \"CustomerName\", \"Country\"},",
+                "    __SafeBase = try",
+                "        __Source",
+                "    otherwise",
+                "        Table.FromRecords({{}}, __BimColumns),",
+                "    __ExistingColumns = Table.ColumnNames(__SafeBase),",
+                "    __MissingColumns = List.Select(__BimColumns, each not List.Contains(__ExistingColumns, _, Comparer.OrdinalIgnoreCase)),",
+                "    __WithMissingColumns = List.Accumulate(",
+                "        __MissingColumns,",
+                "        __SafeBase,",
+                "        (tbl, col) => if Table.HasColumns(tbl, col) then tbl else Table.AddColumn(tbl, col, each null, type any)",
+                "    ),",
+                "    __FinalOutput = Table.SelectColumns(__WithMissingColumns, __BimColumns, MissingField.UseNull)",
+                "in",
+                "    __FinalOutput"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "products_1__raw",
+        "columns": [
+          {
+            "name": "Product",
+            "dataType": "string",
+            "sourceColumn": "Product",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Category",
+            "dataType": "string",
+            "sourceColumn": "Category",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Price",
+            "dataType": "string",
+            "sourceColumn": "Price",
+            "summarizeBy": "none",
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "products_1__raw-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    __Source = (let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"products (1).csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: products (1).csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, {{\"Product\", type text}, {\"Category\", type text}, {\"Price\", type text}})",
+                "in",
+                "    ChangedTypes),",
+                "    __BimColumns = {\"Product\", \"Category\", \"Price\"},",
+                "    __SafeBase = try",
+                "        __Source",
+                "    otherwise",
+                "        Table.FromRecords({{}}, __BimColumns),",
+                "    __ExistingColumns = Table.ColumnNames(__SafeBase),",
+                "    __MissingColumns = List.Select(__BimColumns, each not List.Contains(__ExistingColumns, _, Comparer.OrdinalIgnoreCase)),",
+                "    __WithMissingColumns = List.Accumulate(",
+                "        __MissingColumns,",
+                "        __SafeBase,",
+                "        (tbl, col) => if Table.HasColumns(tbl, col) then tbl else Table.AddColumn(tbl, col, each null, type any)",
+                "    ),",
+                "    __FinalOutput = Table.SelectColumns(__WithMissingColumns, __BimColumns, MissingField.UseNull)",
+                "in",
+                "    __FinalOutput"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "Complex_Workflow",
         "columns": [
           {
             "name": "Region",
@@ -26,45 +483,9 @@
             ]
           },
           {
-            "name": "ProductCategory",
+            "name": "Total_Sales",
             "dataType": "string",
-            "sourceColumn": "ProductCategory",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "TotalSales",
-            "dataType": "string",
-            "sourceColumn": "TotalSales",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "TotalQuantity",
-            "dataType": "string",
-            "sourceColumn": "TotalQuantity",
-            "summarizeBy": "none",
-            "annotations": [
-              {
-                "name": "SummarizationSetBy",
-                "value": "Automatic"
-              }
-            ]
-          },
-          {
-            "name": "AvgSalesPerUnit",
-            "dataType": "string",
-            "sourceColumn": "AvgSalesPerUnit",
+            "sourceColumn": "Total_Sales",
             "summarizeBy": "none",
             "annotations": [
               {
@@ -76,7 +497,7 @@
         ],
         "partitions": [
           {
-            "name": "sales_1M_workflow-Partition",
+            "name": "Complex_Workflow-Partition",
             "mode": "import",
             "source": {
               "type": "m",
@@ -88,16 +509,20 @@
                 "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: sales_1.csv\" else MatchingFiles{0}[Content],",
                 "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
                 "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
-                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text})),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, {{\"CustomerID\", type text}, {\"Region\", type text}, {\"Sales\", type text}, {\"Product\", type text}, {\"OrderDate\", type text}}),",
                 "    Checkpoint_1 = ChangedTypes,",
-                "    SelectedFields_2 = let cols = Table.ColumnNames(Checkpoint_1), ops = {{\"CustomerID\", Int64.Type}, {\"CustomerName\", type text}, {\"Region\", type text}, {\"City\", type text}, {\"ProductCategory\", type text}, {\"ProductName\", type text}, {\"Quantity\", Int64.Type}, {\"UnitPrice\", type number}, {\"SalesAmount\", type number}, {\"Discount\", type number}, {\"OrderDate\", type date}, {\"Status\", type text}, {\"PaymentMethod\", type text}}, TypedColumns = Table.TransformColumnTypes(Checkpoint_1, List.Select(ops, each List.Contains(cols, _{0}))) in Table.SelectColumns(TypedColumns, {\"CustomerID\", \"CustomerName\", \"Region\", \"City\", \"ProductCategory\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"SalesAmount\", \"Discount\", \"OrderDate\", \"Status\", \"PaymentMethod\"}, MissingField.UseNull),",
-                "    FilteredRows_3 = let required = {\"SalesAmount\", \"Region\"}, existing = Table.ColumnNames(SelectedFields_2), missing = List.Select(required, each not List.Contains(existing, _, Comparer.OrdinalIgnoreCase)) in if List.Count(missing) > 0 then SelectedFields_2 else Table.SelectRows(SelectedFields_2, each try ([SalesAmount] > 1000 and [Region] = \"North\") otherwise false),",
-                "    GroupedData_4 = let Input = let required = {\"Region\", \"ProductCategory\", \"SalesAmount\", \"Quantity\"}, existing = Table.ColumnNames(FilteredRows_3), missing = List.Select(required, each not List.Contains(existing, _, Comparer.OrdinalIgnoreCase)) in List.Accumulate(missing, FilteredRows_3, (state, col) => if Table.HasColumns(state, col) then state else Table.AddColumn(state, col, each null, type any)) in Table.Group(Input, {\"Region\", \"ProductCategory\"}, {{\"TotalSales\", each List.Sum([SalesAmount]), type number}, {\"TotalQuantity\", each List.Sum([Quantity]), type number}}),",
-                "    Calculated_AvgSalesPerUnit_5 = let Input = let required = {\"TotalQuantity\", \"TotalSales\"}, existing = Table.ColumnNames(GroupedData_4), missing = List.Select(required, each not List.Contains(existing, _, Comparer.OrdinalIgnoreCase)) in List.Accumulate(missing, GroupedData_4, (state, col) => if Table.HasColumns(state, col) then state else Table.AddColumn(state, col, each null, type any)) in Table.AddColumn(Input, \"AvgSalesPerUnit\", each try (if [TotalQuantity] = 0 then null else [TotalSales] / [TotalQuantity]) otherwise null, type number),",
-                "    Checkpoint_6 = Calculated_AvgSalesPerUnit_5",
+                "    UnionCombined_2 = Table.Combine({sales_1_raw, sales_2_raw, sales_3_raw}),",
+                "    SelectedFields_3 = let cols = Table.ColumnNames(UnionCombined_2), ops = {{\"CustomerID\", type text}, {\"Region\", type text}, {\"Sales\", Int64.Type}, {\"Product\", type text}, {\"OrderDate\", type datetime}}, TypedColumns = Table.TransformColumnTypes(UnionCombined_2, List.Select(ops, each List.Contains(cols, _{0}))) in Table.SelectColumns(TypedColumns, {\"CustomerID\", \"Region\", \"Sales\", \"Product\", \"OrderDate\"}, MissingField.UseNull),",
+                "    CleanedText_4 = Table.TransformColumns(SelectedFields_3, List.Transform(Table.ColumnNames(SelectedFields_3), each {_, each if _ is text then Text.Clean(Text.Trim(_)) else _, type any})),",
+                "    FilteredRows_5 = let required = {\"Sales\"}, existing = Table.ColumnNames(CleanedText_4), missing = List.Select(required, each not List.Contains(existing, _, Comparer.OrdinalIgnoreCase)) in if List.Count(missing) > 0 then CleanedText_4 else Table.SelectRows(CleanedText_4, each try ([Sales] > 5000) otherwise false),",
+                "    JoinPrepared_6 = FilteredRows_5,",
+                "    JoinPrepared_7 = JoinPrepared_6,",
+                "    Calculated_ValueType_8 = let Input = let required = {\"Sales\"}, existing = Table.ColumnNames(JoinPrepared_7), missing = List.Select(required, each not List.Contains(existing, _, Comparer.OrdinalIgnoreCase)) in List.Accumulate(missing, JoinPrepared_7, (state, col) => if Table.HasColumns(state, col) then state else Table.AddColumn(state, col, each null, type any)) in Table.AddColumn(Input, \"ValueType\", each try (if [Sales] > 50000 then \"High Value\" else \"Low Value\") otherwise null, type text),",
+                "    GroupedData_9 = let Input = let required = {\"Region\", \"Sales\"}, existing = Table.ColumnNames(Calculated_ValueType_8), missing = List.Select(required, each not List.Contains(existing, _, Comparer.OrdinalIgnoreCase)) in List.Accumulate(missing, Calculated_ValueType_8, (state, col) => if Table.HasColumns(state, col) then state else Table.AddColumn(state, col, each null, type any)) in Table.Group(Input, {\"Region\"}, {{\"Total_Sales\", each List.Sum([Sales]), type number}}),",
+                "    Checkpoint_10 = GroupedData_9",
                 "in",
-                "    Checkpoint_6),",
-                "    __BimColumns = {\"Region\", \"ProductCategory\", \"TotalSales\", \"TotalQuantity\", \"AvgSalesPerUnit\"},",
+                "    Checkpoint_10),",
+                "    __BimColumns = {\"Region\", \"Total_Sales\"},",
                 "    __SafeBase = try",
                 "        __Source",
                 "    otherwise",
@@ -124,7 +549,7 @@
         "name": "DataSourcePath",
         "kind": "m",
         "expression": [
-          "\"C:\\Data\\sales_data_1M.csv\""
+          "\"s://sorim-alteryx-trial-2hcg/178337/uploads/5a5690b1-8876-4f96-96c5-af50d4d98c2f/sales_1.csv\""
         ],
         "annotations": [
           {
