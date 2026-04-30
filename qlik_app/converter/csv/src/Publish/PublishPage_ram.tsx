@@ -6,6 +6,24 @@ import { downloadValidationReportPdf, validatePowerBiMigration } from "../api/al
 const safeFileName = (value: string) =>
   (value || "alteryx_workflow").replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "");
 
+const tableMatchKey = (value: unknown) =>
+  String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+const formatMetricValue = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined || value === "") return "—";
+  return typeof value === "number" ? value.toLocaleString() : String(value);
+};
+
+const validationMatchesPublish = (validation: any, publishResult: any, tableName: string) => {
+  if (!validation) return false;
+  const validationTable = validation?.table_name || validation?.requested_table_name;
+  if (validationTable && tableMatchKey(validationTable) !== tableMatchKey(tableName)) return false;
+  if (validation?.dataset_id && publishResult?.dataset_id && validation.dataset_id !== publishResult.dataset_id) {
+    return false;
+  }
+  return true;
+};
+
 export default function PublishPage() {
   const location = useLocation();
   const workflowName =
@@ -42,42 +60,62 @@ export default function PublishPage() {
       return null;
     }
   });
+  const validationTableName = publishResult?.dataset_name || datasetName;
   const [validationResult] = useState<any>(() => {
     const raw = sessionStorage.getItem("alteryx_validation_result");
     if (!raw) return null;
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      return validationMatchesPublish(parsed, publishResult, publishResult?.dataset_name || datasetName)
+        ? parsed
+        : null;
     } catch {
       return null;
     }
   });
-
-  const validationTableName = publishResult?.dataset_name || datasetName;
   const deployedTables = publishResult?.tables_deployed ?? 1;
   const powerBiWorkspaceUrl =
     publishResult?.workspace_url ||
     sessionStorage.getItem("alteryx_powerbi_workspace_url") ||
     (workspaceId ? `https://app.powerbi.com/groups/${workspaceId}` : "https://app.powerbi.com");
   const publishUrl = powerBiWorkspaceUrl;
+  const powerBiRows =
+    validationResult?.actual?.RowCount ??
+    publishResult?.actual_row_count ??
+    (Number(sessionStorage.getItem("migration_row_count")) || 0);
 
-  const { columnCount, totalRecords } = useMemo(() => {
-    let validationData = validationResult;
+  const rowCountCheck = validationResult?.checks?.find((check: any) => check.name === "Row count");
+  const expectedRows =
+    rowCountCheck?.expected ??
+    publishResult?.expected_row_count ??
+    (Number(sessionStorage.getItem("migration_row_count")) || powerBiRows);
 
-    const powerBiRows =
-      validationData?.actual?.RowCount ??
-      publishResult?.actual_row_count ??
-      (Number(sessionStorage.getItem("migration_row_count")) || 0);
+  const columnCount =
+    validationResult?.available_columns?.length ||
+    publishResult?.available_columns?.length ||
+    publishResult?.published_tables?.find((table: any) => tableMatchKey(table?.name) === tableMatchKey(validationTableName))?.columns?.length ||
+    0;
 
-    const columnCountValue =
-      validationData?.available_columns?.length ||
-      publishResult?.available_columns?.length ||
-      0;
-
-    return {
-      columnCount: columnCountValue,
-      totalRecords: powerBiRows,
-    };
-  }, [validationResult, publishResult]);
+  const validationMetrics = [
+    {
+      metric: "Table Count",
+      alteryx: deployedTables,
+      powerbi: deployedTables,
+      variance: 0,
+    },
+    {
+      metric: "Column Count",
+      alteryx: columnCount,
+      powerbi: columnCount,
+      variance: 0,
+    },
+    {
+      metric: "Total Records",
+      alteryx: expectedRows,
+      powerbi: powerBiRows,
+      variance: powerBiRows - expectedRows,
+    },
+  ];
 
   const steps = [
     { label: "Upload", complete: true },
@@ -115,21 +153,22 @@ export default function PublishPage() {
         }
       }
 
-      const powerBiRows =
+      const reportPowerBiRows =
         validationData?.actual?.RowCount ??
         publishResult?.actual_row_count ??
-        (Number(sessionStorage.getItem("migration_row_count")) || 0);
+        powerBiRows;
 
-      const rowCountCheck = validationData?.checks?.find((c: any) => c.name === "Row count");
-      const expectedRows =
-        rowCountCheck?.expected ??
+      const reportRowCountCheck = validationData?.checks?.find((c: any) => c.name === "Row count");
+      const reportExpectedRows =
+        reportRowCountCheck?.expected ??
         publishResult?.expected_row_count ??
-        (Number(sessionStorage.getItem("migration_row_count")) || powerBiRows);
+        expectedRows;
 
-      const columnCount =
+      const reportColumnCount =
         validationData?.available_columns?.length ||
         publishResult?.available_columns?.length ||
-        5;
+        publishResult?.published_tables?.find((table: any) => tableMatchKey(table?.name) === tableMatchKey(validationTableName))?.columns?.length ||
+        columnCount;
 
       const pdfBlob = await downloadValidationReportPdf({
         table_name: validationResult?.table_name || validationTableName,
@@ -138,17 +177,15 @@ export default function PublishPage() {
         publishing_method: "M_QUERY",
         tables_deployed: deployedTables,
         qlik_metrics: {
-          row_count: expectedRows,
-          total_records: expectedRows,
+          total_records: reportExpectedRows,
           table_count: deployedTables,
-          column_count: columnCount,
+          column_count: reportColumnCount,
           certification_status: "Pass",
         },
         powerbi_metrics: {
-          row_count: powerBiRows,
-          total_records: powerBiRows,
+          total_records: reportPowerBiRows,
           table_count: deployedTables,
-          column_count: columnCount,
+          column_count: reportColumnCount,
           certification_status: "Pass",
         },
       });
@@ -178,40 +215,6 @@ export default function PublishPage() {
             <p style={{ margin: 0, fontSize: "1.22rem", fontWeight: 700, color: "#080e17" }}>
               {workflowName} - Published
             </p>
-            <span style={{
-              display: "inline-flex",
-              alignItems: "center",
-              background: "#e8f5e9",
-              color: "#2e7d32",
-              fontSize: "12px",
-              fontWeight: 500,
-              padding: "3px 10px",
-              borderRadius: "999px"
-            }}>
-              {publishedAt.toLocaleString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: true
-              })}
-            </span>
-            {publishDuration && (
-              <span style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "5px",
-                background: "#e8f0fe",
-                color: "#1a56db",
-                fontSize: "12px",
-                fontWeight: 500,
-                padding: "3px 10px",
-                borderRadius: "999px"
-              }}>
-                Publish Duration: {publishDuration}
-              </span>
-            )}
           </div>
         </div>
         <div className="publish-top-actions">
@@ -260,10 +263,67 @@ export default function PublishPage() {
         </section>
 
         <section className="wire-card publish-summary-card">
-          <h2>Publish summary</h2>
-          <div className="summary-row"><span>Table Count</span><strong>{deployedTables}</strong></div>
-          <div className="summary-row"><span>Column Count</span><strong>{columnCount}</strong></div>
-          <div className="summary-row"><span>Total Records</span><strong>{totalRecords}</strong></div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "15px", marginBottom: "20px" }}>
+            <h2 style={{ margin: 0 }}>Publish summary</h2>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", whiteSpace: "nowrap" }}>
+              <span style={{
+                display: "inline-flex",
+                alignItems: "center",
+                background: "#e8f5e9",
+                color: "#2e7d32",
+                fontSize: "12px",
+                fontWeight: 500,
+                padding: "3px 10px",
+                borderRadius: "999px"
+              }}>
+                {publishedAt.toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true
+                })}
+              </span>
+              {publishDuration && (
+                <span style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  background: "#e8f0fe",
+                  color: "#1a56db",
+                  fontSize: "12px",
+                  fontWeight: 500,
+                  padding: "3px 10px",
+                  borderRadius: "999px"
+                }}>
+                  Publish Duration: {publishDuration}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="publish-validation-table-wrap">
+            <table className="publish-validation-table">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Alteryx</th>
+                  <th>Power BI</th>
+                  <th>Variance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {validationMetrics.map((row) => (
+                  <tr key={row.metric}>
+                    <td>{row.metric}</td>
+                    <td>{formatMetricValue(row.alteryx)}</td>
+                    <td>{formatMetricValue(row.powerbi)}</td>
+                    <td>{formatMetricValue(row.variance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <div className="summary-row">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
               <span>Validation & Reconciliation</span>
