@@ -1420,7 +1420,7 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(110px, 1fr));
   gap: 0;
-  padding: 28px 48px 28px 200px;
+  padding: 28px 48px 28px 300px;
   margin: 0 auto;
   background: #fff;
   box-sizing: border-box;
@@ -1753,6 +1753,135 @@
   background: #0a2440;
 }
 
+.row-count-validation-card {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #dbe2ea;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.row-count-validation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.row-count-validation-header h3 {
+  margin: 0;
+  color: #050505;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.row-count-validation-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.row-count-validate-btn {
+  border: 1px solid #0f3b63;
+  border-radius: 6px;
+  padding: 7px 14px;
+  background: #0f3b63;
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.row-count-validate-btn:hover:not(:disabled) {
+  background: #0d2f4f;
+  border-color: #0a2440;
+}
+
+.row-count-validate-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.row-count-status {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.row-count-status.pass {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.row-count-status.warning {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.row-count-status.pending {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.row-count-comparison {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.row-count-comparison div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.row-count-comparison span {
+  display: block;
+  margin-bottom: 6px;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.row-count-comparison strong {
+  display: block;
+  color: #0f172a;
+  font-size: 1.05rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.row-count-note {
+  margin: 12px 0 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.row-count-note.pass {
+  color: #166534;
+}
+
+.row-count-note.warning {
+  color: #b91c1c;
+}
+
+.row-count-note.pending {
+  color: #075985;
+}
+
+.row-count-source-note {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .report-status {
   margin: 12px 0 0;
   color: #075da8;
@@ -1831,6 +1960,10 @@
   .publish-main-grid,
   .target-row,
   .summary-row {
+    grid-template-columns: 1fr;
+  }
+
+  .row-count-comparison {
     grid-template-columns: 1fr;
   }
 
@@ -1923,4 +2056,60 @@
 .status-badge.review {
   background-color: #fef3c7;
   color: #92400e;
+}
+
+/* Publish Validation Table Styles */
+.publish-validation-table-wrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.publish-validation-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.publish-validation-table thead {
+  background-color: #003d82;
+  position: sticky;
+  top: 0;
+}
+
+.publish-validation-table th {
+  padding: 10px 12px;
+  text-align: center;
+  font-weight: 600;
+  color: #ffffff;
+  font-size: 13px;
+  border: none;
+}
+
+.publish-validation-table th:first-child {
+  text-align: left;
+}
+
+.publish-validation-table td {
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: #334155;
+  border: none;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.publish-validation-table td:first-child {
+  text-align: left;
+  font-weight: 500;
+}
+
+.publish-validation-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.publish-validation-table tbody tr:hover {
+  background-color: #f8fafc;
 }
