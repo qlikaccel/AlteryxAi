@@ -1420,7 +1420,7 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(110px, 1fr));
   gap: 0;
-  padding: 28px 48px 28px 200px;
+  padding: 28px 48px 28px 300px;
   margin: 0 auto;
   background: #fff;
   box-sizing: border-box;
@@ -1886,6 +1886,95 @@
   margin: 12px 0 0;
   color: #075da8;
   font-weight: 700;
+}
+
+/* .publish-validation-table-wrap {
+  margin: 12px 0 14px;
+  overflow-x: auto;
+  border: 1px solid #cfd4dc;
+  background: #ffffff;
+}
+
+.publish-validation-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.publish-validation-table th {
+  padding: 8px 10px;
+  border-right: 1px solid #cfd4dc;
+  background: #244f8f;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: center;
+} */
+
+.publish-validation-table-wrap {
+  margin: 12px 0 14px;
+  overflow-x: auto;
+  border: 1px solid #cfd4dc;
+  background: #ffffff;
+  border-radius: 6px;
+}
+
+.publish-validation-table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.publish-validation-table th {
+  padding: 10px 14px;
+  border-right: 1px solid #cfd4dc;
+  background: #244f8f;
+  color: #ffffff;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.publish-validation-table th:last-child {
+  border-right: 0;
+}
+
+/* .publish-validation-table td {
+  padding: 8px 10px;
+  border-top: 1px solid #cfd4dc;
+  border-right: 1px solid #cfd4dc;
+  color: #111827;
+  font-size: 0.9rem;
+  text-align: center;
+} */
+
+.publish-validation-table td {
+  padding: 9px 14px;
+  border-top: 1px solid #cfd4dc;
+  border-right: 1px solid #cfd4dc;
+  color: #111827;
+  font-size: 0.88rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+
+.publish-validation-table td:first-child {
+  text-align: left;
+  border-right: 0;
+}
+
+.publish-validation-table td:last-child {
+  border-right: 0;
+}
+
+.publish-validation-table tbody tr:nth-child(even) {
+  background: #f3f3f3;
 }
 
 .publish-layer-card {
