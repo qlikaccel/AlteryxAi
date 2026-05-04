@@ -621,9 +621,9 @@ PAGE WRAP
   opacity: 0.5;
 }
  
-.td,th{
-  min-width: 180px;
-}
+/* .td,th{
+  min-width: 160px;
+} */
  
  
 .summary-report table {
