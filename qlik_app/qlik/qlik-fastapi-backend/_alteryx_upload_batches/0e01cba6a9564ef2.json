@@ -1,0 +1,301 @@
+{
+  "batch_id": "0e01cba6a9564ef2",
+  "created_at": 1777886139,
+  "summary": {
+    "workflow_count": 1,
+    "rejected_count": 0,
+    "total_tool_count": 12,
+    "unsupported_tool_count": 1,
+    "by_complexity": {
+      "low": 0,
+      "medium": 1,
+      "high": 0
+    },
+    "by_convertibility": {
+      "high": 0,
+      "medium": 1,
+      "low": 0,
+      "manual_review": 0
+    }
+  },
+  "workflows": [
+    {
+      "id": "49fe3aab58dc6196",
+      "name": "Complex_Workflow_Macro",
+      "sourceFile": "Complex_Workflow_Macro.yxmc",
+      "packageFile": null,
+      "fileType": "yxmc",
+      "toolCount": 12,
+      "connectionCount": 13,
+      "convertibility": "medium",
+      "complexity": "medium",
+      "supportedToolCount": 11,
+      "unsupportedToolCount": 1,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect",
+        "AlteryxBasePluginsGui.Filter.Filter",
+        "AlteryxBasePluginsGui.Formula.Formula",
+        "AlteryxBasePluginsGui.Join.Join",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+        "AlteryxBasePluginsGui.TextInput.TextInput",
+        "AlteryxBasePluginsGui.Union.Union",
+        "AlteryxSpatialPluginsGui.Summarize.Summarize",
+        "Cleanse.yxmc"
+      ],
+      "unsupportedTools": [
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+      ],
+      "recommendations": [
+        "Macros should be expanded and assessed separately."
+      ],
+      "dataSources": [
+        {
+          "name": " sales_3) False AlteryxBasePluginsEngine.dll AlteryxTextInput",
+          "type": "unknown",
+          "path": "1 AlteryxBasePluginsGui.TextInput.TextInput -1960 -363 0 CustomerID V_WString 255 Region V_WString 255 Sales V_WString 255 Product V_WString 255 OrderDate V_WString 255 0 Sales Input (sales_1 / sales_2 / sales_3) False AlteryxBasePluginsEngine.dll AlteryxTextInput",
+          "tool": "AlteryxBasePluginsGui.TextInput.TextInput"
+        },
+        {
+          "name": "2 AlteryxBasePluginsGui.TextInput.TextInput -1962 -106 0 CustomerID V_WString 255 CustomerName V_WString 255 Country V_WString 255 0 Customers Input False AlteryxBasePluginsEngine.dll AlteryxTextInput",
+          "type": "unknown",
+          "path": "2 AlteryxBasePluginsGui.TextInput.TextInput -1962 -106 0 CustomerID V_WString 255 CustomerName V_WString 255 Country V_WString 255 0 Customers Input False AlteryxBasePluginsEngine.dll AlteryxTextInput",
+          "tool": "AlteryxBasePluginsGui.TextInput.TextInput"
+        },
+        {
+          "name": "3 AlteryxBasePluginsGui.TextInput.TextInput -1985 6 0 Product V_WString 255 Category V_WString 255 Price V_WString 255 0 Products Input False AlteryxBasePluginsEngine.dll AlteryxTextInput",
+          "type": "unknown",
+          "path": "3 AlteryxBasePluginsGui.TextInput.TextInput -1985 6 0 Product V_WString 255 Category V_WString 255 Price V_WString 255 0 Products Input False AlteryxBasePluginsEngine.dll AlteryxTextInput",
+          "tool": "AlteryxBasePluginsGui.TextInput.TextInput"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxBasePluginsGui.TextInput.TextInput",
+          "supported": true,
+          "expression": "0",
+          "configurationText": "1\nAlteryxBasePluginsGui.TextInput.TextInput\n-1960\n-363\n0\nCustomerID\nV_WString\n255\nRegion\nV_WString\n255\nSales\nV_WString\n255\nProduct\nV_WString\n255\nOrderDate\nV_WString\n255\n0\nSales Input (sales_1 / sales_2 / sales_3)\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxTextInput",
+          "config": {}
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxBasePluginsGui.TextInput.TextInput",
+          "supported": true,
+          "expression": "0",
+          "configurationText": "2\nAlteryxBasePluginsGui.TextInput.TextInput\n-1962\n-106\n0\nCustomerID\nV_WString\n255\nCustomerName\nV_WString\n255\nCountry\nV_WString\n255\n0\nCustomers Input\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxTextInput",
+          "config": {}
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxBasePluginsGui.TextInput.TextInput",
+          "supported": true,
+          "expression": "0",
+          "configurationText": "3\nAlteryxBasePluginsGui.TextInput.TextInput\n-1985\n6\n0\nProduct\nV_WString\n255\nCategory\nV_WString\n255\nPrice\nV_WString\n255\n0\nProducts Input\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxTextInput",
+          "config": {}
+        },
+        {
+          "id": "4",
+          "plugin": "AlteryxBasePluginsGui.Union.Union",
+          "supported": true,
+          "expression": "False",
+          "configurationText": "4\nAlteryxBasePluginsGui.Union.Union\n-1781\n-284\nByName\nFalse\nWarning\nAll\n0\nUnion Sales Files\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxUnion",
+          "config": {}
+        },
+        {
+          "id": "5",
+          "plugin": "AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect",
+          "supported": true,
+          "expression": "CustomerID",
+          "configurationText": "5\nAlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect\n-1681\n-284\nFalse\nFalse\nCustomerID\nTrue\nRegion\nTrue\nSales\nInt64\n8\nTrue\nProduct\nTrue\nOrderDate\nDateTime\n19\nTrue\n*Unknown\nFalse\n0\nCast Types\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxSelect",
+          "config": {
+            "selectedFields": [
+              {
+                "name": "CustomerID",
+                "rename": "CustomerID",
+                "type": "String"
+              },
+              {
+                "name": "Region",
+                "rename": "Region",
+                "type": "String"
+              },
+              {
+                "name": "Sales",
+                "rename": "Sales",
+                "type": "Int64"
+              },
+              {
+                "name": "Product",
+                "rename": "Product",
+                "type": "String"
+              },
+              {
+                "name": "OrderDate",
+                "rename": "OrderDate",
+                "type": "DateTime"
+              }
+            ]
+          }
+        },
+        {
+          "id": "6",
+          "plugin": "Cleanse.yxmc",
+          "supported": true,
+          "expression": "True",
+          "configurationText": "6\nCleanse.yxmc\n-1558\n-288\nCheck Box (135)\nRemove null rows\nTrue\nCheck Box (136)\nRemove null columns\nTrue\nList Box (11)\nSelect Column(s) to Cleanse*\n\"CustomerID\",\"Region\",\"Sales\",\"Product\",\"OrderDate\"\nCheck Box (84)\nReplace with Blanks (String)\nTrue\nCheck Box (117)\nReplace with 0 (Numeric)\nTrue\nCheck Box (15)\nLeading and Trailing Whitespace (String)\nTrue\nCheck Box (109)\nTabs, Line Breaks, and Duplicate Whitespace (String)\nFalse\nCheck Box (122)\nAll Whitespace (String)\nFalse\nCheck Box (53)\nLetters (String)\nFalse\nCheck Box (58)\nNumbers (String)\nFalse\nCheck Box (70)\nPunctuation (String)\nFalse\nCheck Box (77)\nModify Case (String)\nFalse\nDrop Down (81)\nupper\n0\nCleanse Data\nFalse\nCleanse.yxmc",
+          "config": {}
+        },
+        {
+          "id": "7",
+          "plugin": "AlteryxBasePluginsGui.Filter.Filter",
+          "supported": true,
+          "expression": "Sales",
+          "configurationText": "7\nAlteryxBasePluginsGui.Filter.Filter\n-1407\n-288\nSimple\nSales\n>\nInt64\n5000\n[Sales] > 5000\n0\n[Sales] > 5000\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxFilter",
+          "config": {
+            "filterExpression": "Sales"
+          }
+        },
+        {
+          "id": "8",
+          "plugin": "AlteryxBasePluginsGui.Join.Join",
+          "supported": true,
+          "expression": "CustomerID",
+          "configurationText": "8\nAlteryxBasePluginsGui.Join.Join\n-1531\n-124\nFalse\nLeft\nCustomerID\nRight\nCustomerID\nFalse\nFalse\nJoin\nRight_CustomerID\nRight_\nRight_CustomerID\nFalse\n*Unknown\nTrue\n0\nJoin Customers\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxJoin",
+          "config": {}
+        },
+        {
+          "id": "9",
+          "plugin": "AlteryxBasePluginsGui.Join.Join",
+          "supported": true,
+          "expression": "Product",
+          "configurationText": "9\nAlteryxBasePluginsGui.Join.Join\n-1473\n-15\nFalse\nLeft\nProduct\nRight\nProduct\nFalse\nFalse\nJoin\nRight_Product\nRight_\nRight_Product\nFalse\n*Unknown\nTrue\n0\nJoin Products\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxJoin",
+          "config": {}
+        },
+        {
+          "id": "10",
+          "plugin": "AlteryxBasePluginsGui.Formula.Formula",
+          "supported": true,
+          "expression": "ValueType",
+          "configurationText": "10\nAlteryxBasePluginsGui.Formula.Formula\n-1335\n-119\nValueType\nV_WString\n1073741823\nTrue\nTrue\nIF [Sales] > 50000 THEN \"High Value\"\nELSE \"Low Value\"\nENDIF\n0\nValueType = IF [Sales] > 50000 THEN \"High Value\" ELSE \"Low Value\" ENDIF\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxFormula",
+          "config": {
+            "formulas": [
+              {
+                "field": "ValueType",
+                "expression": "IF [Sales] > 50000 THEN \"High Value\"\nELSE \"Low Value\"\nENDIF",
+                "type": "V_WString"
+              }
+            ]
+          }
+        },
+        {
+          "id": "11",
+          "plugin": "AlteryxSpatialPluginsGui.Summarize.Summarize",
+          "supported": true,
+          "expression": "Region",
+          "configurationText": "11\nAlteryxSpatialPluginsGui.Summarize.Summarize\n-1180\n-227\nRegion\nGroupBy\nRegion\nSales\nSum\nTotal_Sales\n0\nSummarize: Total Sales by Region\nFalse\nAlteryxSpatialPluginsEngine.dll\nAlteryxSummarize",
+          "config": {
+            "groupBy": [
+              "Region"
+            ],
+            "aggregations": [
+              {
+                "field": "Sales",
+                "action": "Sum",
+                "rename": "Total_Sales"
+              }
+            ]
+          }
+        },
+        {
+          "id": "12",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "False",
+          "configurationText": "12\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n-1030\n-218\nOutput\nO\nFalse\nFalse\n0\nMacro Output: regional_sales_output\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxMacroOutput",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "1",
+          "to": "4",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "1",
+          "to": "4",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "1",
+          "to": "4",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "4",
+          "to": "5",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "5",
+          "to": "6",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "6",
+          "to": "7",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "7",
+          "to": "8",
+          "fromAnchor": "True",
+          "toAnchor": "Left"
+        },
+        {
+          "from": "2",
+          "to": "8",
+          "fromAnchor": "Output",
+          "toAnchor": "Right"
+        },
+        {
+          "from": "8",
+          "to": "9",
+          "fromAnchor": "Join",
+          "toAnchor": "Left"
+        },
+        {
+          "from": "3",
+          "to": "9",
+          "fromAnchor": "Output",
+          "toAnchor": "Right"
+        },
+        {
+          "from": "9",
+          "to": "10",
+          "fromAnchor": "Join",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "10",
+          "to": "11",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "11",
+          "to": "12",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        }
+      ]
+    }
+  ],
+  "rejected": []
+}
