@@ -1,0 +1,151 @@
+{
+  "name": "Macro_Workflow_Standard_Batch_Iterative",
+  "compatibilityLevel": 1550,
+  "model": {
+    "culture": "en-US",
+    "dataAccessOptions": {
+      "legacyRedirects": true,
+      "returnErrorValuesAsNull": true
+    },
+    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+    "sourceQueryCulture": "en-US",
+    "tables": [
+      {
+        "name": "orders_AI_raw",
+        "columns": [],
+        "partitions": [
+          {
+            "name": "orders_AI_raw-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"orders_AI.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: orders_AI.csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text}))",
+                "in",
+                "    ChangedTypes"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "region_parameters_raw",
+        "columns": [],
+        "partitions": [
+          {
+            "name": "region_parameters_raw-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"region_parameters.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: region_parameters.csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text}))",
+                "in",
+                "    ChangedTypes"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "hierarchy_raw",
+        "columns": [],
+        "partitions": [
+          {
+            "name": "hierarchy_raw-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"hierarchy.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: hierarchy.csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text}))",
+                "in",
+                "    ChangedTypes"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "Macro_Workflow_Standard_Batch_Iterative",
+        "columns": [],
+        "partitions": [
+          {
+            "name": "Macro_Workflow_Standard_Batch_Iterative-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"orders_AI.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: orders_AI.csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text})),",
+                "    Checkpoint_1 = ChangedTypes,",
+                "    ManualReview_2 = Checkpoint_1,",
+                "    ManualReview_3 = ManualReview_2,",
+                "    ManualReview_4 = ManualReview_3,",
+                "    GroupedData_5 = let Input = ManualReview_4 in Table.Group(Input, {}, {}),",
+                "    Checkpoint_6 = GroupedData_5",
+                "in",
+                "    Checkpoint_6"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "relationships": [],
+    "expressions": [
+      {
+        "name": "DataSourcePath",
+        "kind": "m",
+        "expression": [
+          "\"https://sorimtechnologies.sharepoint.com/orders_AI.csv\""
+        ],
+        "annotations": [
+          {
+            "name": "IsParameterQuery",
+            "value": "True"
+          },
+          {
+            "name": "IsParameterQueryRequired",
+            "value": "False"
+          },
+          {
+            "name": "PBI_QueryOrder",
+            "value": "0"
+          }
+        ]
+      }
+    ],
+    "annotations": [
+      {
+        "name": "PBIDesktopVersion",
+        "value": "2.130.930.0"
+      },
+      {
+        "name": "createdBy",
+        "value": "QlikAI_Accelerator"
+      }
+    ]
+  }
+}

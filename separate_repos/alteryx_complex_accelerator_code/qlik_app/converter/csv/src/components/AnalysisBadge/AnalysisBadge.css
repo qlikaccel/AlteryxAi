@@ -1,0 +1,11 @@
+.analysis-badge {
+  color: #16a34a;
+  font-weight: 600;
+  margin-left: 12px;
+  font-size: 14px;
+  display: inline-block;
+}
+
+@media (max-width: 768px) {
+  .analysis-badge { font-size: 12px; }
+}
