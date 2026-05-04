@@ -1453,6 +1453,18 @@ export default function SummaryPage() {
       return;
     }
 
+    // Check if this is a Cloud API workflow that has already been analyzed during materialization
+    const skipAnalysisFetch = sessionStorage.getItem("alteryx_skip_analysis_fetch") === "true";
+    if (skipAnalysisFetch) {
+      // Skip the redundant fetch for Cloud API workflows
+      sessionStorage.removeItem("alteryx_skip_analysis_fetch");
+      const elapsed = stopTimer?.("/summary");
+      setPageLoadTime(elapsed ?? null);
+      setLoading(false);
+      setError("");
+      return;
+    }
+
     setLoading(true);
     fetchAlteryxWorkflowAnalysis(batchId, workflowId, sharePointUrl, fileName)
       .then((data) => {
@@ -1482,8 +1494,12 @@ export default function SummaryPage() {
         sessionStorage.setItem("migration_generation_reason", data.mquery?.routing_reason || "");
         sessionStorage.setItem("migration_llm_status", data.mquery?.llm_status || "not_required");
         sessionStorage.setItem("alteryx_conversion_steps", JSON.stringify(data.mquery?.conversion_steps || []));
+        // Store expected row count for validation comparison in PublishPage
+        if (data.mquery?.expected_row_count || data.mquery?.row_count) {
+          sessionStorage.setItem("migration_row_count", String(data.mquery?.expected_row_count || data.mquery?.row_count || "0"));
+        }
         setError("");
-      })
+      }))
       .catch((err: any) => setError(err?.message || "Failed to load workflow analysis"))
       .finally(() => {
         const elapsed = stopTimer?.("/summary");

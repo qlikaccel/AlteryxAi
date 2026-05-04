@@ -91,6 +91,8 @@ export default function AppsPage() {
         sessionStorage.setItem("alteryx_selected_workflow", JSON.stringify(parsedWorkflow));
         sessionStorage.setItem("alteryx_cloud_source_workflow_id", workflow.id);
         sessionStorage.setItem("alteryx_cloud_artifact_name", materialized.artifact_name || "");
+        // Flag to prevent redundant analysis fetch in SummaryPage for Cloud API workflows
+        sessionStorage.setItem("alteryx_skip_analysis_fetch", "true");
         startTimer?.("/summary");
         nav("/summary", { state: { workflowId: parsedWorkflow.id, workflowName: parsedWorkflow.name || workflow.name } });
       } catch (err: any) {

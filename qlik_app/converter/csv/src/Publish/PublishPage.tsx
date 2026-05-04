@@ -360,9 +360,11 @@ export default function PublishPage() {
     // Otherwise fetch fresh from Power BI (same as PDF does)
     if (publishResult?.dataset_id) {
       setValidationLoading(true);
+      const expectedRowCount = Number(sessionStorage.getItem("migration_row_count") || publishResult?.expected_row_count || "0") || null;
       validatePowerBiMigration({
         dataset_id: publishResult.dataset_id,
         table_name: storedValidation?.table_name || validationTableName,
+        expected_row_count: expectedRowCount,
       })
         .then((data) => {
           setLiveValidation(data);
