@@ -1,0 +1,760 @@
+.workflow-app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #ffffff;
+}
+
+/* ============= STEPPER NAVIGATION ============= */
+.workflow-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 20px 40px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.workflow-step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  position: relative;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.workflow-step-item.active,
+.workflow-step-item.active-current {
+  opacity: 1;
+}
+
+.workflow-step-item::after {
+  content: "";
+  position: absolute;
+  right: -12px;
+  width: 1px;
+  height: 24px;
+  background: #d0d0d0;
+}
+
+.workflow-step-item:last-child::after {
+  display: none;
+}
+
+.workflow-step-icon {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 12px;
+  background: #e8e8e8;
+  color: #666;
+}
+
+.workflow-step-item.active .workflow-step-icon {
+  background: #c0d9e8;
+  color: #0066cc;
+}
+
+.workflow-step-item.active-current .workflow-step-icon {
+  background: #7a4b9e;
+  color: white;
+}
+
+.workflow-step-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workflow-step-label {
+  font-weight: 600;
+  font-size: 12px;
+  color: #333;
+}
+
+
+/* ============= MAIN CONTENT ============= */
+.workflow-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 32px 40px;
+  overflow-y: auto;
+}
+
+.workflow-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+  gap: 20px;
+}
+
+.workflow-header-left {
+  flex: 0;
+}
+
+.workflow-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.workflow-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.workflow-search {
+  width: 280px;
+  padding: 8px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #333;
+  background: white;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.workflow-search::placeholder {
+  color: #999;
+}
+
+.workflow-search:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+}
+
+/* ============= WORKFLOWS GRID ============= */
+.workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.workflow-card {
+  display: flex;
+  flex-direction: column;
+  background: #f0f5ff;
+  border: 1px solid #d0d9e8;
+  border-radius: 8px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.workflow-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #b0c4de;
+  transform: translateY(-2px);
+}
+
+.workflow-card-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 16px;
+  color: #0066cc;
+  opacity: 0.7;
+}
+
+.workflow-card-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.workflow-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 12px 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.workflow-card-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+
+.workflow-card-date {
+  color: #666;
+}
+
+.workflow-card-tools {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: #0066cc;
+  color: white;
+  border-radius: 50%;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.workflow-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #d0d9e8;
+}
+
+.workflow-card-star,
+.workflow-card-more {
+  background: transparent;
+  border: none;
+  color: #999;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  transition: color 0.2s;
+}
+
+.workflow-card-star:hover,
+.workflow-card-more:hover {
+  color: #0066cc;
+}
+
+/* ============= STATE DISPLAYS ============= */
+.workflow-loading,
+.workflow-error,
+.workflow-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  gap: 16px;
+}
+
+.workflow-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e0e0e0;
+  border-top: 3px solid #0066cc;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.workflow-loading p,
+.workflow-error p,
+.workflow-empty p {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+}
+
+.workflow-error p {
+  color: #d32f2f;
+  font-weight: 500;
+}
+
+.workflow-retry-btn {
+  margin-top: 12px;
+  padding: 8px 16px;
+  background: #0066cc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.workflow-retry-btn:hover {
+  background: #0052a3;
+}
+
+/* ============= RESPONSIVE DESIGN ============= */
+@media (max-width: 1024px) {
+  .workflow-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+  }
+
+  .workflow-stepper {
+    padding: 16px 24px;
+    gap: 4px;
+  }
+
+  .workflow-step-item {
+    padding: 0 12px;
+  }
+
+  .workflow-content {
+    padding: 24px;
+  }
+
+  .workflow-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .workflow-search {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .workflow-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .workflow-stepper {
+    overflow-x: auto;
+    padding: 12px 16px;
+  }
+
+  .workflow-step-item {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .workflow-step-icon {
+    width: 24px;
+    height: 24px;
+    font-size: 10px;
+  }
+
+  .workflow-content {
+    padding: 16px;
+  }
+
+  .workflow-title {
+    font-size: 18px;
+  }
+
+  .workflow-search {
+    font-size: 12px;
+  }
+
+  .workflow-card {
+    padding: 16px;
+  }
+}
+
+
+
+
+/* ── Append to AppsPage.css ──────────────────────────────────────────────── */
+
+/* Platform badge in header */
+.platform-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 6px;
+}
+
+.alteryx-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+/* Workspace pill */
+.workspace-pill {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  color: #0369a1;
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  max-width: min(360px, 42vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Alteryx workflow card overrides */
+.app-card.alteryx-card {
+  border-color: rgba(0, 112, 192, 0.25);
+  background: rgba(219, 234, 254, 0.6);
+}
+
+.app-card.alteryx-card:hover {
+  border-color: rgba(0, 112, 192, 0.6);
+  background: rgba(219, 234, 254, 1);
+  box-shadow: 0 2px 8px rgba(0, 70, 140, 0.18);
+}
+
+/* Alteryx workflow icon */
+.alteryx-workflow-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.alteryx-workflow-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Empty state */
+.empty-state {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #64748b;
+  gap: 12px;
+}
+
+.empty-state .empty-icon { font-size: 48px; }
+.empty-state p { font-size: 14px; text-align: center; margin: 0; }
+
+/* Discovery page styles integrated from C:\Project\Sam\AlteryxAi */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-height: 100vh;
+  padding: 28px 40px;
+  overflow-y: auto;
+  background: #ffffff;
+}
+
+.qlik-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.qlik-header-left-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.qlik-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: #1f2937;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.workflow-count {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.qlik-header-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.apps-search {
+  min-width: 270px;
+  padding: 8px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 15px;
+  outline: none;
+  color: #1f2937;
+  background: #ffffff;
+  font-size: 14.4px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.apps-search:focus {
+  border-color: #0066cc;
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+}
+
+
+
+.card-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: discoveryFadeIn 0.3s ease;
+}
+@keyframes discoveryFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.app-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  overflow: hidden;
+  padding: 6px 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  gap: 16px;
+}
+
+.app-card:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.card-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 8px;
+  margin-bottom: 0;
+}
+
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex: 1;
+  padding-top: 0;
+  border-top: none;
+  gap: 12px;
+}
+
+.footer-left {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-label {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-box-orient: vertical;
+}
+
+.last-modified {
+  color: #9ca3af;
+  font-size: 12px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.right-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 4px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 4px;
+  background: #f0f4ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.timer-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  background: #f0f4ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+@media (max-width: 768px) {
+  .wrap {
+    padding: 16px 20px;
+  }
+
+  .qlik-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .qlik-header-left-group,
+  .qlik-header-right,
+  .tools,
+  .apps-search {
+    width: 100%;
+  }
+
+  .tools {
+    flex-direction: column;
+  }
+
+  .card-container {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+}
+
+
+
+
+/* ── Append to AppsPage.css ──────────────────────────────────────────────── */
+
+/* Platform badge in header */
+.platform-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 6px;
+}
+
+.alteryx-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+/* Workspace pill */
+.workspace-pill {
+  display: inline-block;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  color: #0369a1;
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  margin-left: 8px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.qlik-header-left .workspace-pill {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: min(420px, 42vw);
+  margin-left: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  flex: 0 1 auto;
+  color: #4b5668;
+}
+
+/* Alteryx workflow card overrides */
+.app-card.alteryx-card {
+  border-color: rgba(0, 112, 192, 0.25);
+  background: rgba(219, 234, 254, 0.6);
+}
+
+.app-card.alteryx-card:hover {
+  border-color: rgba(0, 112, 192, 0.6);
+  background: rgba(219, 234, 254, 1);
+  box-shadow: 0 2px 8px rgba(0, 70, 140, 0.18);
+}
+
+/* Alteryx workflow icon */
+.alteryx-workflow-icon {
+  width: 52px;
+  height: 60px;
+  min-width: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.alteryx-workflow-icon svg {
+  width: 62%;
+  height: 80%;
+}
+
+/* Empty state */
+.empty-state {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #64748b;
+  gap: 12px;
+}
+
+.empty-state .empty-icon { font-size: 48px; }
+.empty-state p { font-size: 14px; text-align: center; margin: 0; }
+
