@@ -2928,6 +2928,27 @@ class _Publisher:
                 cf = r.get("crossFilteringBehavior") or r.get("cross_filter_direction", "")
                 cf_bim = "bothDirections" if cf in ("Both", "bothDirections", "both") else "oneDirection"
                 cardinality_norm = str(cardinality or "ManyToOne")
+                
+                # Detect aggregated tables: tables with aggregate column names like Total*, Avg*, Sum*, etc.
+                # or tables with "workflow" in name that aggregate fact data
+                def is_aggregated_table(table_name, col_names):
+                    """Check if a table appears to be aggregated/summarized."""
+                    if "workflow" in table_name.lower() and not table_name.lower().endswith("_raw"):
+                        return True
+                    # Check for common aggregate column patterns
+                    aggregate_patterns = ("total", "sum", "avg", "average", "count", "min", "max")
+                    for col in col_names:
+                        if any(col.lower().startswith(pat) for pat in aggregate_patterns):
+                            return True
+                    return False
+                
+                from_cols_list = list(columns_by_table.get(ft, set()))
+                to_cols_list = list(columns_by_table.get(tt, set()))
+                from_is_agg = is_aggregated_table(ft, from_cols_list)
+                to_is_agg = is_aggregated_table(tt, to_cols_list)
+                
+                # If we're relating an aggregated table to a fact table, use ManyToMany
+                # to avoid "one" side duplicates error in Power BI
                 if cardinality_norm == "OneToMany":
                     from_cardinality, to_cardinality = "one", "many"
                 elif cardinality_norm == "OneToOne":
@@ -2936,8 +2957,18 @@ class _Publisher:
                 elif cardinality_norm in ("ManyToMany", "manyToMany"):
                     from_cardinality, to_cardinality = "many", "many"
                     cf_bim = "bothDirections"
+                elif (cardinality_norm == "ManyToOne") and ((from_is_agg and not to_is_agg) or (not from_is_agg and to_is_agg)):
+                    # When relating aggregated to fact table, use ManyToMany to avoid duplicate key errors
+                    from_cardinality, to_cardinality = "many", "many"
+                    cf_bim = "bothDirections"
+                    logger.info(
+                        "[BIM] Relationship '%s' -> '%s': Changed to ManyToMany "
+                        "(aggregated table detected)",
+                        ft, tt
+                    )
                 else:
                     from_cardinality, to_cardinality = "many", "one"
+                
                 tmd_rels.append({
                     "name":                  f"{ft}_{fc}_{tt}_{tc}",
                     "fromTable":             ft,
