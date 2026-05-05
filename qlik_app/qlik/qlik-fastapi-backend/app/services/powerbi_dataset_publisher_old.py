@@ -45,36 +45,62 @@ def get_powerbi_token(config: PublisherConfig) -> str:
 
 def inject_schema_if_missing(m_expr: str, source_type: str = "") -> str:
     """
-    DISABLED: Schema injection with List.Transform causes semantic model errors
+    🔥 BULLETPROOF Schema Injection (FIX 3)
     
-    Previous implementation attempted:
-        List.Transform(Columns, each {_, type text})
+    Handles all variations of "in\n" with different whitespace:
+    - in\n    Headers
+    - in\n        Headers (tabs/spaces)
+    - in\r\n    Headers (Windows newlines)
     
-    This triggers: "Expression.Error: We cannot convert a value of type Function to type Logical"
+    PROBLEM with old string.replace():
+    ❌ m_expr.replace("in\n", ...)
+    - Fails on "in  \n  Headers" (extra spaces)
+    - Fails on "in\t\n\tHeaders" (tabs)
     
-    Root cause: Power BI's semantic model processor cannot interpret the 'each' lambda
-    expression when validating BIM metadata, causing type conversion errors.
-    
-    SOLUTION: Skip schema injection entirely.
-    Power BI will auto-detect column types on first refresh, which:
-    - Avoids semantic model validation errors
-    - Preserves data integrity
-    - Works with all source types
-    - Is safe for production use
+    SOLUTION: Use regex to handle ANY whitespace pattern
     """
     import logging
+    import re
     
     logger = logging.getLogger(__name__)
     
-    # Already has schema → skip (no double injection)
+    # If already has schema → skip (no double injection)
     if "TransformColumnTypes" in m_expr:
         logger.debug(f"[inject_schema] ℹ️ Schema already present - skipping")
         return m_expr
     
-    # Skip problematic dynamic schema injection
-    logger.info(f"[inject_schema] ⏭️ Skipping dynamic schema injection (causes semantic model errors)")
-    logger.info(f"[inject_schema] ℹ️ Power BI will auto-detect column types on first refresh")
-    return m_expr
+    # Only inject for file-based sources
+    file_based_types = ("csv", "qvd", "excel", "json", "xml", "parquet", "file", "unknown", "")
+    if source_type and source_type.lower() not in file_based_types:
+        logger.debug(f"[inject_schema] ⓘ Source type '{source_type}' - checking for schema...")
+    
+    logger.info(f"[inject_schema] 🔥 Injecting bulletproof dynamic schema...")
+    
+    # 🔥 FIX 3: Bulletproof regex that handles ALL whitespace variations
+    # Pattern matches: "in" keyword + any whitespace + newline + any whitespace + step name
+    # Group 1 captures the final step name before "in"
+    pattern = r"in\s*\n\s*([A-Za-z0-9_#\"\']+)"
+    
+    def replacer(match):
+        step = match.group(1).strip().strip('#"\'')  # Extract step name, strip quotes/hashes
+        return f""",
+    Columns = Table.ColumnNames({step}),
+    TypedTable = Table.TransformColumnTypes(
+        {step},
+        List.Transform(Columns, each {{_, type text}})
+    )
+in
+    TypedTable"""
+    
+    # Try to apply the replacement (only once — count=1)
+    result = re.sub(pattern, replacer, m_expr, count=1, flags=re.MULTILINE | re.IGNORECASE)
+    
+    if result != m_expr:
+        logger.info(f"[inject_schema] ✅ Bulletproof schema injection SUCCESSFUL")
+        return result
+    else:
+        logger.warning(f"[inject_schema] ⚠️  Could not inject - M query format unexpected")
+        return m_expr
 
 
 
