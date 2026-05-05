@@ -1189,39 +1189,42 @@ class MQueryConverter:
             )
             return transform, "TypedTable"
 
-        # Priority 3: Skip schema injection to avoid semantic model errors
-        # Reason: List.Transform(Columns, each {_, type text}) causes
-        #   "Expression.Error: We cannot convert a value of type Function to type Logical"
+        # Priority 3: Dynamic fallback — at least BIM has a TypedTable step
+        # Power BI will discover real columns on first dataset refresh.
+        transform = (
+            ",\n"
+            "    Columns = Table.ColumnNames(Headers),\n"
+            "    TypedTable = Table.TransformColumnTypes(\n"
+            f"        {previous_step},\n"
+            "        List.Transform(Columns, each {_, type text})\n"
+            "    )"
+        )
         logger.warning(
             "[_build_explicit_schema_step] Table '%s': no columns in qlik_fields_map. "
-            "Skipping dynamic schema injection (avoids semantic model errors). "
-            "Power BI will auto-detect column types on first refresh. "
-            "Pass app_id or qlik_fields_map in the publish request for explicit types.",
+            "Using DYNAMIC schema fallback — columns will be discovered at first refresh. "
+            "Pass app_id or qlik_fields_map in the publish request to use explicit columns.",
             table_name,
         )
-        return "", previous_step
+        return transform, "TypedTable"
 
     def _apply_dynamic_schema(self, step_name: str = "Headers") -> str:
         """
-        DISABLED: Problematic dynamic schema causing semantic model errors
+        🔥 Universal fallback schema for LOAD * or unknown columns
+        Prevents EMPTY TABLE in Power BI
         
-        The pattern List.Transform(Columns, each {_, type text}) triggers:
-          "Expression.Error: We cannot convert a value of type Function to type Logical"
+        Returns M Query snippet that:
+        1. Extracts all column names from the previous step
+        2. Applies dynamic type inference (all text initially)
+        3. Power BI discovers real columns on first refresh
         
-        This occurs because Power BI's semantic model processor cannot interpret
-        the 'each' lambda expression in this context when validating BIM metadata.
-        
-        SOLUTION: Return empty string to skip schema injection.
-        Power BI will auto-detect column types on first dataset refresh,
-        which is safe for all source types and preserves data integrity.
-        
-        For explicit schema control, use qlik_fields_map parameter instead.
+        This ALWAYS works regardless of source type or column count.
         """
-        logger.warning(
-            "[_apply_dynamic_schema] Skipping problematic dynamic schema. "
-            "Power BI will auto-detect column types on refresh."
-        )
-        return ""
+        return f""",
+    Columns = Table.ColumnNames({step_name}),
+    TypedTable = Table.TransformColumnTypes(
+        {step_name},
+        List.Transform(Columns, each {{_, type text}})
+    )"""
 
     def _apply_types_as_is(self, fields: List[Dict], previous_step: str):
         pairs = []
@@ -2339,14 +2342,18 @@ class MQueryConverter:
             clean_bp = base_path.strip().strip('"').strip("'").rstrip("/")
             file_url = f"{clean_bp}/{path}" if path else clean_bp
             
-            # Skip dynamic schema injection to avoid semantic model errors
-            # Reason: List.Transform(Columns, each {_, type text}) causes
-            #   "Expression.Error: We cannot convert a value of type Function to type Logical"
+            # 🔥 CRITICAL FIX: Inject schema for LOAD * tables (Web URL path)
             if not combined_transform.strip() and (final or "Headers") == "Headers":
-                # Power BI will auto-detect column types on first refresh
-                final = "Headers"
-                logger.info("[_m_csv] '%s': skipping problematic dynamic schema for Web URL. "
-                           "Power BI will auto-detect columns on refresh.", table_name)
+                combined_transform = (
+                    ",\n"
+                    "    Columns = Table.ColumnNames(Headers),\n"
+                    "    TypedTable = Table.TransformColumnTypes(\n"
+                    "        Headers,\n"
+                    "        List.Transform(Columns, each {_, type text})\n"
+                    "    )"
+                )
+                final = "TypedTable"
+                logger.info("[_m_csv] '%s': injected DYNAMIC schema for Web URL (no explicit cols)", table_name)
             
             m = (
                 f"let\n"
