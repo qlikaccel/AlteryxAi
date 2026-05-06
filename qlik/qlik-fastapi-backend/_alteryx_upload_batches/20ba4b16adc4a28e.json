@@ -1,0 +1,572 @@
+{
+  "batch_id": "20ba4b16adc4a28e",
+  "created_at": 1777962413,
+  "summary": {
+    "workflow_count": 4,
+    "rejected_count": 0,
+    "total_tool_count": 20,
+    "unsupported_tool_count": 9,
+    "macro_definition_count": 3,
+    "macro_reference_count": 3,
+    "uploaded_macro_reference_count": 3,
+    "missing_macro_reference_count": 0,
+    "by_complexity": {
+      "low": 1,
+      "medium": 1,
+      "high": 2
+    },
+    "by_convertibility": {
+      "high": 1,
+      "medium": 0,
+      "low": 3,
+      "manual_review": 0
+    }
+  },
+  "workflows": [
+    {
+      "id": "d706930c9539db75",
+      "name": "Macro Workflow - Standard Batch Iterative",
+      "sourceFile": "WF02_Macro_Standard_Batch_Iterative.yxmd",
+      "packageFile": "WF02_Macro_Standard_Batch_Iterative_FIXED.yxzp",
+      "fileType": "yxmd",
+      "toolCount": 8,
+      "connectionCount": 7,
+      "convertibility": "high",
+      "complexity": "low",
+      "supportedToolCount": 8,
+      "unsupportedToolCount": 0,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+        "AlteryxBasePluginsGui.OutputData.OutputData",
+        "AlteryxBasePluginsGui.Summarize.Summarize",
+        "AlteryxGuiToolkit.ToolContainer.ToolContainer"
+      ],
+      "unsupportedTools": [],
+      "recommendations": [
+        "Candidate for automated Power Query/Dataflow conversion."
+      ],
+      "dataSources": [
+        {
+          "name": "orders_AI.csv",
+          "type": "csv",
+          "path": "https://sorimtechnologies.sharepoint.com/orders_AI.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "orders_AI.csv",
+          "type": "csv",
+          "path": "s://sorimtechnologies.sharepoint.com/orders_AI.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "orders_AI.csv",
+          "type": "csv",
+          "path": "orders_AI.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "region_parameters.csv",
+          "type": "csv",
+          "path": "https://sorimtechnologies.sharepoint.com/region_parameters.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "region_parameters.csv",
+          "type": "csv",
+          "path": "s://sorimtechnologies.sharepoint.com/region_parameters.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "region_parameters.csv",
+          "type": "csv",
+          "path": "region_parameters.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "hierarchy.csv",
+          "type": "csv",
+          "path": "https://sorimtechnologies.sharepoint.com/hierarchy.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "hierarchy.csv",
+          "type": "csv",
+          "path": "s://sorimtechnologies.sharepoint.com/hierarchy.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "hierarchy.csv",
+          "type": "csv",
+          "path": "hierarchy.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "macro_workflow_output.csv",
+          "type": "csv",
+          "path": "macro_workflow_output.csv",
+          "tool": "AlteryxBasePluginsGui.OutputData.OutputData"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "",
+          "configurationText": "1\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n50\n100\nhttps://sorimtechnologies.sharepoint.com/orders_AI.csv\nInput Orders\nInput Orders",
+          "config": {}
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxGuiToolkit.ToolContainer.ToolContainer",
+          "supported": true,
+          "expression": "",
+          "configurationText": "2\nAlteryxGuiToolkit.ToolContainer.ToolContainer\n250\n100\nStandard\nmacros/standard_cleanse.yxmc\nStandard Macro - Cleanse\nStandard Macro - Cleanse\nMacro\nmacros/standard_cleanse.yxmc",
+          "config": {}
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "",
+          "configurationText": "3\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n50\n260\nhttps://sorimtechnologies.sharepoint.com/region_parameters.csv\nRegion Parameters\nRegion Parameters",
+          "config": {}
+        },
+        {
+          "id": "4",
+          "plugin": "AlteryxGuiToolkit.ToolContainer.ToolContainer",
+          "supported": true,
+          "expression": "",
+          "configurationText": "4\nAlteryxGuiToolkit.ToolContainer.ToolContainer\n500\n160\nBatch\nRegion\nmacros/batch_region_processor.yxmc\nBatch Macro - Region Processor\nBatch Macro - Region Processor\nMacro\nmacros/batch_region_processor.yxmc",
+          "config": {}
+        },
+        {
+          "id": "5",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "",
+          "configurationText": "5\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n500\n320\nhttps://sorimtechnologies.sharepoint.com/hierarchy.csv\nHierarchy Input\nHierarchy Input",
+          "config": {}
+        },
+        {
+          "id": "6",
+          "plugin": "AlteryxGuiToolkit.ToolContainer.ToolContainer",
+          "supported": true,
+          "expression": "No new parent-child records",
+          "configurationText": "6\nAlteryxGuiToolkit.ToolContainer.ToolContainer\n760\n200\nIterative\n100\nNo new parent-child records\nmacros/iterative_hierarchy_expand.yxmc\nIterative Macro - Hierarchy Expansion\nIterative Macro - Hierarchy Expansion\nMacro\nmacros/iterative_hierarchy_expand.yxmc",
+          "config": {}
+        },
+        {
+          "id": "7",
+          "plugin": "AlteryxBasePluginsGui.Summarize.Summarize",
+          "supported": true,
+          "expression": "",
+          "configurationText": "7\nAlteryxBasePluginsGui.Summarize.Summarize\n1020\n200\nRegion\nNetAmount\nSummarize Macro Results\nSummarize Macro Results",
+          "config": {}
+        },
+        {
+          "id": "8",
+          "plugin": "AlteryxBasePluginsGui.OutputData.OutputData",
+          "supported": true,
+          "expression": "",
+          "configurationText": "8\nAlteryxBasePluginsGui.OutputData.OutputData\n1250\n200\noutput/macro_workflow_output.csv\nOutput Macro Workflow\nOutput Macro Workflow",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "1",
+          "to": "2",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "2",
+          "to": "4",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "3",
+          "to": "4",
+          "fromAnchor": "Output",
+          "toAnchor": "Control"
+        },
+        {
+          "from": "4",
+          "to": "6",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "5",
+          "to": "6",
+          "fromAnchor": "Output",
+          "toAnchor": "IterationInput"
+        },
+        {
+          "from": "6",
+          "to": "7",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "7",
+          "to": "8",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": false,
+      "macroDependencies": [
+        {
+          "toolId": "2",
+          "name": "standard_cleanse.yxmc",
+          "path": "macros/standard_cleanse.yxmc",
+          "macroType": "Standard",
+          "controlParameter": "",
+          "iterationLimit": "",
+          "stopCondition": "",
+          "uploaded": true,
+          "matchedFile": "macros/standard_cleanse.yxmc",
+          "status": "ready"
+        },
+        {
+          "toolId": "4",
+          "name": "batch_region_processor.yxmc",
+          "path": "macros/batch_region_processor.yxmc",
+          "macroType": "Batch",
+          "controlParameter": "Region",
+          "iterationLimit": "",
+          "stopCondition": "",
+          "uploaded": true,
+          "matchedFile": "macros/batch_region_processor.yxmc",
+          "status": "ready"
+        },
+        {
+          "toolId": "6",
+          "name": "iterative_hierarchy_expand.yxmc",
+          "path": "macros/iterative_hierarchy_expand.yxmc",
+          "macroType": "Iterative",
+          "controlParameter": "",
+          "iterationLimit": "100",
+          "stopCondition": "No new parent-child records",
+          "uploaded": true,
+          "matchedFile": "macros/iterative_hierarchy_expand.yxmc",
+          "status": "ready"
+        }
+      ],
+      "macroValidation": {
+        "referenced": 3,
+        "uploaded": 3,
+        "missing": 0,
+        "missingFiles": [],
+        "status": "ready",
+        "message": "All 3 referenced macro file(s) were uploaded."
+      }
+    },
+    {
+      "id": "cc26e22589968084",
+      "name": "standard_cleanse",
+      "sourceFile": "macros/standard_cleanse.yxmc",
+      "packageFile": "WF02_Macro_Standard_Batch_Iterative_FIXED.yxzp",
+      "fileType": "yxmc",
+      "toolCount": 3,
+      "connectionCount": 2,
+      "convertibility": "low",
+      "complexity": "medium",
+      "supportedToolCount": 1,
+      "unsupportedToolCount": 2,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.DataCleanse.DataCleanse",
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+      ],
+      "unsupportedTools": [
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+      ],
+      "recommendations": [
+        "Macros should be expanded and assessed separately."
+      ],
+      "dataSources": [
+        {
+          "name": "1 AlteryxBasePluginsGui.MacroInput.MacroInput 50 100 Input Macro Input",
+          "type": "unknown",
+          "path": "1 AlteryxBasePluginsGui.MacroInput.MacroInput 50 100 Input Macro Input",
+          "tool": "AlteryxBasePluginsGui.MacroInput.MacroInput"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "1\nAlteryxBasePluginsGui.MacroInput.MacroInput\n50\n100\nInput\nMacro Input",
+          "config": {}
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxBasePluginsGui.DataCleanse.DataCleanse",
+          "supported": true,
+          "expression": "true",
+          "configurationText": "2\nAlteryxBasePluginsGui.DataCleanse.DataCleanse\n250\n100\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\nCleanse Data",
+          "config": {}
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "3\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n450\n100\nOutput\nMacro Output",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "1",
+          "to": "2",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "2",
+          "to": "3",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": true,
+      "macroDependencies": [],
+      "macroValidation": {
+        "referenced": 0,
+        "uploaded": 0,
+        "missing": 0,
+        "status": "not_applicable",
+        "message": "No macro dependencies detected."
+      }
+    },
+    {
+      "id": "21fede418ee444b6",
+      "name": "batch_region_processor",
+      "sourceFile": "macros/batch_region_processor.yxmc",
+      "packageFile": "WF02_Macro_Standard_Batch_Iterative_FIXED.yxzp",
+      "fileType": "yxmc",
+      "toolCount": 4,
+      "connectionCount": 3,
+      "convertibility": "low",
+      "complexity": "high",
+      "supportedToolCount": 1,
+      "unsupportedToolCount": 3,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+        "AlteryxBasePluginsGui.RecordFilter.RecordFilter"
+      ],
+      "unsupportedTools": [
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+      ],
+      "recommendations": [
+        "Macros should be expanded and assessed separately."
+      ],
+      "dataSources": [
+        {
+          "name": "1 AlteryxBasePluginsGui.MacroInput.MacroInput 50 100 Input Macro Input",
+          "type": "unknown",
+          "path": "1 AlteryxBasePluginsGui.MacroInput.MacroInput 50 100 Input Macro Input",
+          "tool": "AlteryxBasePluginsGui.MacroInput.MacroInput"
+        },
+        {
+          "name": "2 AlteryxBasePluginsGui.MacroInput.MacroInput 50 250 Control Parameter true Control Parameter - Region",
+          "type": "unknown",
+          "path": "2 AlteryxBasePluginsGui.MacroInput.MacroInput 50 250 Control Parameter true Control Parameter - Region",
+          "tool": "AlteryxBasePluginsGui.MacroInput.MacroInput"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "1\nAlteryxBasePluginsGui.MacroInput.MacroInput\n50\n100\nInput\nMacro Input",
+          "config": {}
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "2\nAlteryxBasePluginsGui.MacroInput.MacroInput\n50\n250\nControl Parameter\ntrue\nControl Parameter - Region",
+          "config": {}
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxBasePluginsGui.RecordFilter.RecordFilter",
+          "supported": true,
+          "expression": "[Region] == $Region",
+          "configurationText": "3\nAlteryxBasePluginsGui.RecordFilter.RecordFilter\n250\n100\n[Region] == $Region\nFilter by Region",
+          "config": {
+            "filterExpression": "[Region] == $Region"
+          }
+        },
+        {
+          "id": "4",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "4\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n450\n100\nOutput\nMacro Output",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "1",
+          "to": "3",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "2",
+          "to": "3",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "3",
+          "to": "4",
+          "fromAnchor": "True",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": true,
+      "macroDependencies": [],
+      "macroValidation": {
+        "referenced": 0,
+        "uploaded": 0,
+        "missing": 0,
+        "status": "not_applicable",
+        "message": "No macro dependencies detected."
+      }
+    },
+    {
+      "id": "f8f29a4a6031b431",
+      "name": "iterative_hierarchy_expand",
+      "sourceFile": "macros/iterative_hierarchy_expand.yxmc",
+      "packageFile": "WF02_Macro_Standard_Batch_Iterative_FIXED.yxzp",
+      "fileType": "yxmc",
+      "toolCount": 5,
+      "connectionCount": 4,
+      "convertibility": "low",
+      "complexity": "high",
+      "supportedToolCount": 1,
+      "unsupportedToolCount": 4,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.Join.Join",
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+      ],
+      "unsupportedTools": [
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+      ],
+      "recommendations": [
+        "Macros should be expanded and assessed separately."
+      ],
+      "dataSources": [
+        {
+          "name": "1 AlteryxBasePluginsGui.MacroInput.MacroInput 50 100 Input Main Input",
+          "type": "unknown",
+          "path": "1 AlteryxBasePluginsGui.MacroInput.MacroInput 50 100 Input Main Input",
+          "tool": "AlteryxBasePluginsGui.MacroInput.MacroInput"
+        },
+        {
+          "name": "2 AlteryxBasePluginsGui.MacroInput.MacroInput 50 250 Iteration Input true Iteration Input - Hierarchy",
+          "type": "unknown",
+          "path": "2 AlteryxBasePluginsGui.MacroInput.MacroInput 50 250 Iteration Input true Iteration Input - Hierarchy",
+          "tool": "AlteryxBasePluginsGui.MacroInput.MacroInput"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "1\nAlteryxBasePluginsGui.MacroInput.MacroInput\n50\n100\nInput\nMain Input",
+          "config": {}
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "2\nAlteryxBasePluginsGui.MacroInput.MacroInput\n50\n250\nIteration Input\ntrue\nIteration Input - Hierarchy",
+          "config": {}
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxBasePluginsGui.Join.Join",
+          "supported": true,
+          "expression": "Region",
+          "configurationText": "3\nAlteryxBasePluginsGui.Join.Join\n300\n175\nInner\nRegion\nParentRegion\nJoin on Parent-Child",
+          "config": {}
+        },
+        {
+          "id": "4",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "4\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n550\n175\nOutput\nMacro Output",
+          "config": {}
+        },
+        {
+          "id": "5",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "5\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n550\n300\nIteration Output\ntrue\nIteration Output",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "1",
+          "to": "3",
+          "fromAnchor": "Output",
+          "toAnchor": "Left"
+        },
+        {
+          "from": "2",
+          "to": "3",
+          "fromAnchor": "Output",
+          "toAnchor": "Right"
+        },
+        {
+          "from": "3",
+          "to": "4",
+          "fromAnchor": "Join",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "3",
+          "to": "5",
+          "fromAnchor": "Join",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": true,
+      "macroDependencies": [],
+      "macroValidation": {
+        "referenced": 0,
+        "uploaded": 0,
+        "missing": 0,
+        "status": "not_applicable",
+        "message": "No macro dependencies detected."
+      }
+    }
+  ],
+  "rejected": []
+}

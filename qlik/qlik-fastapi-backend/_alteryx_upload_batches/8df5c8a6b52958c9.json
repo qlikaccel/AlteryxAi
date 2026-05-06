@@ -1,0 +1,139 @@
+{
+  "batch_id": "8df5c8a6b52958c9",
+  "created_at": 1776619080,
+  "summary": {
+    "workflow_count": 1,
+    "rejected_count": 0,
+    "total_tool_count": 6,
+    "unsupported_tool_count": 0,
+    "by_complexity": {
+      "low": 1,
+      "medium": 0,
+      "high": 0
+    },
+    "by_convertibility": {
+      "high": 1,
+      "medium": 0,
+      "low": 0,
+      "manual_review": 0
+    }
+  },
+  "workflows": [
+    {
+      "id": "9924d994a2d8721f",
+      "name": "sales_1M_workflow",
+      "sourceFile": "sales_1M_workflow.yxmd",
+      "packageFile": null,
+      "fileType": "yxmd",
+      "toolCount": 6,
+      "connectionCount": 5,
+      "convertibility": "high",
+      "complexity": "low",
+      "supportedToolCount": 6,
+      "unsupportedToolCount": 0,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect",
+        "AlteryxBasePluginsGui.BrowseV2.BrowseV2",
+        "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+        "AlteryxBasePluginsGui.Filter.Filter",
+        "AlteryxBasePluginsGui.Formula.Formula",
+        "AlteryxBasePluginsGui.Summarize.Summarize"
+      ],
+      "unsupportedTools": [],
+      "recommendations": [
+        "Candidate for automated Power Query/Dataflow conversion."
+      ],
+      "dataSources": [
+        {
+          "name": "sales_data_1M.csv",
+          "type": "csv",
+          "path": "C:\\Data\\sales_data_1M.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "sales_data_1M.csv",
+          "type": "csv",
+          "path": "sales_data_1M.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "",
+          "configurationText": "1\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n100\n100\nC:\\Data\\sales_data_1M.csv\nFalse\n,\n65001\n\"\nFalse\nTrue\nFalse\nFalse\n0\nAlteryxBasePlugins.dll\nAlteryxDbFileInput"
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect",
+          "supported": true,
+          "expression": "CustomerID",
+          "configurationText": "2\nAlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect\n300\n100\nCustomerID\nTrue\nInt64\nCustomerID\nCustomerName\nTrue\nString\nCustomerName\nRegion\nTrue\nString\nRegion\nCity\nTrue\nString\nCity\nProductCategory\nTrue\nString\nProductCategory\nProductName\nTrue\nString\nProductName\nQuantity\nTrue\nInt32\nQuantity\nUnitPrice\nTrue\nDouble\nUnitPrice\nSalesAmount\nTrue\nDouble\nSalesAmount\nDiscount\nTrue\nDouble\nDiscount\nOrderDate\nTrue\nDate\nOrderDate\nStatus\nTrue\nString\nStatus\nPaymentMethod\nTrue\nString\nPaymentMethod\nAlteryxBasePlugins.dll\nAlteryxSelect"
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxBasePluginsGui.Filter.Filter",
+          "supported": true,
+          "expression": "[SalesAmount] > 1000 AND [Region] = \"North\"",
+          "configurationText": "3\nAlteryxBasePluginsGui.Filter.Filter\n500\n100\n[SalesAmount] > 1000 AND [Region] = \"North\"\nAlteryxBasePlugins.dll\nAlteryxFilter"
+        },
+        {
+          "id": "4",
+          "plugin": "AlteryxBasePluginsGui.Summarize.Summarize",
+          "supported": true,
+          "expression": "Region",
+          "configurationText": "4\nAlteryxBasePluginsGui.Summarize.Summarize\n700\n100\nRegion\nGroupBy\nProductCategory\nGroupBy\nSalesAmount\nSum\nTotalSales\nQuantity\nSum\nTotalQuantity\nAlteryxBasePlugins.dll\nAlteryxSummarize"
+        },
+        {
+          "id": "5",
+          "plugin": "AlteryxBasePluginsGui.Formula.Formula",
+          "supported": true,
+          "expression": "AvgSalesPerUnit",
+          "configurationText": "5\nAlteryxBasePluginsGui.Formula.Formula\n900\n100\nAvgSalesPerUnit\nDouble\n8\nIIF([TotalQuantity] = 0, NULL(), [TotalSales] / [TotalQuantity])\nAlteryxBasePlugins.dll\nAlteryxFormula"
+        },
+        {
+          "id": "6",
+          "plugin": "AlteryxBasePluginsGui.BrowseV2.BrowseV2",
+          "supported": true,
+          "expression": "",
+          "configurationText": "6\nAlteryxBasePluginsGui.BrowseV2.BrowseV2\n1100\n100\nAlteryxBasePlugins.dll\nAlteryxBrowseV2"
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "1",
+          "to": "2",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "2",
+          "to": "3",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "3",
+          "to": "4",
+          "fromAnchor": "True",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "4",
+          "to": "5",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "5",
+          "to": "6",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        }
+      ]
+    }
+  ],
+  "rejected": []
+}
