@@ -1,4 +1,5 @@
 import html
+import hashlib
 import re
 from typing import Any
 from urllib.parse import urlparse
@@ -59,17 +60,52 @@ def generate_m_query(workflow: dict[str, Any], sharepoint_url: str = "", file_na
     return convert_workflow_to_m(workflow, source, sharepoint_url, file_name)
 
 
-def _dbt_identifier(value: str, fallback: str = "alteryx_model") -> str:
+def _shorten_identifier(value: str, max_length: int = 63) -> str:
+    if len(value) <= max_length:
+        return value
+    digest = hashlib.sha1(value.encode("utf-8", errors="ignore")).hexdigest()[:10]
+    prefix_length = max(max_length - len(digest) - 1, 1)
+    return f"{value[:prefix_length].rstrip('_')}_{digest}"
+
+
+def _dbt_identifier(value: str, fallback: str = "alteryx_model", max_length: int = 63) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", value or "").strip("_").lower()
     if cleaned and cleaned[0].isdigit():
         cleaned = f"_{cleaned}"
-    return cleaned or fallback
+    return _shorten_identifier(cleaned or fallback, max_length)
 
 
 def _dbt_source_name(source: dict[str, Any], index: int) -> str:
     name = str(source.get("name") or source.get("path") or f"source_{index}")
     name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet)$", "", name, flags=re.IGNORECASE)
     return _dbt_identifier(name, f"source_{index}")
+
+
+def _dbt_source_identifier(source: dict[str, Any], index: int) -> str:
+    name = str(source.get("name") or source.get("path") or f"source_{index}")
+    name = name.replace("\\", "/").rsplit("/", 1)[-1]
+    name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet)$", "", name, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", name or "").strip("_")
+    return _shorten_identifier(cleaned or _dbt_source_name(source, index), 120)
+
+
+def _is_warehouse_landed_source(source: dict[str, Any]) -> bool:
+    label = " ".join(
+        str(source.get(key) or "")
+        for key in ("name", "type", "path", "tool", "connection")
+    ).lower()
+    normalized_path = str(source.get("path") or "").replace("\\", "/").lower()
+    if "output" in str(source.get("tool") or "").lower():
+        return False
+    if "/output/" in normalized_path or normalized_path.startswith("output/"):
+        return False
+    if "textinput" in label or "text input" in label:
+        return False
+    if "lockininput" in label or "lock in input" in label:
+        return False
+    if "salesforce" in label or "odbc" in label:
+        return False
+    return True
 
 
 def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:
@@ -80,12 +116,8 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
     Power Query/SharePoint extraction semantics into dbt models.
     """
     project_name = _dbt_identifier(workflow.get("name") or "alteryx_migration", "alteryx_migration")
-    sources = [
-        source for source in (workflow.get("dataSources") or [])
-        if "output" not in str(source.get("tool") or "").lower()
-        and "/output/" not in str(source.get("path") or "").replace("\\", "/").lower()
-        and not str(source.get("path") or "").replace("\\", "/").lower().startswith("output/")
-    ]
+    all_sources = workflow.get("dataSources") or []
+    sources = [source for source in all_sources if _is_warehouse_landed_source(source)]
     if sharepoint_url or file_name:
         sources = [_source_from_override(sharepoint_url, file_name)]
     if not sources:
@@ -105,10 +137,13 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
     source_model_names: list[str] = []
     for index, source in enumerate(sources, start=1):
         source_name = _dbt_source_name(source, index)
+        source_identifier = _dbt_source_identifier(source, index)
         source_model_names.append(source_name)
         description = str(source.get("path") or source.get("type") or "")
+        identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
         source_rows.append(
             f"      - name: {source_name}\n"
+            f"{identifier_line}"
             f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '')}\""
         )
         staging_files[f"models/staging/stg_{source_name}.sql"] = (

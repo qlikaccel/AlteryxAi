@@ -42,6 +42,7 @@ from app.services.alteryx_migration_engine import (
     generate_workflow_diagram,
     validate_migration,
 )
+from app.services.alteryx_dbt_publisher import publish_dbt_project_to_bigquery
 
 router = APIRouter(prefix="/api/alteryx", tags=["Alteryx"])
 logger = logging.getLogger(__name__)
@@ -1071,6 +1072,27 @@ def download_alteryx_workflow_dbt_project(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{safe_project_name}_dbt_project.zip"'},
     )
+
+
+@router.post("/batches/{batch_id}/workflows/{workflow_id}/dbt/publish-bigquery")
+def publish_alteryx_workflow_dbt_to_bigquery(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    project = generate_dbt_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    try:
+        result = publish_dbt_project_to_bigquery(project)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to publish generated dbt project to BigQuery")
+        raise HTTPException(status_code=500, detail=f"Failed to publish dbt project to BigQuery: {exc}") from exc
+    return result
 
 
 @router.get("/batches/{batch_id}/workflows/{workflow_id}/diagram")

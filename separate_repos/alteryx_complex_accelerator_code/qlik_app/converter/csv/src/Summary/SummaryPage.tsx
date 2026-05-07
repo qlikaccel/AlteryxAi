@@ -1052,6 +1052,7 @@ import {
   downloadAlteryxDbtProject,
   fetchAlteryxBrdHtml,
   fetchAlteryxWorkflowAnalysis,
+  publishAlteryxDbtToBigQuery,
   publishAlteryxMQuery,
 } from "../api/alteryxApi";
 import type { AlteryxWorkflow } from "../api/alteryxApi";
@@ -1406,6 +1407,8 @@ export default function SummaryPage() {
   const [error, setError] = useState("");
   const [pageLoadTime, setPageLoadTime] = useState<string | null>(null);
   const [brdLoading, setBrdLoading] = useState(false);
+  const [dbtPublishing, setDbtPublishing] = useState(false);
+  const [dbtPublishResult, setDbtPublishResult] = useState<any>(null);
   const sourceMQueryPanelRef = useRef<HTMLElement | null>(null);
 
   // ─── Data fetch (dev12 backend logic) ──────────────────────────────────────
@@ -1687,6 +1690,26 @@ navigate("/publish", {
     }
   };
 
+  const publishDbtToBigQuery = async () => {
+    if (!batchId || !workflowId) {
+      setError("No uploaded Alteryx workflow batch is available for BigQuery publish.");
+      return;
+    }
+
+    setDbtPublishing(true);
+    setDbtPublishResult(null);
+    setError("");
+    try {
+      const result = await publishAlteryxDbtToBigQuery(batchId, workflowId, sharePointUrl, fileName);
+      setDbtPublishResult(result);
+      sessionStorage.setItem("alteryx_dbt_bigquery_publish_result", JSON.stringify(result));
+    } catch (err: any) {
+      setError(err?.message || "Failed to publish dbt project to BigQuery.");
+    } finally {
+      setDbtPublishing(false);
+    }
+  };
+
   const downloadWorkflowDiagram = () => {
     const nodes = workflow?.workflowNodes || [];
     const edges = workflow?.workflowEdges || [];
@@ -1921,6 +1944,15 @@ navigate("/publish", {
   );
 }
 
+  if (dbtPublishing) {
+    return (
+      <LoadingOverlay
+        isVisible={dbtPublishing}
+        message="Publishing dbt models to BigQuery..."
+      />
+    );
+  }
+
   if (error) {
     return (
       <div className="summary-wrapper">
@@ -2127,6 +2159,13 @@ navigate("/publish", {
                   >
                     Download dbt Project
                   </button>
+                  <button
+                    className="source-mquery-download"
+                    onClick={publishDbtToBigQuery}
+                    disabled={!batchId || !workflowId || dbtPublishing}
+                  >
+                    {dbtPublishing ? "Publishing dbt..." : "Publish dbt to BigQuery"}
+                  </button>
                   {/* <button onClick={publishSourceMQuery} disabled={!mqueryPreview}>
                     Publish to Power BI
                   </button> */}
@@ -2134,6 +2173,25 @@ navigate("/publish", {
                     {publishing ? "Publishing..." : "Publish to Power BI"}
                   </button>
                 </div>
+                {dbtPublishResult && (
+                  <div className={`dbt-publish-result ${dbtPublishResult.success ? "success" : "failed"}`}>
+                    <strong>{dbtPublishResult.success ? "BigQuery publish complete" : "BigQuery publish failed"}</strong>
+                    <span>{dbtPublishResult.final_model || dbtPublishResult.message}</span>
+                    {!dbtPublishResult.success && dbtPublishResult.commands?.length > 0 && (
+                      <details>
+                        <summary>View dbt error log</summary>
+                        <pre>
+                          {[
+                            dbtPublishResult.commands[dbtPublishResult.commands.length - 1]?.stdout,
+                            dbtPublishResult.commands[dbtPublishResult.commands.length - 1]?.stderr,
+                          ]
+                            .filter(Boolean)
+                            .join("\n")}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                )}
               </section>
             )}
           </>

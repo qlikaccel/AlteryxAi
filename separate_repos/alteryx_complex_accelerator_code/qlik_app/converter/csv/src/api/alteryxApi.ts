@@ -119,6 +119,26 @@ export async function downloadAlteryxDbtProject(
   return res.blob();
 }
 
+export async function publishAlteryxDbtToBigQuery(
+  batchId: string,
+  workflowId: string,
+  sharePointUrl = "",
+  fileName = ""
+): Promise<any> {
+  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const res = await fetch(
+    `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/dbt/publish-bigquery?${params.toString()}`,
+    { method: "POST" }
+  );
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.detail || `Failed to publish dbt project to BigQuery (${res.status})`);
+  }
+
+  return data;
+}
+
 export async function fetchAlteryxBrdHtml(
   batchId: string,
   workflowId: string,
