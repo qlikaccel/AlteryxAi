@@ -1,0 +1,592 @@
+{
+  "batch_id": "26b2d1f8997dc950",
+  "created_at": 1778225515,
+  "summary": {
+    "workflow_count": 2,
+    "rejected_count": 0,
+    "total_tool_count": 19,
+    "unsupported_tool_count": 6,
+    "macro_definition_count": 1,
+    "macro_reference_count": 2,
+    "uploaded_macro_reference_count": 1,
+    "missing_macro_reference_count": 1,
+    "by_complexity": {
+      "low": 0,
+      "medium": 1,
+      "high": 1
+    },
+    "by_convertibility": {
+      "high": 0,
+      "medium": 1,
+      "low": 1,
+      "manual_review": 0
+    }
+  },
+  "workflows": [
+    {
+      "id": "c8900430fac610da",
+      "name": "standard_macro_child",
+      "sourceFile": "standard_macro_child.yxmc",
+      "packageFile": null,
+      "fileType": "yxmc",
+      "toolCount": 12,
+      "connectionCount": 10,
+      "convertibility": "low",
+      "complexity": "high",
+      "supportedToolCount": 7,
+      "unsupportedToolCount": 5,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.Filter.Filter",
+        "AlteryxBasePluginsGui.Formula.Formula",
+        "AlteryxBasePluginsGui.Join.Join",
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+        "AlteryxGuiToolkit.Questions.Tab.Tab",
+        "AlteryxSpatialPluginsGui.Summarize.Summarize",
+        "Cleanse.yxmc"
+      ],
+      "unsupportedTools": [
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+      ],
+      "recommendations": [
+        "Macros should be expanded and assessed separately."
+      ],
+      "dataSources": [
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv",
+          "tool": "AlteryxBasePluginsGui.Filter.Filter"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "sales_transactions_2023.csv",
+          "tool": "AlteryxBasePluginsGui.Filter.Filter"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv",
+          "tool": "AlteryxBasePluginsGui.Formula.Formula"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "sales_transactions_2023.csv",
+          "tool": "AlteryxBasePluginsGui.Formula.Formula"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv",
+          "tool": "AlteryxBasePluginsGui.Join.Join"
+        },
+        {
+          "name": "customer_master_500k.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv",
+          "tool": "AlteryxBasePluginsGui.Join.Join"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "sales_transactions_2023.csv",
+          "tool": "AlteryxBasePluginsGui.Join.Join"
+        },
+        {
+          "name": "customer_master_500k.csv",
+          "type": "csv",
+          "path": "customer_master_500k.csv",
+          "tool": "AlteryxBasePluginsGui.Join.Join"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv",
+          "tool": "AlteryxBasePluginsGui.Join.Join"
+        },
+        {
+          "name": "customer_master_500k.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv",
+          "tool": "AlteryxBasePluginsGui.Join.Join"
+        },
+        {
+          "name": "product_catalog_100k.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv",
+          "tool": "AlteryxBasePluginsGui.Join.Join"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "sales_transactions_2023.csv",
+          "tool": "AlteryxBasePluginsGui.Join.Join"
+        },
+        {
+          "name": "customer_master_500k.csv",
+          "type": "csv",
+          "path": "customer_master_500k.csv",
+          "tool": "AlteryxBasePluginsGui.Join.Join"
+        },
+        {
+          "name": "product_catalog_100k.csv",
+          "type": "csv",
+          "path": "product_catalog_100k.csv",
+          "tool": "AlteryxBasePluginsGui.Join.Join"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv",
+          "tool": "Cleanse.yxmc"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "sales_transactions_2023.csv",
+          "tool": "Cleanse.yxmc"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxGuiToolkit.Questions.Tab.Tab",
+          "supported": true,
+          "expression": "False",
+          "configurationText": "1\nAlteryxGuiToolkit.Questions.Tab.Tab\n0\n0\n59\n59\n0\nFalse",
+          "config": {}
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxBasePluginsGui.Filter.Filter",
+          "supported": true,
+          "expression": "!IsNull([Quantity])",
+          "configurationText": "2\nAlteryxBasePluginsGui.Filter.Filter\n210\n138\n!IsNull([Quantity])\nCustom\n0\n!IsNull([Quantity])\nFalse\nTrue\nTxnID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRegionCode\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nSalesRep\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTxnDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAmount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nQuantity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nDiscount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nPaymentType\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nStatus\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nNotes\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTags\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nFalse\nTxnID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRegionCode\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nSalesRep\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTxnDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAmount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nQuantity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nDiscount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nPaymentType\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nStatus\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nNotes\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTags\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAlteryxBasePluginsEngine.dll\nAlteryxFilter",
+          "config": {
+            "filterExpression": "!IsNull([Quantity])"
+          }
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxBasePluginsGui.Formula.Formula",
+          "supported": true,
+          "expression": "IIF(ToNumber([Quantity]) >= 10, \"High\", \"Low\")",
+          "configurationText": "3\nAlteryxBasePluginsGui.Formula.Formula\n30\n234\nIIF(ToNumber([Quantity]) >= 10, \"High\", \"Low\")\nValue_Category\n255\nString\n0\nValue_Category = IIF(ToNumber([Quantity]) >= 10, \"High\", \"Low\")\nFalse\nOutput\nTxnID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRegionCode\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nSalesRep\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTxnDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAmount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nQuantity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nDiscount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nPaymentType\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nStatus\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nNotes\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTags\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nValue_Category\n255\nFormula: IIF(ToNumber([Quantity]) >= 10, \"High\", \"Low\")\nString\nAlteryxBasePluginsEngine.dll\nAlteryxFormula",
+          "config": {
+            "formulas": [
+              {
+                "field": "Value_Category",
+                "expression": "IIF(ToNumber([Quantity]) >= 10, \"High\", \"Low\")",
+                "type": "String"
+              }
+            ]
+          }
+        },
+        {
+          "id": "4",
+          "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+          "supported": false,
+          "expression": "True",
+          "configurationText": "4\nAlteryxBasePluginsGui.MacroInput.MacroInput\n54\n378\nTrue\nCoustomer_500\nC\nTrue\nFalse\nFalse\n0\nD:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\n65001\n,\nFalse\n254\nFalse\nTrue\nDoubleQuotes\n1\n0\ncustomer_master_500k.csv\nFalse\nOutput\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nFullName\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nSegment\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nCountry\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nCity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nJoinDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nTier\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nCreditLimit\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nAccountManager\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nDOB\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nIsActive\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nAlteryxBasePluginsEngine.dll\nAlteryxMacroInput",
+          "config": {}
+        },
+        {
+          "id": "5",
+          "plugin": "AlteryxBasePluginsGui.Join.Join",
+          "supported": true,
+          "expression": "CustomerID",
+          "configurationText": "5\nAlteryxBasePluginsGui.Join.Join\n138\n270\nFalse\nLeft\nCustomerID\nRight\nCustomerID\nJoin\nFalse\nFalse\nRight_CustomerID\nFalse\n*Unknown\nTrue\n0\nFalse\nLeft\nTxnID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRegionCode\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nSalesRep\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTxnDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAmount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nQuantity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nDiscount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nPaymentType\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nStatus\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nNotes\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTags\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nValue_Category\n255\nFormula: IIF(ToNumber([CustomerID]) < 500, \"High\", \"Low\")\nString\nJoin\nTxnID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRegionCode\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nSalesRep\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTxnDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAmount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nQuantity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nDiscount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nPaymentType\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nStatus\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nNotes\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTags\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nValue_Category\n255\nFormula: IIF(ToNumber([CustomerID]) < 500, \"High\", \"Low\")\nString\nFul",
+          "config": {}
+        },
+        {
+          "id": "6",
+          "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+          "supported": false,
+          "expression": "True",
+          "configurationText": "6\nAlteryxBasePluginsGui.MacroInput.MacroInput\n210\n342\nTrue\nproduct_100\nP\nTrue\nFalse\nFalse\n0\nD:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\n65001\n,\nFalse\n254\nFalse\nTrue\nDoubleQuotes\n1\n0\nproduct_catalog_100k.csv\nFalse\nOutput\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_WString\nProductName\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_WString\nCategory\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_WString\nSubCategory\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_WString\nUnitCost\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_WString\nListPrice\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_WString\nCurrency\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_WString\nLaunchDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_WString\nIsDiscontinued\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_WString\nAlteryxBasePluginsEngine.dll\nAlteryxMacroInput",
+          "config": {}
+        },
+        {
+          "id": "7",
+          "plugin": "AlteryxBasePluginsGui.Join.Join",
+          "supported": true,
+          "expression": "ProductID",
+          "configurationText": "7\nAlteryxBasePluginsGui.Join.Join\n258\n270\nFalse\nLeft\nProductID\nRight\nProductID\nJoin\nFalse\nFalse\nRight_ProductID\nFalse\n*Unknown\nTrue\n0\nFalse\nLeft\nTxnID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRegionCode\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nSalesRep\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTxnDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAmount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nQuantity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nDiscount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nPaymentType\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nStatus\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nNotes\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTags\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nValue_Category\n255\nFormula: IIF(ToNumber([CustomerID]) < 500, \"High\", \"Low\")\nString\nFullName\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nSegment\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nCountry\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nCity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nJoinDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nTier\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nCreditLimit\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nAccountManager\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nDOB\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nIsActive\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_WString\nJoin\nTxnID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRegionCode\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_S",
+          "config": {}
+        },
+        {
+          "id": "8",
+          "plugin": "AlteryxSpatialPluginsGui.Summarize.Summarize",
+          "supported": true,
+          "expression": "Value_Category",
+          "configurationText": "8\nAlteryxSpatialPluginsGui.Summarize.Summarize\n402\n234\nValue_Category\nGroupBy\nValue_Category\nTxnID\nCount\nCount_TxnID\n0\nFalse\nOutput\nValue_Category\n255\nSummarize: GroupBy - Value_Category\nString\nCount_TxnID\nSummarize: Count - Value_Category\nInt64\nAlteryxSpatialPluginsEngine.dll\nAlteryxSummarize",
+          "config": {
+            "groupBy": [
+              "Value_Category"
+            ],
+            "aggregations": [
+              {
+                "field": "TxnID",
+                "action": "Count",
+                "rename": "Count_TxnID"
+              }
+            ]
+          }
+        },
+        {
+          "id": "9",
+          "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+          "supported": false,
+          "expression": "True",
+          "configurationText": "9\nAlteryxBasePluginsGui.MacroInput.MacroInput\n18\n126\nTrue\nsales_trans2023\nT\nTrue\nFalse\nFalse\n0\nD:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\n28591\n,\nFalse\n254\nFalse\nTrue\nDoubleQuotes\n1\n0\nInput\nsales_transactions_2023.csv\nTrue\nOutput\nTxnID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRegionCode\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nSalesRep\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTxnDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAmount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nQuantity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nDiscount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nPaymentType\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nStatus\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nNotes\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTags\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAlteryxBasePluginsEngine.dll\nAlteryxMacroInput",
+          "config": {}
+        },
+        {
+          "id": "11",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "False",
+          "configurationText": "11\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n498\n222\nOutput11\nS\n0\nOutput\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxMacroOutput",
+          "config": {}
+        },
+        {
+          "id": "12",
+          "plugin": "Cleanse.yxmc",
+          "supported": true,
+          "expression": "False",
+          "configurationText": "12\n114\n126\nCheck Box (135)\nFalse\nCheck Box (136)\nFalse\nList Box (11)\n\"TxnID\",\"CustomerID\",\"ProductID\",\"RegionCode\",\"SalesRep\",\"TxnDate\",\"Amount\",\"Quantity\",\"Discount\",\"PaymentType\",\"Status\",\"Notes\",\"RawPhone\",\"RawEmail\",\"Tags\"\nCheck Box (84)\nTrue\nCheck Box (117)\nTrue\nCheck Box (15)\nTrue\nCheck Box (109)\nFalse\nCheck Box (122)\nFalse\nCheck Box (53)\nFalse\nCheck Box (58)\nFalse\nCheck Box (70)\nFalse\nCheck Box (77)\nFalse\nDrop Down (81)\nupper\n0\nFalse\nOutput26\nTxnID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRegionCode\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nSalesRep\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTxnDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAmount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nQuantity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nDiscount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nPaymentType\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nStatus\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nNotes\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTags\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCleanse.yxmc",
+          "config": {}
+        },
+        {
+          "id": "13",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "False",
+          "configurationText": "13\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n486\n390\nOutput13\nD\n0\nOutput\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxMacroOutput",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "2",
+          "to": "3",
+          "fromAnchor": "True",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "3",
+          "to": "5",
+          "fromAnchor": "Output",
+          "toAnchor": "Left"
+        },
+        {
+          "from": "4",
+          "to": "5",
+          "fromAnchor": "Output",
+          "toAnchor": "Right"
+        },
+        {
+          "from": "5",
+          "to": "7",
+          "fromAnchor": "Join",
+          "toAnchor": "Left"
+        },
+        {
+          "from": "6",
+          "to": "7",
+          "fromAnchor": "Output",
+          "toAnchor": "Right"
+        },
+        {
+          "from": "7",
+          "to": "8",
+          "fromAnchor": "Join",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "7",
+          "to": "13",
+          "fromAnchor": "Join",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "8",
+          "to": "11",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "9",
+          "to": "12",
+          "fromAnchor": "Output",
+          "toAnchor": "Input2"
+        },
+        {
+          "from": "12",
+          "to": "2",
+          "fromAnchor": "Output26",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": true,
+      "macroDependencies": [
+        {
+          "toolId": "12",
+          "name": "Cleanse.yxmc",
+          "path": "Cleanse.yxmc",
+          "macroType": "Standard",
+          "controlParameter": "",
+          "iterationLimit": "",
+          "stopCondition": "",
+          "uploaded": false,
+          "matchedFile": "",
+          "status": "missing"
+        }
+      ],
+      "macroValidation": {
+        "referenced": 1,
+        "uploaded": 0,
+        "missing": 1,
+        "missingFiles": [
+          "Cleanse.yxmc"
+        ],
+        "status": "missing_macros",
+        "message": "1 referenced macro file(s) are missing from this upload."
+      }
+    },
+    {
+      "id": "74ba266c75caba4a",
+      "name": "Standered_macro_parent",
+      "sourceFile": "Standered_macro_parent.yxmd",
+      "packageFile": null,
+      "fileType": "yxmd",
+      "toolCount": 7,
+      "connectionCount": 5,
+      "convertibility": "medium",
+      "complexity": "medium",
+      "supportedToolCount": 6,
+      "unsupportedToolCount": 1,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.BrowseV2.BrowseV2",
+        "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+        "AlteryxGuiToolkit.Questions.Tab.Tab",
+        "standard_macro_child.yxmc"
+      ],
+      "unsupportedTools": [
+        "standard_macro_child.yxmc"
+      ],
+      "recommendations": [
+        "Macros should be expanded and assessed separately."
+      ],
+      "dataSources": [
+        {
+          "name": "customer_master_500k.csv",
+          "type": "csv",
+          "path": "D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "customer_master_500k.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "customer_master_500k.csv",
+          "type": "csv",
+          "path": "customer_master_500k.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "product_catalog_100k.csv",
+          "type": "csv",
+          "path": "D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "product_catalog_100k.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "product_catalog_100k.csv",
+          "type": "csv",
+          "path": "product_catalog_100k.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "sales_transactions_2023.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv",
+          "tool": "standard_macro_child.yxmc"
+        },
+        {
+          "name": "customer_master_500k.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv",
+          "tool": "standard_macro_child.yxmc"
+        },
+        {
+          "name": "product_catalog_100k.csv",
+          "type": "csv",
+          "path": "e: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv",
+          "tool": "standard_macro_child.yxmc"
+        },
+        {
+          "name": "sales_transactions_2023.csv",
+          "type": "csv",
+          "path": "sales_transactions_2023.csv",
+          "tool": "standard_macro_child.yxmc"
+        },
+        {
+          "name": "customer_master_500k.csv",
+          "type": "csv",
+          "path": "customer_master_500k.csv",
+          "tool": "standard_macro_child.yxmc"
+        },
+        {
+          "name": "product_catalog_100k.csv",
+          "type": "csv",
+          "path": "product_catalog_100k.csv",
+          "tool": "standard_macro_child.yxmc"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxGuiToolkit.Questions.Tab.Tab",
+          "supported": true,
+          "expression": "False",
+          "configurationText": "1\nAlteryxGuiToolkit.Questions.Tab.Tab\n0\n0\n59\n59\n0\nFalse",
+          "config": {}
+        },
+        {
+          "id": "6",
+          "plugin": "AlteryxBasePluginsGui.BrowseV2.BrowseV2",
+          "supported": true,
+          "expression": "100",
+          "configurationText": "6\nAlteryxBasePluginsGui.BrowseV2.BrowseV2\n402\n78\nC:\\Users\\hp\\AppData\\Local\\Temp\\Alteryx\\Engine_21740_bc6b6c7ebb5d4dde9821acb0ae437685_\\Engine_21740_7fa50b4faa1a40f18b95a4ebe87d078d~.yxdb\nSingle\n100\nProfile\n0\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxBrowseV2",
+          "config": {}
+        },
+        {
+          "id": "7",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "254",
+          "configurationText": "7\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n54\n126\nFalse\n0\nD:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\n28591\n,\nFalse\n254\nFalse\nTrue\nDoubleQuotes\n1\n0\ncustomer_master_500k.csv\nFalse\nOutput\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nFullName\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nSegment\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nCountry\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nCity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nJoinDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nTier\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nCreditLimit\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nAccountManager\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nDOB\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nIsActive\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nAlteryxBasePluginsEngine.dll\nAlteryxDbFileInput",
+          "config": {}
+        },
+        {
+          "id": "8",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "254",
+          "configurationText": "8\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n54\n210\nFalse\n0\nD:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\n28591\n,\nFalse\n254\nFalse\nTrue\nDoubleQuotes\n1\n0\nproduct_catalog_100k.csv\nFalse\nOutput\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_String\nProductName\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_String\nCategory\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_String\nSubCategory\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_String\nUnitCost\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_String\nListPrice\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_String\nCurrency\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_String\nLaunchDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_String\nIsDiscontinued\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\product_catalog_100k.csv\nV_String\nAlteryxBasePluginsEngine.dll\nAlteryxDbFileInput",
+          "config": {}
+        },
+        {
+          "id": "11",
+          "plugin": "AlteryxBasePluginsGui.BrowseV2.BrowseV2",
+          "supported": true,
+          "expression": "100",
+          "configurationText": "11\nAlteryxBasePluginsGui.BrowseV2.BrowseV2\n414\n174\nC:\\Users\\hp\\AppData\\Local\\Temp\\Alteryx\\Engine_21740_bc6b6c7ebb5d4dde9821acb0ae437685_\\Engine_21740_382b3ac001264e02878743e3d03669c5~.yxdb\nSingle\n100\nProfile\n0\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxBrowseV2",
+          "config": {}
+        },
+        {
+          "id": "12",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "254",
+          "configurationText": "12\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n54\n42\nFalse\n0\nD:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\n28591\n,\nFalse\n254\nFalse\nTrue\nDoubleQuotes\n1\n0\nsales_transactions_2023.csv\nFalse\nOutput\nTxnID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRegionCode\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nSalesRep\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTxnDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAmount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nQuantity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nDiscount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nPaymentType\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nStatus\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nNotes\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTags\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAlteryxBasePluginsEngine.dll\nAlteryxDbFileInput",
+          "config": {}
+        },
+        {
+          "id": "14",
+          "plugin": "standard_macro_child.yxmc",
+          "supported": false,
+          "expression": "TxnID=TxnID\nCustomerID=CustomerID\nProductID=ProductID\nRegionCode=RegionCode\nSalesRep=SalesRep\nTxnDate=TxnDate\nAmount=Amount\nQuantity=Quantity\nDiscount=Discount\nPaymentType=PaymentType\nStatus=Status\nNotes=Notes\nRawPhone=RawPhone\nRawEmail=RawEmail\nTags=Tags",
+          "configurationText": "14\n258\n114\nInput.sales_trans2023\nTxnID=TxnID\nCustomerID=CustomerID\nProductID=ProductID\nRegionCode=RegionCode\nSalesRep=SalesRep\nTxnDate=TxnDate\nAmount=Amount\nQuantity=Quantity\nDiscount=Discount\nPaymentType=PaymentType\nStatus=Status\nNotes=Notes\nRawPhone=RawPhone\nRawEmail=RawEmail\nTags=Tags\nInput.Coustomer_500\nCustomerID=CustomerID\nFullName=FullName\nSegment=Segment\nCountry=Country\nCity=City\nJoinDate=JoinDate\nTier=Tier\nCreditLimit=CreditLimit\nAccountManager=AccountManager\nPhone=Phone\nEmail=Email\nDOB=DOB\nIsActive=IsActive\nInput.product_100\nProductID=ProductID\nProductName=ProductName\nCategory=Category\nSubCategory=SubCategory\nUnitCost=UnitCost\nListPrice=ListPrice\nCurrency=Currency\nLaunchDate=LaunchDate\nIsDiscontinued=IsDiscontinued\n0\nstandard_macro_child (13)\nFalse\nOutput13\nTxnID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nCustomerID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nProductID\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRegionCode\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nSalesRep\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTxnDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nAmount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nQuantity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nDiscount\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nPaymentType\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nStatus\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nNotes\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nRawEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nTags\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\sales_transactions_2023.csv\nV_String\nValue_Category\n255\nFormula: IIF(ToNumber([Quantity]) >= 10, \"High\", \"Low\")\nString\nFullName\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nSegment\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nCountry\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nCity\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nJoinDate\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nTier\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nCreditLimit\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nAccountManager\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nPhone\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nEmail\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_String\nDOB\n254\nFile: D:\\csvFiles\\complex_workflow_yxmdFiles\\alteryx_sample_dataset\\data\\customer_master_500k.csv\nV_S",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "7",
+          "to": "14",
+          "fromAnchor": "Output",
+          "toAnchor": "Coustomer_500"
+        },
+        {
+          "from": "8",
+          "to": "14",
+          "fromAnchor": "Output",
+          "toAnchor": "product_100"
+        },
+        {
+          "from": "12",
+          "to": "14",
+          "fromAnchor": "Output",
+          "toAnchor": "sales_trans2023"
+        },
+        {
+          "from": "14",
+          "to": "6",
+          "fromAnchor": "Output11",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "14",
+          "to": "11",
+          "fromAnchor": "Output13",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": false,
+      "macroDependencies": [
+        {
+          "toolId": "14",
+          "name": "standard_macro_child.yxmc",
+          "path": "standard_macro_child.yxmc",
+          "macroType": "Standard",
+          "controlParameter": "",
+          "iterationLimit": "",
+          "stopCondition": "",
+          "uploaded": true,
+          "matchedFile": "standard_macro_child.yxmc",
+          "status": "ready"
+        }
+      ],
+      "macroValidation": {
+        "referenced": 1,
+        "uploaded": 1,
+        "missing": 0,
+        "missingFiles": [],
+        "status": "ready",
+        "message": "All 1 referenced macro file(s) were uploaded."
+      }
+    }
+  ],
+  "rejected": []
+}

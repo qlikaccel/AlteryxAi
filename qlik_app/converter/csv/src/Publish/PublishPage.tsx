@@ -143,12 +143,32 @@ export default function PublishPage() {
   const bigQueryFinalModel = publishResult?.final_model || datasetName;
   const bigQueryTarget = parseBigQueryModel(bigQueryFinalModel);
   const macroComplexity = publishResult?.macro_complexity || {};
+  const workflowStats = useMemo(() => {
+    if (publishResult?.workflow_statistics) return publishResult.workflow_statistics;
+    const raw = sessionStorage.getItem("alteryx_workflow_statistics");
+    if (!raw) return {};
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }, [publishResult]);
   const totalToolsUsed =
     asNumber(publishResult?.tool_count) ??
+    asNumber(workflowStats?.total_tools_used) ??
     asNumber(macroComplexity?.tool_count) ??
     asNumber(sessionStorage.getItem("alteryx_tool_count"));
   const validationTableName = publishResult?.dataset_name || datasetName;
   const finalValidationTableName = publishResult?.final_table_name || validationTableName;
+  const publishedTables = publishResult?.published_tables || [];
+  const modelTableCount = publishedTables.length || asNumber(publishResult?.table_count) || asNumber(workflowStats?.table_count) || 0;
+  const modelColumnCount =
+    asNumber(publishResult?.column_count) ??
+    (publishedTables.length
+      ? publishedTables.reduce((sum: number, table: any) => sum + (table?.columns?.length || 0), 0)
+      : null) ??
+    asNumber(workflowStats?.column_count) ??
+    0;
   const [validationResult, setValidationResult] = useState<any>(() => {
     const raw = sessionStorage.getItem("alteryx_validation_result");
     if (!raw) return null;
@@ -162,7 +182,7 @@ export default function PublishPage() {
     }
   });
   const recordValidationRequestedRef = useRef(false);
-  const deployedTables = publishResult?.tables_deployed ?? 1;
+  const deployedTables = modelTableCount || publishResult?.tables_deployed || 1;
   const powerBiWorkspaceUrl =
     publishResult?.workspace_url ||
     sessionStorage.getItem("alteryx_powerbi_workspace_url") ||
@@ -180,13 +200,11 @@ export default function PublishPage() {
   const expectedRows =
     asNumber(rowCountCheck?.expected) ??
     asNumber(validationResult?.alteryx?.row_count) ??
+    asNumber(publishResult?.total_records) ??
+    asNumber(workflowStats?.total_records) ??
     null;
 
-  const columnCount =
-    validationResult?.available_columns?.length ||
-    publishResult?.available_columns?.length ||
-    publishResult?.published_tables?.find((table: any) => tableMatchKey(table?.name) === tableMatchKey(finalValidationTableName))?.columns?.length ||
-    0;
+  const columnCount = modelColumnCount;
 
   const validationMetrics = [
     {
@@ -214,6 +232,7 @@ export default function PublishPage() {
       variance: "N/A",
     },
   ];
+  const validationChecks = workflowStats?.validation_checks || [];
 
   const steps = [
     { label: "Upload", complete: true },
@@ -601,6 +620,58 @@ export default function PublishPage() {
           {reportStatus && <p className="report-status">{reportStatus}</p>}
         </section>
       </main>
+
+      {!isBigQueryPublish && publishedTables.length > 0 && (
+        <section className="wire-card tool-mapping-card">
+          <h2>Published Tables & Columns</h2>
+          <div className="mapping-table-wrap">
+            <table className="tool-mapping-table">
+              <thead>
+                <tr>
+                  <th>Table</th>
+                  <th>Column Count</th>
+                  <th>Columns</th>
+                </tr>
+              </thead>
+              <tbody>
+                {publishedTables.map((table: any) => (
+                  <tr key={table?.name}>
+                    <td>{table?.name}</td>
+                    <td>{table?.columns?.length || 0}</td>
+                    <td>{(table?.columns || []).join(", ") || "Not available"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {!isBigQueryPublish && validationChecks.length > 0 && (
+        <section className="wire-card tool-mapping-card">
+          <h2>Workflow Validation Details</h2>
+          <div className="mapping-table-wrap">
+            <table className="tool-mapping-table">
+              <thead>
+                <tr>
+                  <th>Check</th>
+                  <th>Status</th>
+                  <th>Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {validationChecks.map((check: any) => (
+                  <tr key={check?.name}>
+                    <td>{check?.name}</td>
+                    <td>{check?.status}</td>
+                    <td>{check?.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {conversionSteps.length > 0 && (
         <section className="wire-card tool-mapping-card">

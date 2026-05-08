@@ -168,6 +168,7 @@ export async function publishAlteryxMQuery(payload: {
   // to its field list so the BIM builder can emit real column definitions for
   // CSV source tables that carry no field schema in the Alteryx workflow JSON.
   alteryx_source_fields?: Record<string, Array<{ name: string; type?: string }>>;
+  workflow_statistics?: Record<string, any>;
 }): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/migration/publish-mquery`, {
     method: "POST",
@@ -181,6 +182,7 @@ export async function publishAlteryxMQuery(payload: {
       qlik_fields_map: {},
       app_id: "",
       alteryx_source_fields: payload.alteryx_source_fields || {},
+      workflow_statistics: payload.workflow_statistics || {},
     }),
   });
   const data = await res.json().catch(() => ({}));

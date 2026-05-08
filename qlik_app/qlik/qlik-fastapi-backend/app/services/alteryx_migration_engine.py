@@ -1,6 +1,7 @@
 import html
 import hashlib
 import re
+from collections import Counter
 from typing import Any
 from urllib.parse import urlparse
 
@@ -57,7 +58,131 @@ def get_primary_source(workflow: dict[str, Any], sharepoint_url: str = "", file_
 
 def generate_m_query(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:
     source = get_primary_source(workflow, sharepoint_url, file_name)
-    return convert_workflow_to_m(workflow, source, sharepoint_url, file_name)
+    result = convert_workflow_to_m(workflow, source, sharepoint_url, file_name)
+    result["workflow_statistics"] = generate_workflow_statistics(workflow, result)
+    return result
+
+
+def _source_identity(value: str) -> str:
+    raw = str(value or "").strip().replace("\\", "/")
+    match = re.search(r"([^/\s]+?\.(?:csv|xlsx?|json|xml|txt|parquet))\b", raw, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).lower()
+    return raw.rsplit("/", 1)[-1].lower()
+
+
+def generate_workflow_statistics(
+    workflow: dict[str, Any],
+    mquery_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    mquery_payload = mquery_payload or {}
+    nodes = workflow.get("workflowNodes") or []
+    edges = workflow.get("workflowEdges") or []
+    sources = workflow.get("dataSources") or []
+    unique_sources = {}
+    for source_item in sources:
+        if not isinstance(source_item, dict):
+            continue
+        raw_key = str(source_item.get("name") or source_item.get("path") or "").strip()
+        key = _source_identity(raw_key)
+        if key and key not in unique_sources:
+            unique_sources[key] = source_item
+    tool_counts = Counter(
+        str(node.get("plugin") or "Unknown").rsplit(".", 1)[-1]
+        for node in nodes
+    )
+
+    tables = mquery_payload.get("source_queries") or []
+    table_count = len(tables) + (1 if mquery_payload.get("table_name") else 0)
+    if table_count == 0:
+        table_count = int(mquery_payload.get("source_count") or (1 if workflow else 0))
+
+    source_fields_map = mquery_payload.get("source_fields_map") or {}
+    source_column_names = {
+        str(field.get("name") or "").strip()
+        for fields in source_fields_map.values()
+        for field in (fields or [])
+        if isinstance(field, dict) and str(field.get("name") or "").strip()
+    }
+    final_columns: set[str] = set()
+    for node in nodes:
+        config = node.get("config") if isinstance(node.get("config"), dict) else {}
+        for field in config.get("selectedFields") or []:
+            if isinstance(field, dict) and field.get("name"):
+                source_column_names.add(str(field.get("name")).strip())
+        for formula in config.get("formulas") or []:
+            if isinstance(formula, dict) and formula.get("field"):
+                final_columns.add(str(formula.get("field")).strip())
+        for group in config.get("groupBy") or []:
+            if group:
+                final_columns.add(str(group).strip())
+        for agg in config.get("aggregations") or []:
+            if isinstance(agg, dict) and (agg.get("rename") or agg.get("field")):
+                final_columns.add(str(agg.get("rename") or agg.get("field")).strip())
+
+    total_records = None
+    counted_source_keys: set[str] = set()
+    for source_item in unique_sources.values():
+        raw_source_key = str(source_item.get("name") or source_item.get("path") or "").strip()
+        source_key = _source_identity(raw_source_key)
+        if source_key and source_key in counted_source_keys:
+            continue
+        for key in ("row_count", "no_of_rows", "rowCount", "record_count"):
+            value = source_item.get(key) if isinstance(source_item, dict) else None
+            if isinstance(value, (int, float)) and value >= 0:
+                total_records = int(value) if total_records is None else total_records + int(value)
+                if source_key:
+                    counted_source_keys.add(source_key)
+                break
+    if total_records is None:
+        hinted_records = 0
+        hinted_files: set[str] = set()
+        for node in nodes:
+            blob = str(node.get("configurationText") or "")
+            if "input" not in str(node.get("plugin") or "").lower() and ".csv" not in blob.lower():
+                continue
+            file_match = re.search(r"([^\\/\s]+\.csv)\b", blob, flags=re.IGNORECASE)
+            file_key = file_match.group(1).lower() if file_match else str(node.get("id") or "")
+            if file_key in hinted_files:
+                continue
+            count_match = re.search(
+                r"[~(]?\s*([\d,.]+)\s*([kKmMbB]?)\s*(?:rows?|records?)\b",
+                blob,
+                flags=re.IGNORECASE,
+            )
+            if not count_match:
+                count_match = re.search(r"\b([\d,.]+)\s*([kKmMbB])\b", blob, flags=re.IGNORECASE)
+            if not count_match:
+                continue
+            value = float(count_match.group(1).replace(",", ""))
+            suffix = (count_match.group(2) or "").lower()
+            if suffix == "k":
+                value *= 1_000
+            elif suffix == "m":
+                value *= 1_000_000
+            elif suffix == "b":
+                value *= 1_000_000_000
+            hinted_records += int(round(value))
+            hinted_files.add(file_key)
+        if hinted_records > 0:
+            total_records = hinted_records
+
+    validation_checks = validate_migration(workflow).get("checks", [])
+    return {
+        "total_records": total_records,
+        "total_tools_used": int(workflow.get("toolCount") or len(nodes) or 0),
+        "table_count": table_count,
+        "column_count": len(final_columns or source_column_names),
+        "source_column_count": len(source_column_names),
+        "final_column_count": len(final_columns),
+        "connection_count": int(workflow.get("connectionCount") or len(edges) or 0),
+        "source_count": len(unique_sources),
+        "supported_tool_count": int(workflow.get("supportedToolCount") or 0),
+        "unsupported_tool_count": int(workflow.get("unsupportedToolCount") or 0),
+        "tool_type_count": len(tool_counts),
+        "tool_counts": dict(sorted(tool_counts.items())),
+        "validation_checks": validation_checks,
+    }
 
 
 def _shorten_identifier(value: str, max_length: int = 63) -> str:
@@ -316,7 +441,8 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         source_name = _dbt_source_name(source, index)
         source_identifier = _dbt_source_identifier(source, index)
         source_model_names.append(source_name)
-        description = str(source.get("path") or source.get("type") or "")
+        # description = str(source.get("path") or source.get("type") or "")
+        description = str(source.get("path") or source.get("type") or "").replace("\\", "/")
         identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
         source_rows.append(
             f"      - name: {source_name}\n"
@@ -610,6 +736,12 @@ def generate_brd_html(workflow: dict[str, Any], m_query: str = "") -> str:
 
 def validate_migration(workflow: dict[str, Any], publish_result: dict[str, Any] | None = None) -> dict[str, Any]:
     publish_result = publish_result or {}
+    sources = workflow.get("dataSources") or []
+    unique_source_keys = {
+        str(source.get("name") or source.get("path") or "").strip().replace("\\", "/").rsplit("/", 1)[-1].lower()
+        for source in sources
+        if isinstance(source, dict) and str(source.get("name") or source.get("path") or "").strip()
+    }
     checks = [
         {
             "name": "Workflow parsed",
@@ -618,8 +750,8 @@ def validate_migration(workflow: dict[str, Any], publish_result: dict[str, Any] 
         },
         {
             "name": "Source detected",
-            "status": "pass" if workflow.get("dataSources") else "warning",
-            "detail": f"{len(workflow.get('dataSources') or [])} source candidate(s) detected.",
+            "status": "pass" if unique_source_keys else "warning",
+            "detail": f"{len(unique_source_keys)} unique source candidate(s) detected.",
         },
         {
             "name": "Unsupported tools",
