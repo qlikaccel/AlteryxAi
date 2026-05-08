@@ -42,7 +42,7 @@ from app.services.alteryx_migration_engine import (
     generate_workflow_diagram,
     validate_migration,
 )
-from app.services.alteryx_dbt_publisher import publish_dbt_project_to_bigquery
+from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata, publish_dbt_project_to_bigquery
 
 router = APIRouter(prefix="/api/alteryx", tags=["Alteryx"])
 logger = logging.getLogger(__name__)
@@ -1101,6 +1101,25 @@ def publish_alteryx_workflow_dbt_to_bigquery(
         logger.exception("Failed to publish generated dbt project to BigQuery")
         raise HTTPException(status_code=500, detail=f"Failed to publish dbt project to BigQuery: {exc}") from exc
     return result
+
+
+@router.get("/bigquery/table-metadata")
+def get_bigquery_table_metadata(model: str = Query(...)):
+    parts = [part for part in str(model or "").split(".") if part]
+    if len(parts) < 3:
+        raise HTTPException(
+            status_code=400,
+            detail="BigQuery model must be in project.dataset.table format.",
+        )
+
+    project_id = parts[0]
+    dataset = parts[1]
+    table = ".".join(parts[2:])
+    location = (os.getenv("GCP_BIGQUERY_LOCATION") or "US").strip()
+    metadata = fetch_bigquery_table_metadata(project_id, dataset, table, location, os.environ.copy())
+    if not metadata.get("success"):
+        raise HTTPException(status_code=502, detail=metadata.get("message") or "Failed to fetch BigQuery metadata.")
+    return metadata
 
 
 @router.get("/batches/{batch_id}/workflows/{workflow_id}/diagram")
