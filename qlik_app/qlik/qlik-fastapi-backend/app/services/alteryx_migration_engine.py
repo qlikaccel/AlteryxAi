@@ -316,8 +316,7 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         source_name = _dbt_source_name(source, index)
         source_identifier = _dbt_source_identifier(source, index)
         source_model_names.append(source_name)
-        # description = str(source.get("path") or source.get("type") or "")
-        description = str(source.get("path") or source.get("type") or "").replace("\\", "/")
+        description = str(source.get("path") or source.get("type") or "")
         identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
         source_rows.append(
             f"      - name: {source_name}\n"
