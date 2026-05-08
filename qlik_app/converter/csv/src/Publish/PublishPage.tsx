@@ -29,6 +29,12 @@ const asNumber = (value: unknown): number | null => {
   return null;
 };
 
+const formatBatchExecutionValue = (batch: any) => {
+  const expectedBatches = asNumber(batch?.expected_batches);
+  if (expectedBatches === null) return "Control table rows";
+  return `${expectedBatches.toLocaleString()} batch run${expectedBatches === 1 ? "" : "s"}`;
+};
+
 const parseBigQueryModel = (model: string) => {
   const parts = String(model || "").split(".");
   return {
@@ -659,7 +665,7 @@ export default function PublishPage() {
               </table>
             )}
           </div>
-          {/* {isBigQueryPublish && macroComplexity?.has_macros && (
+          {isBigQueryPublish && macroComplexity?.has_macros && (
             <div className="publish-macro-complexity">
               <h3>Macro complexity details</h3>
               <div className="publish-macro-grid">
@@ -687,7 +693,7 @@ export default function PublishPage() {
                 </div>
               </div>
             </div>
-          )} */}
+          )}
           <div className="summary-row">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
               <span>Validation & Reconciliation</span>
