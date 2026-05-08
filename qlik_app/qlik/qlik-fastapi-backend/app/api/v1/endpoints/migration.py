@@ -1093,6 +1093,7 @@ class PublishMQueryRequest(_BaseModel):
     # These entries must be applied by exact table name so each raw CSV table
     # keeps its own schema.
     alteryx_source_fields: dict = {}
+    workflow_statistics: dict = {}
 
 @router.post("/publish-mquery")
 async def publish_mquery_endpoint(request: PublishMQueryRequest):
@@ -1462,6 +1463,31 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
                 if not str(table.get("name") or "").startswith(("LocalDateTable", "DateTableTemplate", "_"))
             ]
             final_table = non_system_tables[-1] if non_system_tables else published_tables[-1]
+        model_column_count = sum(
+            len(table.get("columns") or [])
+            for table in published_tables
+            if isinstance(table, dict)
+        )
+        model_table_count = len(published_tables)
+        workflow_statistics = dict(request.workflow_statistics or {})
+        workflow_statistics["table_count"] = model_table_count
+        workflow_statistics["column_count"] = model_column_count
+        table_validation = result.get("powerbi_table_validation") or {}
+        if table_validation:
+            checks = list(workflow_statistics.get("validation_checks") or [])
+            checks.append({
+                "name": "Power BI table visibility",
+                "status": "pass" if table_validation.get("status") == "pass" else table_validation.get("status", "unknown"),
+                "detail": (
+                    f"{table_validation.get('visible_table_count', 'unknown')} of "
+                    f"{table_validation.get('expected_table_count', model_table_count)} published table(s) visible"
+                    + (
+                        f"; missing: {', '.join(table_validation.get('missing_tables') or [])}"
+                        if table_validation.get("missing_tables") else ""
+                    )
+                ),
+            })
+            workflow_statistics["validation_checks"] = checks
 
         return {
             "success":            True,
@@ -1470,7 +1496,13 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
             "final_table_name":    (final_table or {}).get("name", dataset_name),
             "published_tables":    published_tables,
             "available_columns":   (final_table or {}).get("columns", []),
-            "tables_deployed":    len(tables_m),
+            "tables_deployed":     model_table_count or len(tables_m),
+            "table_count":         model_table_count,
+            "column_count":        model_column_count,
+            "tool_count":          workflow_statistics.get("total_tools_used"),
+            "total_records":       workflow_statistics.get("total_records"),
+            "workflow_statistics": workflow_statistics,
+            "powerbi_table_validation": table_validation,
             "method":             result.get("method", ""),
             "workspace_url":      result.get("workspace_url", ""),
             "dataset_url":        result.get("dataset_url", ""),

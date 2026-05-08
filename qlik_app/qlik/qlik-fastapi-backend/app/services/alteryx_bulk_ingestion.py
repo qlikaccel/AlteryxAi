@@ -405,6 +405,12 @@ def _extract_node_config(node: ET.Element, plugin: str) -> dict[str, Any]:
             field_type = field.attrib.get("type") or field.attrib.get("size") or "String"
             if selected:
                 fields.append({"name": name, "rename": rename, "type": field_type})
+        if not fields:
+            select_fields_text = _config_text(config, "SelectFields")
+            for raw_name in re.split(r"[,;\n\r\t]+", select_fields_text or ""):
+                name = raw_name.strip()
+                if name:
+                    fields.append({"name": name, "rename": name, "type": "String"})
         if fields:
             parsed["selectedFields"] = fields
 
@@ -426,6 +432,22 @@ def _extract_node_config(node: ET.Element, plugin: str) -> dict[str, Any]:
                 group_by.append(name)
             else:
                 aggregations.append({"field": name, "action": action, "rename": rename})
+        if not group_by:
+            group_by = [
+                item.strip()
+                for item in re.split(r"[,;\n\r\t]+", _config_text(config, "GroupBy") or "")
+                if item.strip()
+            ]
+        if not aggregations:
+            for action_name in ("Sum", "Count", "Average", "Min", "Max"):
+                for raw_name in re.split(r"[,;\n\r\t]+", _config_text(config, action_name) or ""):
+                    field_name = raw_name.strip()
+                    if field_name:
+                        aggregations.append({
+                            "field": field_name,
+                            "action": action_name,
+                            "rename": field_name,
+                        })
         if group_by:
             parsed["groupBy"] = group_by
         if aggregations:
@@ -439,6 +461,15 @@ def _extract_node_config(node: ET.Element, plugin: str) -> dict[str, Any]:
             field_type = formula.attrib.get("type") or formula.attrib.get("size") or "Double"
             if field and expression:
                 formulas.append({"field": field, "expression": expression, "type": field_type})
+        if not formulas:
+            expression = _config_text(config, "Expression")
+            match = re.match(r"\s*([A-Za-z_][A-Za-z0-9_ .-]*)\s*=\s*(.+?)\s*$", expression or "")
+            if match:
+                formulas.append({
+                    "field": match.group(1).strip(),
+                    "expression": match.group(2).strip(),
+                    "type": "Double",
+                })
         if formulas:
             parsed["formulas"] = formulas
 
@@ -499,6 +530,7 @@ def _parse_row_count_hint(text: str) -> "int | None":
     patterns = [
         r"[~(]?\s*([\d,.]+)\s*([kKmMbB]?)\s*(?:rows?|records?)\b",
         r"\b([\d,.]+)\s*([kKmM])\b",
+        r"[_-]([\d,.]+)\s*([kKmM])(?:[_.-]|$)",
     ]
     for pat in patterns:
         for m in re.finditer(pat, text or "", flags=re.IGNORECASE):

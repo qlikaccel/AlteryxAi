@@ -1497,6 +1497,8 @@ export default function SummaryPage() {
         sessionStorage.setItem("migration_generation_reason", data.mquery?.routing_reason || "");
         sessionStorage.setItem("migration_llm_status", data.mquery?.llm_status || "not_required");
         sessionStorage.setItem("alteryx_conversion_steps", JSON.stringify(data.mquery?.conversion_steps || []));
+        sessionStorage.setItem("alteryx_tool_count", String(data.mquery?.workflow_statistics?.total_tools_used ?? data.workflow?.toolCount ?? 0));
+        sessionStorage.setItem("alteryx_workflow_statistics", JSON.stringify(data.mquery?.workflow_statistics || {}));
         setError("");
       })
       .catch((err: any) => setError(err?.message || "Failed to load workflow analysis"))
@@ -1621,6 +1623,7 @@ export default function SummaryPage() {
         // definitions for _raw CSV tables that have no field schema in the
         // Alteryx workflow JSON.  Falls back to {} when not present (safe).
         alteryx_source_fields: analysis?.mquery?.source_fields_map || {},
+        workflow_statistics: analysis?.mquery?.workflow_statistics || {},
       });
 
       // Save result to sessionStorage for PublishPage to read
