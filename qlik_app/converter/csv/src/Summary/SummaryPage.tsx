@@ -2195,7 +2195,7 @@ navigate("/publish", {
                     Download dbt Project
                   </button>
                   <button
-                    className="source-mquery-download"
+                    className="source-mquery-publish"
                     onClick={publishDbtToBigQuery}
                     disabled={!batchId || !workflowId || dbtPublishing}
                   >
@@ -2204,7 +2204,11 @@ navigate("/publish", {
                   {/* <button onClick={publishSourceMQuery} disabled={!mqueryPreview}>
                     Publish to Power BI
                   </button> */}
-                  <button onClick={publishSourceMQuery} disabled={!mqueryPreview || publishing || dbtPublishing}>
+                  <button
+                    className="source-mquery-publish"
+                    onClick={publishSourceMQuery}
+                    disabled={!mqueryPreview || publishing || dbtPublishing}
+                  >
                     {publishing ? "Publishing..." : "Publish to Power BI"}
                   </button>
                 </div>
