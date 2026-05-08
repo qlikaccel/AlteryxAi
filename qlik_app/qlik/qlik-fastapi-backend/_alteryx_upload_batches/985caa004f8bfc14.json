@@ -1,0 +1,259 @@
+{
+  "batch_id": "985caa004f8bfc14",
+  "created_at": 1778136155,
+  "summary": {
+    "workflow_count": 2,
+    "rejected_count": 0,
+    "total_tool_count": 8,
+    "unsupported_tool_count": 2,
+    "macro_definition_count": 1,
+    "macro_reference_count": 1,
+    "uploaded_macro_reference_count": 1,
+    "missing_macro_reference_count": 0,
+    "by_complexity": {
+      "low": 1,
+      "medium": 1,
+      "high": 0
+    },
+    "by_convertibility": {
+      "high": 1,
+      "medium": 0,
+      "low": 1,
+      "manual_review": 0
+    }
+  },
+  "workflows": [
+    {
+      "id": "678df14b642be12a",
+      "name": "batch_region_processor.yxmc",
+      "sourceFile": "macros/batch_region_processor.yxmc",
+      "packageFile": "C:\\Project\\Alteryx_Update\\AlteryxAi\\batch_macro_demo\\WF_Batch_Region_Processor.yxzp",
+      "fileType": "yxmc",
+      "toolCount": 4,
+      "connectionCount": 3,
+      "convertibility": "low",
+      "complexity": "medium",
+      "supportedToolCount": 2,
+      "unsupportedToolCount": 2,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.Filter.Filter",
+        "AlteryxBasePluginsGui.Formula.Formula",
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+      ],
+      "unsupportedTools": [
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+      ],
+      "recommendations": [
+        "Macros should be expanded and assessed separately."
+      ],
+      "dataSources": [
+        {
+          "name": "1 AlteryxBasePluginsGui.MacroInput.MacroInput 80 120 Input I False False Macro Input Orders input stream",
+          "type": "unknown",
+          "path": "1 AlteryxBasePluginsGui.MacroInput.MacroInput 80 120 Input I False False Macro Input Orders input stream",
+          "tool": "AlteryxBasePluginsGui.MacroInput.MacroInput"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+          "supported": false,
+          "expression": "False",
+          "configurationText": "1\nAlteryxBasePluginsGui.MacroInput.MacroInput\n80\n120\nInput\nI\nFalse\nFalse\nMacro Input\nOrders input stream",
+          "config": {}
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxBasePluginsGui.Filter.Filter",
+          "supported": true,
+          "expression": "[Region] = [#1]",
+          "configurationText": "2\nAlteryxBasePluginsGui.Filter.Filter\n300\n120\n[Region] = [#1]\nBatch Region Filter\nFilter orders for the current Region control value",
+          "config": {
+            "filterExpression": "[Region] = [#1]"
+          }
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxBasePluginsGui.Formula.Formula",
+          "supported": true,
+          "expression": "BatchMacroProcessed",
+          "configurationText": "3\nAlteryxBasePluginsGui.Formula.Formula\n520\n120\nBatchMacroProcessed\n1\nInt16\n2\nBatchMacroName\n\"batch_region_processor\"\nV_WString\n64\nBatch Macro Audit Fields\nAdd batch macro audit fields",
+          "config": {
+            "formulas": [
+              {
+                "field": "BatchMacroProcessed",
+                "expression": "1",
+                "type": "Int16"
+              },
+              {
+                "field": "BatchMacroName",
+                "expression": "\"batch_region_processor\"",
+                "type": "V_WString"
+              }
+            ]
+          }
+        },
+        {
+          "id": "4",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "4\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n740\n120\nOutput\nO\nMacro Output\nProcessed batch output",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "1",
+          "to": "2",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "2",
+          "to": "3",
+          "fromAnchor": "True",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "3",
+          "to": "4",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": true,
+      "macroDependencies": [],
+      "macroValidation": {
+        "referenced": 0,
+        "uploaded": 0,
+        "missing": 0,
+        "status": "not_applicable",
+        "message": "No macro dependencies detected."
+      }
+    },
+    {
+      "id": "f07a86a616c925de",
+      "name": "Batch Region Processor Test",
+      "sourceFile": "WF_Batch_Region_Processor.yxmd",
+      "packageFile": "C:\\Project\\Alteryx_Update\\AlteryxAi\\batch_macro_demo\\WF_Batch_Region_Processor.yxzp",
+      "fileType": "yxmd",
+      "toolCount": 4,
+      "connectionCount": 3,
+      "convertibility": "high",
+      "complexity": "low",
+      "supportedToolCount": 4,
+      "unsupportedToolCount": 0,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+        "AlteryxBasePluginsGui.OutputData.OutputData",
+        "AlteryxGuiToolkit.ToolContainer.ToolContainer"
+      ],
+      "unsupportedTools": [],
+      "recommendations": [
+        "Candidate for automated Power Query/Dataflow conversion."
+      ],
+      "dataSources": [
+        {
+          "name": "orders_batch_regions.csv",
+          "type": "csv",
+          "path": "orders_batch_regions.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "region_parameters.csv",
+          "type": "csv",
+          "path": "region_parameters.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "batch_region_processor_output.csv",
+          "type": "csv",
+          "path": "batch_region_processor_output.csv",
+          "tool": "AlteryxBasePluginsGui.OutputData.OutputData"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "",
+          "configurationText": "1\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n50\n100\norders_batch_regions.csv\nInput Orders With Region\norders_batch_regions.csv",
+          "config": {}
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "",
+          "configurationText": "2\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n50\n230\nregion_parameters.csv\nRegion Parameters\nregion_parameters.csv",
+          "config": {}
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxGuiToolkit.ToolContainer.ToolContainer",
+          "supported": true,
+          "expression": "",
+          "configurationText": "3\nAlteryxGuiToolkit.ToolContainer.ToolContainer\n330\n150\nBatch\nRegion\nmacros/batch_region_processor.yxmc\nBatch Macro - Region Processor\nBatch macro applies region parameters to matching orders.\nMacro\nmacros/batch_region_processor.yxmc",
+          "config": {}
+        },
+        {
+          "id": "4",
+          "plugin": "AlteryxBasePluginsGui.OutputData.OutputData",
+          "supported": true,
+          "expression": "",
+          "configurationText": "4\nAlteryxBasePluginsGui.OutputData.OutputData\n620\n150\noutput/batch_region_processor_output.csv\nOutput Batch Macro Results\nbatch_region_processor_output.csv",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "1",
+          "to": "3",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "2",
+          "to": "3",
+          "fromAnchor": "Output",
+          "toAnchor": "Control"
+        },
+        {
+          "from": "3",
+          "to": "4",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": false,
+      "macroDependencies": [
+        {
+          "toolId": "3",
+          "name": "batch_region_processor.yxmc",
+          "path": "macros/batch_region_processor.yxmc",
+          "macroType": "Batch",
+          "controlParameter": "Region",
+          "iterationLimit": "",
+          "stopCondition": "",
+          "uploaded": true,
+          "matchedFile": "macros/batch_region_processor.yxmc",
+          "status": "ready"
+        }
+      ],
+      "macroValidation": {
+        "referenced": 1,
+        "uploaded": 1,
+        "missing": 0,
+        "missingFiles": [],
+        "status": "ready",
+        "message": "All 1 referenced macro file(s) were uploaded."
+      }
+    }
+  ],
+  "rejected": []
+}

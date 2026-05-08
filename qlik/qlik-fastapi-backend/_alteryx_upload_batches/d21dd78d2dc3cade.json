@@ -1,0 +1,69 @@
+{
+  "batch_id": "d21dd78d2dc3cade",
+  "created_at": 1777876680,
+  "summary": {
+    "workflow_count": 1,
+    "rejected_count": 0,
+    "total_tool_count": 1,
+    "unsupported_tool_count": 0,
+    "macro_definition_count": 1,
+    "macro_reference_count": 0,
+    "uploaded_macro_reference_count": 0,
+    "missing_macro_reference_count": 0,
+    "by_complexity": {
+      "low": 1,
+      "medium": 0,
+      "high": 0
+    },
+    "by_convertibility": {
+      "high": 1,
+      "medium": 0,
+      "low": 0,
+      "manual_review": 0
+    }
+  },
+  "workflows": [
+    {
+      "id": "114fbb6cf39fc9a6",
+      "name": "standard_cleanse.yxmc",
+      "sourceFile": "standard_cleanse.yxmc",
+      "packageFile": null,
+      "fileType": "yxmc",
+      "toolCount": 1,
+      "connectionCount": 0,
+      "convertibility": "high",
+      "complexity": "low",
+      "supportedToolCount": 1,
+      "unsupportedToolCount": 0,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.Formula.Formula"
+      ],
+      "unsupportedTools": [],
+      "recommendations": [
+        "Candidate for automated Power Query/Dataflow conversion."
+      ],
+      "dataSources": [],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxBasePluginsGui.Formula.Formula",
+          "supported": true,
+          "expression": "StandardMacroProcessed = 1",
+          "configurationText": "1\nAlteryxBasePluginsGui.Formula.Formula\nStandardMacroProcessed = 1\nStandard Macro Logic",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [],
+      "isMacroDefinition": true,
+      "macroDependencies": [],
+      "macroValidation": {
+        "referenced": 0,
+        "uploaded": 0,
+        "missing": 0,
+        "status": "not_applicable",
+        "message": "No macro dependencies detected."
+      }
+    }
+  ],
+  "rejected": []
+}
