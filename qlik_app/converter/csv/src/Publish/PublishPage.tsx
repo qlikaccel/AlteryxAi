@@ -630,10 +630,10 @@ export default function PublishPage() {
                     <td>Total Columns</td>
                     <td>{formatMetricValue(bigQueryColumnCount)}</td>
                   </tr>
-                  <tr>
+                  {/* <tr>
                     <td>Total Records</td>
                     <td>{formatMetricValue(bigQueryRecordCount)}</td>
-                  </tr>
+                  </tr> */}
                 </tbody>
               </table>
             ) : (
