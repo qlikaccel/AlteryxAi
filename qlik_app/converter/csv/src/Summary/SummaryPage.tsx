@@ -1539,9 +1539,7 @@ export default function SummaryPage() {
   const datasetName = analysis?.mquery?.dataset_name || workflow?.name || "AlteryxDataset";
   const sourceDetails = workflow?.dataSources || [];
   const macroDependencies = workflow?.macroDependencies || [];
-  const macroValidation = workflow?.macroValidation || {};
   const hasMacroDependencies = macroDependencies.length > 0;
-  const macroReady = macroValidation.status === "ready";
   const macroTypes = Array.from(
     new Set(macroDependencies.map((item: any) => item.macroType).filter(Boolean))
   );
@@ -2195,7 +2193,7 @@ navigate("/publish", {
             {showSourceMQuery && (
               <section className="source-mquery-panel" ref={sourceMQueryPanelRef} tabIndex={-1}>
                 <div className="source-mquery-header">
-                  <div>
+                  <div className="source-mquery-status-column">
                     {/* <h2>{workflow.name}</h2> */}
                     {/* <p>
                     Generated Power Query uses the configured data source <strong>{fileName}</strong>.
@@ -2206,7 +2204,72 @@ navigate("/publish", {
                       <strong>Medium workflow complexity.</strong>
                       <em>LLM status: expression_fallback_failed_fallback</em>
                     </div>
+                    {dbtPublishResult && (
+                      <div className={`dbt-publish-result ${dbtPublishResult.success ? "success" : "failed"}`}>
+                        <strong>{dbtPublishResult.success ? "BigQuery publish complete" : "BigQuery publish failed"}</strong>
+                        <span>{dbtPublishResult.final_model || dbtPublishResult.message}</span>
+                        {!dbtPublishResult.success && dbtPublishResult.commands?.length > 0 && (
+                          <details>
+                            <summary>View dbt error log</summary>
+                            <pre>
+                              {[
+                                dbtPublishResult.commands[dbtPublishResult.commands.length - 1]?.stdout,
+                                dbtPublishResult.commands[dbtPublishResult.commands.length - 1]?.stderr,
+                              ]
+                                .filter(Boolean)
+                                .join("\n")}
+                            </pre>
+                          </details>
+                        )}
+                      </div>
+                    )}
                   </div>
+                  {hasMacroDependencies && (
+                    <div className="macro-complexity-panel">
+                      <div className="macro-validation-header">
+                        <span>Macro Complexity</span>
+                        <strong>{macroTypes.join(" + ") || "Macro"}</strong>
+                      </div>
+                      <div className="macro-complexity-grid">
+                        {batchMacro && (
+                          <div className="macro-complexity-card">
+                            <span>Batch Macro Complexity</span>
+                            <strong>
+                              {batchComplexity?.expected_batches != null
+                                ? `${Number(batchComplexity.expected_batches).toLocaleString()} batch run${Number(batchComplexity.expected_batches) === 1 ? "" : "s"}`
+                                : "Control table rows"}
+                            </strong>
+                            <p>
+                              Expected executions are driven by
+                              {" "}
+                              <b>{batchComplexity?.control_parameter || batchMacro.controlParameter || "the control parameter"}</b>
+                              {batchComplexity?.control_source ? ` from ${batchComplexity.control_source}.` : "."}
+                              {" "}Each control row represents one parameter set for the batch macro.
+                            </p>
+                          </div>
+                        )}
+                        {iterativeMacro && (
+                          <div className="macro-complexity-card">
+                            <span>Iterative Macro Complexity</span>
+                            <strong>{iterativeComplexity?.iteration_limit || iterativeMacro.iterationLimit || "100"} max</strong>
+                            <p>
+                              Stop condition:
+                              {" "}
+                              <b>{iterativeComplexity?.stop_condition || iterativeMacro.stopCondition || "No new records"}</b>.
+                              Actual depth is available from <b>max(IterationDepth)</b> in the published model.
+                            </p>
+                          </div>
+                        )}
+                        {dbtPublishResult?.final_model && (
+                          <div className="macro-complexity-card published">
+                            <span>Published Model</span>
+                            <strong>{dbtPublishResult.success ? "Complete" : "Failed"}</strong>
+                            <p>{dbtPublishResult.final_model || dbtPublishResult.message}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <pre className="source-mquery-preview">
@@ -2246,25 +2309,6 @@ navigate("/publish", {
                     {publishing ? "Publishing..." : "Publish to Power BI"}
                   </button>
                 </div>
-                {dbtPublishResult && (
-                  <div className={`dbt-publish-result ${dbtPublishResult.success ? "success" : "failed"}`}>
-                    <strong>{dbtPublishResult.success ? "BigQuery publish complete" : "BigQuery publish failed"}</strong>
-                    <span>{dbtPublishResult.final_model || dbtPublishResult.message}</span>
-                    {!dbtPublishResult.success && dbtPublishResult.commands?.length > 0 && (
-                      <details>
-                        <summary>View dbt error log</summary>
-                        <pre>
-                          {[
-                            dbtPublishResult.commands[dbtPublishResult.commands.length - 1]?.stdout,
-                            dbtPublishResult.commands[dbtPublishResult.commands.length - 1]?.stderr,
-                          ]
-                            .filter(Boolean)
-                            .join("\n")}
-                        </pre>
-                      </details>
-                    )}
-                  </div>
-                )}
               </section>
             )}
           </>
@@ -2289,7 +2333,7 @@ navigate("/publish", {
               ))}
             </ul>
           </div>
-          <div className={`macro-validation-panel ${hasMacroDependencies ? (macroReady ? "ready" : "missing") : "empty"}`}>
+          {/* <div className={`macro-validation-panel ${hasMacroDependencies ? (macroReady ? "ready" : "missing") : "empty"}`}>
             <div className="macro-validation-header">
               <span>Macro Dependency Check</span>
               <strong>
@@ -2336,53 +2380,7 @@ navigate("/publish", {
                 </table>
               </>
             )}
-          </div>
-          {hasMacroDependencies && (
-            <div className="macro-complexity-panel">
-              <div className="macro-validation-header">
-                <span>Macro Complexity</span>
-                <strong>{macroTypes.join(" + ") || "Macro"}</strong>
-              </div>
-              <div className="macro-complexity-grid">
-                {batchMacro && (
-                  <div className="macro-complexity-card">
-                    <span>Batch Macro Complexity</span>
-                    <strong>
-                      {batchComplexity?.expected_batches != null
-                        ? `${Number(batchComplexity.expected_batches).toLocaleString()} batch run${Number(batchComplexity.expected_batches) === 1 ? "" : "s"}`
-                        : "Control table rows"}
-                    </strong>
-                    <p>
-                      Expected executions are driven by
-                      {" "}
-                      <b>{batchComplexity?.control_parameter || batchMacro.controlParameter || "the control parameter"}</b>
-                      {batchComplexity?.control_source ? ` from ${batchComplexity.control_source}.` : "."}
-                      {" "}Each control row represents one parameter set for the batch macro.
-                    </p>
-                  </div>
-                )}
-                {iterativeMacro && (
-                  <div className="macro-complexity-card">
-                    <span>Iterative Macro Complexity</span>
-                    <strong>{iterativeComplexity?.iteration_limit || iterativeMacro.iterationLimit || "100"} max</strong>
-                    <p>
-                      Stop condition:
-                      {" "}
-                      <b>{iterativeComplexity?.stop_condition || iterativeMacro.stopCondition || "No new records"}</b>.
-                      Actual depth is available from <b>max(IterationDepth)</b> in the published model.
-                    </p>
-                  </div>
-                )}
-                {dbtPublishResult?.final_model && (
-                  <div className="macro-complexity-card published">
-                    <span>Published Model</span>
-                    <strong>{dbtPublishResult.success ? "Complete" : "Failed"}</strong>
-                    <p>{dbtPublishResult.final_model || dbtPublishResult.message}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          </div> */}
           {/* <div className="metric-grid alteryx-metrics">
             <div className="metric-card"><span>Total Tools</span>    <strong>{assessment.totalTools}</strong></div>
             <div className="metric-card"><span>Supported Tools</span><strong>{assessment.supportedTools}</strong></div>
