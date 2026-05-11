@@ -260,10 +260,38 @@ export default function PublishPage() {
     {
       metric: "Total Tools Used",
       alteryx: totalToolsUsed,
-      powerbi: isBigQueryPublish ? "N/A" : "N/A",
+      powerbi: "N/A",
       variance: "N/A",
     },
   ];
+
+  const bigQueryValidationMetrics = [
+    {
+      metric: "Table Count",
+      alteryx: deployedTables,
+      bigquery: deployedTables,
+      variance: 0,
+    },
+    {
+      metric: "Column Count",
+      alteryx: columnCount,
+      bigquery: bigQueryColumnCount,
+      variance: bigQueryColumnCount !== null && columnCount !== null ? bigQueryColumnCount - columnCount : null,
+    },
+    {
+      metric: "Total Records",
+      alteryx: expectedRows,
+      bigquery: bigQueryRowCount,
+      variance: bigQueryRowCount !== null && expectedRows !== null ? bigQueryRowCount - expectedRows : null,
+    },
+    {
+      metric: "Total Tools Used",
+      alteryx: totalToolsUsed,
+      bigquery: "N/A",
+      variance: "N/A",
+    },
+  ];
+
   const validationChecks = workflowStats?.validation_checks || [];
 
   const steps = [
@@ -615,46 +643,52 @@ export default function PublishPage() {
           </div>
           <div className="publish-validation-table-wrap">
             {isBigQueryPublish ? (
-              <table className="publish-validation-table">
-                <tbody>
-                  <tr>
-                    <td>Status</td>
-                    <td>{publishResult?.success ? "Complete" : "Failed"}</td>
-                  </tr>
-                  <tr>
-                    <td>Project</td>
-                    <td>{bigQueryTarget.project || publishResult?.project_id || "Not available"}</td>
-                  </tr>
-                  <tr>
-                    <td>Dataset</td>
-                    <td>{bigQueryTarget.dataset || publishResult?.target_dataset || "Not available"}</td>
-                  </tr>
-                  <tr>
-                    <td>Final model</td>
-                    <td>{bigQueryFinalModel}</td>
-                  </tr>
-                  <tr>
-                    <td>dbt commands</td>
-                    <td>{publishResult?.commands?.filter((command: any) => command.success).length || 0}/{publishResult?.commands?.length || 0} succeeded</td>
-                  </tr>
-                  <tr>
-                    <td>Total tools used</td>
-                    <td>{formatMetricValue(totalToolsUsed)}</td>
-                  </tr>
-                  <tr>
-                    <td>Total Rows</td>
-                    <td>{formatMetricValue(bigQueryRowCount)}</td>
-                  </tr>
-                  <tr>
-                    <td>Total Columns</td>
-                    <td>{formatMetricValue(bigQueryColumnCount)}</td>
-                  </tr>
-                  {/* <tr>
-                    <td>Total Records</td>
-                    <td>{formatMetricValue(bigQueryRecordCount)}</td>
-                  </tr> */}
-                </tbody>
-              </table>
+              <>
+                <table className="publish-validation-table">
+                  <thead>
+                    <tr>
+                      <th>Metric</th>
+                      <th>Alteryx</th>
+                      <th>BigQuery</th>
+                      <th>Variance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bigQueryValidationMetrics.map((row) => (
+                      <tr key={row.metric}>
+                        <td>{row.metric}</td>
+                        <td>
+                          {formatMetricValue(row.alteryx)}
+                        </td>
+                        <td>
+                          {formatMetricValue(row.bigquery)}
+                        </td>
+                        <td>
+                          {formatMetricValue(row.variance)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="publish-bigquery-info">
+                  <div className="info-row">
+                    <span>GCP project</span>
+                    <strong>{bigQueryTarget.project || publishResult?.project_id || "Not available"}</strong>
+                  </div>
+                  <div className="info-row">
+                    <span>Dataset</span>
+                    <strong>{bigQueryTarget.dataset || publishResult?.target_dataset || "Not available"}</strong>
+                  </div>
+                  <div className="info-row">
+                    <span>Final model</span>
+                    <strong>{bigQueryFinalModel}</strong>
+                  </div>
+                  <div className="info-row">
+                    <span>dbt commands</span>
+                    <strong>{publishResult?.commands?.filter((command: any) => command.success).length || 0}/{publishResult?.commands?.length || 0} succeeded</strong>
+                  </div>
+                </div>
+              </>
             ) : (
               <table className="publish-validation-table">
                 <thead>
