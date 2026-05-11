@@ -1068,6 +1068,8 @@ const DEFAULT_FILE_NAME = sessionStorage.getItem("alteryx_file_name") || "";
 
 type SummaryTab = "sourceTypes" | "summary" | "brd" | "diagram";
 type SourceType = "database" | "scripts";
+type DownloadTarget = "mquery" | "dbt" | "python";
+type PublishTarget = "dbt" | "powerbi" | "python";
 
 // ─── Tab Config ───────────────────────────────────────────────────────────────
 
@@ -1419,6 +1421,10 @@ export default function SummaryPage() {
     }
   });
   const [mqueryCopied, setMqueryCopied] = useState(false);
+  const [selectedDownloadTarget, setSelectedDownloadTarget] = useState<DownloadTarget>("mquery");
+  const [selectedPublishTarget, setSelectedPublishTarget] = useState<PublishTarget>("dbt");
+  const [openActionMenu, setOpenActionMenu] = useState<"download" | "publish" | null>(null);
+  const selectedDownloadTargetRef = useRef<DownloadTarget>("mquery");
   const sourceMQueryPanelRef = useRef<HTMLElement | null>(null);
 
   // ─── Data fetch (dev12 backend logic) ──────────────────────────────────────
@@ -1724,6 +1730,21 @@ navigate("/publish", {
     }
   };
 
+  const handlePythonQueryUnavailable = () => {
+    setError("Python Query is not available for this workflow yet.");
+    setOpenActionMenu(null);
+  };
+
+  const downloadPythonQuery = () => {
+    handlePythonQueryUnavailable();
+  };
+
+  const selectDownloadTarget = (target: DownloadTarget) => {
+    selectedDownloadTargetRef.current = target;
+    setSelectedDownloadTarget(target);
+    setOpenActionMenu(null);
+  };
+
   const publishDbtToBigQuery = async () => {
     const publishStart = Date.now();
     if (!batchId || !workflowId) {
@@ -1765,6 +1786,47 @@ navigate("/publish", {
       setDbtPublishing(false);
     }
   };
+
+  const runSelectedDownload = () => {
+    const currentDownloadTarget = selectedDownloadTargetRef.current;
+    setOpenActionMenu(null);
+    if (currentDownloadTarget === "mquery") {
+      downloadSourceMQuery();
+      return;
+    }
+    if (currentDownloadTarget === "dbt") {
+      downloadDbtProject();
+      return;
+    }
+    downloadPythonQuery();
+  };
+
+  const runSelectedPublish = () => {
+    setOpenActionMenu(null);
+    if (selectedPublishTarget === "dbt") {
+      publishDbtToBigQuery();
+      return;
+    }
+    if (selectedPublishTarget === "powerbi") {
+      publishSourceMQuery();
+      return;
+    }
+    handlePythonQueryUnavailable();
+  };
+
+  const selectedDownloadDisabled =
+    selectedDownloadTarget === "mquery"
+      ? !mqueryPreview
+      : selectedDownloadTarget === "dbt"
+        ? !batchId || !workflowId
+        : false;
+
+  const selectedPublishDisabled =
+    selectedPublishTarget === "dbt"
+      ? !batchId || !workflowId || dbtPublishing
+      : selectedPublishTarget === "powerbi"
+        ? !mqueryPreview || publishing || dbtPublishing
+        : true;
 
   const downloadWorkflowDiagram = () => {
     const nodes = workflow?.workflowNodes || [];
@@ -2313,37 +2375,97 @@ navigate("/publish", {
                 </div>
 
                 <div className="source-mquery-actions">
-                  <button
-                    className="source-mquery-download"
-                    onClick={downloadSourceMQuery}
-                    disabled={!mqueryPreview}
-                  >
-                    Download M Query
-                  </button>
-                  <button
-                    className="source-mquery-download"
-                    onClick={downloadDbtProject}
-                    disabled={!batchId || !workflowId}
-                  >
-                    Download dbt Project
-                  </button>
-                  <button
-                    className="source-mquery-publish"
-                    onClick={publishDbtToBigQuery}
-                    disabled={!batchId || !workflowId || dbtPublishing}
-                  >
-                    {dbtPublishing ? "Publishing dbt..." : "Publish dbt to BigQuery"}
-                  </button>
-                  {/* <button onClick={publishSourceMQuery} disabled={!mqueryPreview}>
-                    Publish to Power BI
-                  </button> */}
-                  <button
-                    className="source-mquery-publish"
-                    onClick={publishSourceMQuery}
-                    disabled={!mqueryPreview || publishing || dbtPublishing}
-                  >
-                    {publishing ? "Publishing..." : "Publish to Power BI"}
-                  </button>
+                  <div className="source-split-action">
+                    <button
+                      className="source-split-main source-split-download"
+                      type="button"
+                      onClick={runSelectedDownload}
+                      disabled={selectedDownloadDisabled}
+                      aria-label={`Download ${selectedDownloadTarget === "mquery" ? "M Query" : selectedDownloadTarget === "dbt" ? "dbt Project" : "Python Query"}`}
+                    >
+                      <span aria-hidden="true">Download</span>
+                    </button>
+                    <button
+                      className="source-split-toggle source-split-download"
+                      type="button"
+                      onClick={() => setOpenActionMenu(openActionMenu === "download" ? null : "download")}
+                      aria-label="Choose download type"
+                      aria-expanded={openActionMenu === "download"}
+                    >
+                      ▾
+                    </button>
+                    {openActionMenu === "download" && (
+                      <div className="source-split-menu">
+                        <button
+                          type="button"
+                          className={selectedDownloadTarget === "mquery" ? "selected" : ""}
+                          onClick={() => selectDownloadTarget("mquery")}
+                        >
+                          M Query
+                        </button>
+                        <button
+                          type="button"
+                          className={selectedDownloadTarget === "dbt" ? "selected" : ""}
+                          onClick={() => selectDownloadTarget("dbt")}
+                        >
+                          dbt Project
+                        </button>
+                        <button
+                          type="button"
+                          className={selectedDownloadTarget === "python" ? "selected" : ""}
+                          onClick={() => selectDownloadTarget("python")}
+                        >
+                          Python Query
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="source-split-action">
+                    <button
+                      className="source-split-main source-split-publish"
+                      type="button"
+                      onClick={runSelectedPublish}
+                      disabled={selectedPublishDisabled}
+                    >
+                      Publish
+                    </button>
+                    <button
+                      className="source-split-toggle source-split-publish"
+                      type="button"
+                      onClick={() => setOpenActionMenu(openActionMenu === "publish" ? null : "publish")}
+                      aria-label="Choose publish type"
+                      aria-expanded={openActionMenu === "publish"}
+                    >
+                      ▾
+                    </button>
+                    {openActionMenu === "publish" && (
+                      <div className="source-split-menu">
+                        <button
+                          type="button"
+                          className={selectedPublishTarget === "dbt" ? "selected" : ""}
+                          onClick={() => {
+                            setSelectedPublishTarget("dbt");
+                            setOpenActionMenu(null);
+                          }}
+                        >
+                          dbt to BigQuery
+                        </button>
+                        <button
+                          type="button"
+                          className={selectedPublishTarget === "powerbi" ? "selected" : ""}
+                          onClick={() => {
+                            setSelectedPublishTarget("powerbi");
+                            setOpenActionMenu(null);
+                          }}
+                        >
+                          Power BI
+                        </button>
+                        <button type="button" disabled>
+                          Python Query
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </section>
             )}
