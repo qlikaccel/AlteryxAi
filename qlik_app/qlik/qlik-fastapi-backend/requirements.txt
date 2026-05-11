@@ -1,3 +1,4 @@
+# Core API framework
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 python-dotenv==1.0.0
@@ -14,7 +15,12 @@ pydantic>=2.10.0
 msal==1.31.0
 reportlab>=4.0.0
 beautifulsoup4>=4.12.0
+
+# Google Cloud
 google-cloud-bigquery>=3.0.0
-dbt-core==1.8.7
-dbt-bigquery==1.8.2
-mashumaro==3.13.1
+
+# dbt with BigQuery support
+# Use version ranges to allow pip to find compatible dependencies
+# Note: For faster builds on Render, use: pip install --no-deps -r requirements.txt
+dbt-core>=1.8.0,<2.0.0
+dbt-bigquery>=1.8.0,<2.0.0
