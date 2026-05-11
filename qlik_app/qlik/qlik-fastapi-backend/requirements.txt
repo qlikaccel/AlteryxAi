@@ -15,4 +15,6 @@ msal==1.31.0
 reportlab>=4.0.0
 beautifulsoup4>=4.12.0
 google-cloud-bigquery>=3.0.0
-dbt-bigquery>=1.8.0
+dbt-core==1.8.7
+dbt-bigquery==1.8.2
+mashumaro==3.13.1
