@@ -2283,13 +2283,13 @@ navigate("/publish", {
                             </p>
                           </div>
                         )}
-                        {dbtPublishResult?.final_model && (
+                        {/* {dbtPublishResult?.final_model && (
                           <div className="macro-complexity-card published">
                             <span>Published Model</span>
                             <strong>{dbtPublishResult.success ? "Complete" : "Failed"}</strong>
                             <p>{dbtPublishResult.final_model || dbtPublishResult.message}</p>
                           </div>
-                        )}
+                        )} */}
                       </div>
                     </div>
                   )}
