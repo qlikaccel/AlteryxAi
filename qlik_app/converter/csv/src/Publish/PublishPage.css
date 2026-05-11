@@ -509,6 +509,33 @@
   word-break: break-word;
 }
 
+.publish-bigquery-info {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f9fafb;
+}
+
+.publish-bigquery-info .info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.publish-bigquery-info .info-row span {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.publish-bigquery-info .info-row strong {
+  color: #111827;
+  font-weight: 600;
+}
+
 /* FOOTER */
 .publish-footer {
   text-align: center;
