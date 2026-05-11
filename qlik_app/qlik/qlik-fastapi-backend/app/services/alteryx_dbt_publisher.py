@@ -263,7 +263,7 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     source_dataset = _env("GCP_BIGQUERY_SOURCE_DATASET", target_dataset)
     location = _env("GCP_BIGQUERY_LOCATION", "US")
     auth_method = _env("GCP_DBT_AUTH_METHOD", "oauth")
-    dbt_executable = _env("DBT_EXECUTABLE", "dbt")
+    dbt_executable = os.environ.get("DBT_EXECUTABLE") or shutil.which("dbt") or "dbt"
     threads = int(_env("DBT_THREADS", "4") or "4")
     timeout_seconds = int(_env("DBT_COMMAND_TIMEOUT_SECONDS", "600") or "600")
     project_name = str(project.get("project_name") or "alteryx_dbt_project")
