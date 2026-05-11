@@ -1757,11 +1757,18 @@ navigate("/publish", {
     const width = Math.ceil(canvasWidth);
     const height = Math.ceil(canvasHeight);
     const canvas = document.createElement("canvas");
-    const scale = Math.min(window.devicePixelRatio || 2, 3);
+    const scale = 1
     canvas.width = width * scale;
     canvas.height = height * scale;
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
+    // const ctx = canvas.getContext("2d");
+
+    if (canvas.width > 16000 || canvas.height > 16000) {
+      setError("Workflow is too large to export as PNG.");
+      return;
+    }
+
     const ctx = canvas.getContext("2d");
 
     if (!ctx) {
@@ -1938,25 +1945,49 @@ navigate("/publish", {
       }
     });
 
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        setError("Failed to create image blob.");
-        return;
-      }
+    // canvas.toBlob((blob) => {
+    //   if (!blob) {
+    //     setError("Failed to create image blob.");
+    //     return;
+    //   }
 
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      const safeName = (workflow?.name || "workflow_diagram")
-        .replace(/[^a-z0-9]+/gi, "_")
-        .replace(/^_+|_+$/g, "")
-        || "workflow_diagram";
-      anchor.href = url;
-      anchor.download = `${safeName}_diagram.png`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-    }, "image/png");
+    //   const url = URL.createObjectURL(blob);
+    //   const anchor = document.createElement("a");
+    //   const safeName = (workflow?.name || "workflow_diagram")
+    //     .replace(/[^a-z0-9]+/gi, "_")
+    //     .replace(/^_+|_+$/g, "")
+    //     || "workflow_diagram";
+    //   anchor.href = url;
+    //   anchor.download = `${safeName}_diagram.png`;
+    //   document.body.appendChild(anchor);
+    //   anchor.click();
+    //   anchor.remove();
+    //   URL.revokeObjectURL(url);
+    // }, "image/png");
+  try {
+  const dataUrl = canvas.toDataURL("image/png");
+  const byteString = atob(dataUrl.split(",")[1]);
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i);
+  }
+  const blob = new Blob([ab], { type: "image/png" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  const safeName = (workflow?.name || "workflow_diagram")
+    .replace(/[^a-z0-9]+/gi, "_")
+    .replace(/^_+|_+$/g, "")
+    || "workflow_diagram";
+  anchor.href = url;
+  anchor.download = `${safeName}_diagram.png`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+} catch (err: any) {
+  setError("Failed to download diagram: " + (err?.message || "Unknown error"));
+}
   };
 
   // ─── Early returns ──────────────────────────────────────────────────────────
