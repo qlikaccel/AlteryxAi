@@ -1,0 +1,49 @@
+{
+  "batch_id": "49e1f7cfb689be19",
+  "created_at": 1776429076,
+  "summary": {
+    "workflow_count": 1,
+    "rejected_count": 0,
+    "total_tool_count": 6,
+    "unsupported_tool_count": 0,
+    "by_complexity": {
+      "low": 1,
+      "medium": 0,
+      "high": 0
+    },
+    "by_convertibility": {
+      "high": 1,
+      "medium": 0,
+      "low": 0,
+      "manual_review": 0
+    }
+  },
+  "workflows": [
+    {
+      "id": "9924d994a2d8721f",
+      "name": "sales_1M_workflow",
+      "sourceFile": "sales_1M_workflow.yxmd",
+      "packageFile": null,
+      "fileType": "yxmd",
+      "toolCount": 6,
+      "connectionCount": 5,
+      "convertibility": "high",
+      "complexity": "low",
+      "supportedToolCount": 6,
+      "unsupportedToolCount": 0,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect",
+        "AlteryxBasePluginsGui.BrowseV2.BrowseV2",
+        "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+        "AlteryxBasePluginsGui.Filter.Filter",
+        "AlteryxBasePluginsGui.Formula.Formula",
+        "AlteryxBasePluginsGui.Summarize.Summarize"
+      ],
+      "unsupportedTools": [],
+      "recommendations": [
+        "Candidate for automated Power Query/Dataflow conversion."
+      ]
+    }
+  ],
+  "rejected": []
+}

@@ -1049,9 +1049,12 @@ import LoadingOverlay from "../components/LoadingOverlay/LoadingOverlay";
 //   fetchAlteryxWorkflowAnalysis,
 // } from "../api/alteryxApi";
 import {
+  downloadAlteryxDataformProject,
   downloadAlteryxDbtProject,
+  downloadAlteryxPythonProject,
   fetchAlteryxBrdHtml,
   fetchAlteryxWorkflowAnalysis,
+  publishAlteryxDataformToBigQuery,
   publishAlteryxDbtToBigQuery,
   publishAlteryxMQuery,
 } from "../api/alteryxApi";
@@ -1408,6 +1411,7 @@ export default function SummaryPage() {
   const [pageLoadTime, setPageLoadTime] = useState<string | null>(null);
   const [brdLoading, setBrdLoading] = useState(false);
   const [dbtPublishing, setDbtPublishing] = useState(false);
+  const [dataformPublishing, setDataformPublishing] = useState(false);
   const [dbtPublishResult, setDbtPublishResult] = useState<any>(() => {
     const raw = sessionStorage.getItem("alteryx_dbt_bigquery_publish_result");
     if (!raw) return null;
@@ -1497,8 +1501,6 @@ export default function SummaryPage() {
         sessionStorage.setItem("migration_generation_reason", data.mquery?.routing_reason || "");
         sessionStorage.setItem("migration_llm_status", data.mquery?.llm_status || "not_required");
         sessionStorage.setItem("alteryx_conversion_steps", JSON.stringify(data.mquery?.conversion_steps || []));
-        sessionStorage.setItem("alteryx_tool_count", String(data.mquery?.workflow_statistics?.total_tools_used ?? data.workflow?.toolCount ?? 0));
-        sessionStorage.setItem("alteryx_workflow_statistics", JSON.stringify(data.mquery?.workflow_statistics || {}));
         setError("");
       })
       .catch((err: any) => setError(err?.message || "Failed to load workflow analysis"))
@@ -1538,6 +1540,7 @@ export default function SummaryPage() {
   const mqueryPreview = analysis?.mquery?.combined_mquery || sessionStorage.getItem("migration_mquery") || "";
   const datasetName = analysis?.mquery?.dataset_name || workflow?.name || "AlteryxDataset";
   const sourceDetails = workflow?.dataSources || [];
+  const outputTargets = workflow?.outputTargets || [];
   const macroDependencies = workflow?.macroDependencies || [];
   const macroValidation = workflow?.macroValidation || {};
   const hasMacroDependencies = macroDependencies.length > 0;
@@ -1623,7 +1626,6 @@ export default function SummaryPage() {
         // definitions for _raw CSV tables that have no field schema in the
         // Alteryx workflow JSON.  Falls back to {} when not present (safe).
         alteryx_source_fields: analysis?.mquery?.source_fields_map || {},
-        workflow_statistics: analysis?.mquery?.workflow_statistics || {},
       });
 
       // Save result to sessionStorage for PublishPage to read
@@ -1706,6 +1708,33 @@ navigate("/publish", {
     }
   };
 
+  const downloadProjectArtifact = async (artifact: "dataform" | "python") => {
+    if (!batchId || !workflowId) {
+      setError(`No uploaded Alteryx workflow batch is available for ${artifact} export.`);
+      return;
+    }
+
+    try {
+      const blob = artifact === "dataform"
+        ? await downloadAlteryxDataformProject(batchId, workflowId, sharePointUrl, fileName)
+        : await downloadAlteryxPythonProject(batchId, workflowId, sharePointUrl, fileName);
+      const url = URL.createObjectURL(blob);
+      const safeName = (datasetName || workflow?.name || `alteryx_${artifact}_project`)
+        .replace(/[^a-z0-9]+/gi, "_")
+        .replace(/^_+|_+$/g, "")
+        || `alteryx_${artifact}_project`;
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${safeName}_${artifact}_project.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err?.message || `Failed to download ${artifact} project.`);
+    }
+  };
+
   const publishDbtToBigQuery = async () => {
     const publishStart = Date.now();
     if (!batchId || !workflowId) {
@@ -1748,6 +1777,48 @@ navigate("/publish", {
     }
   };
 
+  const publishDataformToBigQuery = async () => {
+    const publishStart = Date.now();
+    if (!batchId || !workflowId) {
+      setError("No uploaded Alteryx workflow batch is available for Dataform publish.");
+      return;
+    }
+
+    setDataformPublishing(true);
+    setDbtPublishResult(null);
+    setError("");
+    try {
+      const result = await publishAlteryxDataformToBigQuery(batchId, workflowId, sharePointUrl, fileName);
+      setDbtPublishResult(result);
+      sessionStorage.setItem("alteryx_dataform_bigquery_publish_result", JSON.stringify(result));
+      sessionStorage.setItem("publishMethod", "DATAFORM_BIGQUERY");
+      sessionStorage.setItem("summaryComplete", "true");
+      sessionStorage.setItem("exportComplete", "true");
+
+      if (result?.success) {
+        const publishDurationMs = Date.now() - publishStart;
+        const publishMins = Math.floor(publishDurationMs / 60000);
+        const publishSecs = Math.floor((publishDurationMs % 60000) / 1000);
+        const publishDuration = publishMins > 0
+          ? `${publishMins}m ${publishSecs}s`
+          : `${publishSecs}s`;
+
+        navigate("/publish", {
+          state: {
+            workflowName: workflow?.name || "Alteryx workflow",
+            datasetName: result.project_name || datasetName,
+            publishDuration,
+            publishMode: "DATAFORM_BIGQUERY",
+          },
+        });
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to publish Dataform project to BigQuery.");
+    } finally {
+      setDataformPublishing(false);
+    }
+  };
+
   const downloadWorkflowDiagram = () => {
     const nodes = workflow?.workflowNodes || [];
     const edges = workflow?.workflowEdges || [];
@@ -1760,18 +1831,11 @@ navigate("/publish", {
     const width = Math.ceil(canvasWidth);
     const height = Math.ceil(canvasHeight);
     const canvas = document.createElement("canvas");
-    const scale = 1
+    const scale = Math.min(window.devicePixelRatio || 2, 3);
     canvas.width = width * scale;
     canvas.height = height * scale;
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
-    // const ctx = canvas.getContext("2d");
-
-    if (canvas.width > 16000 || canvas.height > 16000) {
-      setError("Workflow is too large to export as PNG.");
-      return;
-    }
-
     const ctx = canvas.getContext("2d");
 
     if (!ctx) {
@@ -1948,49 +2012,25 @@ navigate("/publish", {
       }
     });
 
-    // canvas.toBlob((blob) => {
-    //   if (!blob) {
-    //     setError("Failed to create image blob.");
-    //     return;
-    //   }
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setError("Failed to create image blob.");
+        return;
+      }
 
-    //   const url = URL.createObjectURL(blob);
-    //   const anchor = document.createElement("a");
-    //   const safeName = (workflow?.name || "workflow_diagram")
-    //     .replace(/[^a-z0-9]+/gi, "_")
-    //     .replace(/^_+|_+$/g, "")
-    //     || "workflow_diagram";
-    //   anchor.href = url;
-    //   anchor.download = `${safeName}_diagram.png`;
-    //   document.body.appendChild(anchor);
-    //   anchor.click();
-    //   anchor.remove();
-    //   URL.revokeObjectURL(url);
-    // }, "image/png");
-  try {
-  const dataUrl = canvas.toDataURL("image/png");
-  const byteString = atob(dataUrl.split(",")[1]);
-  const ab = new ArrayBuffer(byteString.length);
-  const ia = new Uint8Array(ab);
-  for (let i = 0; i < byteString.length; i++) {
-    ia[i] = byteString.charCodeAt(i);
-  }
-  const blob = new Blob([ab], { type: "image/png" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  const safeName = (workflow?.name || "workflow_diagram")
-    .replace(/[^a-z0-9]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    || "workflow_diagram";
-  anchor.href = url;
-  anchor.download = `${safeName}_diagram.png`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-} catch (err: any) {
-  setError("Failed to download diagram: " + (err?.message || "Unknown error"));
-}
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const safeName = (workflow?.name || "workflow_diagram")
+        .replace(/[^a-z0-9]+/gi, "_")
+        .replace(/^_+|_+$/g, "")
+        || "workflow_diagram";
+      anchor.href = url;
+      anchor.download = `${safeName}_diagram.png`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    }, "image/png");
   };
 
   // ─── Early returns ──────────────────────────────────────────────────────────
@@ -2013,11 +2053,11 @@ navigate("/publish", {
   );
 }
 
-  if (dbtPublishing) {
+  if (dbtPublishing || dataformPublishing) {
     return (
       <LoadingOverlay
-        isVisible={dbtPublishing}
-        message="Publishing dbt models to BigQuery..."
+        isVisible={dbtPublishing || dataformPublishing}
+        message={dataformPublishing ? "Publishing Dataform project to BigQuery..." : "Publishing dbt models to BigQuery..."}
       />
     );
   }
@@ -2229,20 +2269,37 @@ navigate("/publish", {
                     Download dbt Project
                   </button>
                   <button
-                    className="source-mquery-publish"
+                    className="source-mquery-download"
+                    onClick={() => downloadProjectArtifact("dataform")}
+                    disabled={!batchId || !workflowId}
+                  >
+                    Download Dataform Project
+                  </button>
+                  <button
+                    className="source-mquery-download"
+                    onClick={() => downloadProjectArtifact("python")}
+                    disabled={!batchId || !workflowId}
+                  >
+                    Download Python Scripts
+                  </button>
+                  <button
+                    className="source-mquery-download"
                     onClick={publishDbtToBigQuery}
-                    disabled={!batchId || !workflowId || dbtPublishing}
+                    disabled={!batchId || !workflowId || dbtPublishing || dataformPublishing}
                   >
                     {dbtPublishing ? "Publishing dbt..." : "Publish dbt to BigQuery"}
+                  </button>
+                  <button
+                    className="source-mquery-download"
+                    onClick={publishDataformToBigQuery}
+                    disabled={!batchId || !workflowId || dbtPublishing || dataformPublishing}
+                  >
+                    {dataformPublishing ? "Publishing Dataform..." : "Publish Dataform to BigQuery"}
                   </button>
                   {/* <button onClick={publishSourceMQuery} disabled={!mqueryPreview}>
                     Publish to Power BI
                   </button> */}
-                  <button
-                    className="source-mquery-publish"
-                    onClick={publishSourceMQuery}
-                    disabled={!mqueryPreview || publishing || dbtPublishing}
-                  >
+                  <button onClick={publishSourceMQuery} disabled={!mqueryPreview || publishing || dbtPublishing || dataformPublishing}>
                     {publishing ? "Publishing..." : "Publish to Power BI"}
                   </button>
                 </div>
@@ -2381,6 +2438,32 @@ navigate("/publish", {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+          {outputTargets.length > 0 && (
+            <div className="macro-complexity-panel">
+              <div className="macro-validation-header">
+                <span>Detected Alteryx Outputs</span>
+                <strong>{outputTargets.length} output file{outputTargets.length === 1 ? "" : "s"}</strong>
+              </div>
+              <table className="macro-validation-table">
+                <thead>
+                  <tr>
+                    <th>Output</th>
+                    <th>Type</th>
+                    <th>Tool</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {outputTargets.map((output: any, index: number) => (
+                    <tr key={`${output.toolId || index}-${output.path || output.name}`}>
+                      <td>{output.name || output.path}</td>
+                      <td>{output.type || "output"}</td>
+                      <td>{output.toolId ? `Tool ${output.toolId}` : output.tool || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
           {/* <div className="metric-grid alteryx-metrics">

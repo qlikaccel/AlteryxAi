@@ -20,6 +20,7 @@ export interface AlteryxWorkflow {
   unsupportedTools?: string[];
   recommendations?: string[];
   dataSources?: Array<Record<string, any>>;
+  outputTargets?: Array<Record<string, any>>;
   workflowNodes?: Array<Record<string, any>>;
   workflowEdges?: Array<Record<string, any>>;
   isMacroDefinition?: boolean;
@@ -119,6 +120,44 @@ export async function downloadAlteryxDbtProject(
   return res.blob();
 }
 
+async function downloadAlteryxArtifact(
+  batchId: string,
+  workflowId: string,
+  artifact: "dataform" | "python",
+  sharePointUrl = "",
+  fileName = ""
+): Promise<Blob> {
+  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const res = await fetch(
+    `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/${artifact}.zip?${params.toString()}`
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Failed to download ${artifact} project (${res.status})`);
+  }
+
+  return res.blob();
+}
+
+export async function downloadAlteryxDataformProject(
+  batchId: string,
+  workflowId: string,
+  sharePointUrl = "",
+  fileName = ""
+): Promise<Blob> {
+  return downloadAlteryxArtifact(batchId, workflowId, "dataform", sharePointUrl, fileName);
+}
+
+export async function downloadAlteryxPythonProject(
+  batchId: string,
+  workflowId: string,
+  sharePointUrl = "",
+  fileName = ""
+): Promise<Blob> {
+  return downloadAlteryxArtifact(batchId, workflowId, "python", sharePointUrl, fileName);
+}
+
 export async function publishAlteryxDbtToBigQuery(
   batchId: string,
   workflowId: string,
@@ -139,13 +178,21 @@ export async function publishAlteryxDbtToBigQuery(
   return data;
 }
 
-export async function fetchBigQueryTableMetadata(model: string): Promise<any> {
-  const params = new URLSearchParams({ model });
-  const res = await fetch(`${BASE_URL}/api/alteryx/bigquery/table-metadata?${params.toString()}`);
+export async function publishAlteryxDataformToBigQuery(
+  batchId: string,
+  workflowId: string,
+  sharePointUrl = "",
+  fileName = ""
+): Promise<any> {
+  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const res = await fetch(
+    `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/dataform/publish-bigquery?${params.toString()}`,
+    { method: "POST" }
+  );
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new Error(data.detail || `Failed to fetch BigQuery metadata (${res.status})`);
+    throw new Error(data.detail || `Failed to publish Dataform project to BigQuery (${res.status})`);
   }
 
   return data;
@@ -180,7 +227,6 @@ export async function publishAlteryxMQuery(payload: {
   // to its field list so the BIM builder can emit real column definitions for
   // CSV source tables that carry no field schema in the Alteryx workflow JSON.
   alteryx_source_fields?: Record<string, Array<{ name: string; type?: string }>>;
-  workflow_statistics?: Record<string, any>;
 }): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/migration/publish-mquery`, {
     method: "POST",
@@ -194,7 +240,6 @@ export async function publishAlteryxMQuery(payload: {
       qlik_fields_map: {},
       app_id: "",
       alteryx_source_fields: payload.alteryx_source_fields || {},
-      workflow_statistics: payload.workflow_statistics || {},
     }),
   });
   const data = await res.json().catch(() => ({}));
@@ -288,30 +333,6 @@ export async function downloadValidationReportPdf(payload: {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.detail || `Failed to generate PDF (${res.status})`);
-  }
-
-  return res.blob();
-}
-
-export async function downloadBigQueryValidationReportPdf(payload: {
-  app_name: string;
-  project_id: string;
-  dataset_id: string;
-  final_model: string;
-  migration_status: string;
-  tables_deployed?: number;
-  dbt_metrics?: Record<string, any>;
-  bigquery_metrics?: Record<string, any>;
-}): Promise<Blob> {
-  const res = await fetch(`${BASE_URL}/report/download-pdf-bigquery`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.detail || `Failed to generate BigQuery PDF (${res.status})`);
   }
 
   return res.blob();

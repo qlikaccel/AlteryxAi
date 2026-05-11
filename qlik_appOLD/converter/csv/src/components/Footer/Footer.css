@@ -1,0 +1,56 @@
+/* Main footer */
+.app-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 46px;
+
+  background: #0f172a;
+  color: #cbd5f5;
+
+display: flex;
+align-items: center;
+justify-content: flex-end;
+
+
+  font-size: 14px;
+  font-weight: 500;
+
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 900;
+}
+
+/* Footer inner content */
+.footer-content {
+
+  gap: 8px;
+  align-items: flex-end;
+  padding-right: 25px;
+}
+
+/* Separator dot */
+.footer-content .sep {
+  opacity: 0.6;
+}
+
+/* Link styling */
+.footer-content a {
+  color: #818cf8;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.footer-content a:hover {
+  color: #a5b4fc;
+  text-decoration: underline;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .app-footer {
+    font-size: 12px;
+    height: 52px;
+  }
+}

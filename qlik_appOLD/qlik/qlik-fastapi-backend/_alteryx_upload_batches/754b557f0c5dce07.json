@@ -1,0 +1,45 @@
+{
+  "batch_id": "754b557f0c5dce07",
+  "created_at": 1776754047,
+  "summary": {
+    "workflow_count": 1,
+    "rejected_count": 0,
+    "total_tool_count": 0,
+    "unsupported_tool_count": 0,
+    "by_complexity": {
+      "low": 1,
+      "medium": 0,
+      "high": 0
+    },
+    "by_convertibility": {
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "manual_review": 1
+    }
+  },
+  "workflows": [
+    {
+      "id": "d36e46a1578c6511",
+      "name": "Complex_Workflox",
+      "sourceFile": "Complex_Workflox.json",
+      "packageFile": null,
+      "fileType": "json",
+      "toolCount": 0,
+      "connectionCount": 0,
+      "convertibility": "manual_review",
+      "complexity": "low",
+      "supportedToolCount": 0,
+      "unsupportedToolCount": 0,
+      "toolTypes": [],
+      "unsupportedTools": [],
+      "recommendations": [
+        "No Alteryx tool nodes were found in the JSON; verify this is a full workflow JSON export, not only metadata."
+      ],
+      "dataSources": [],
+      "workflowNodes": [],
+      "workflowEdges": []
+    }
+  ],
+  "rejected": []
+}
