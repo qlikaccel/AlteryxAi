@@ -2843,6 +2843,103 @@ PAGE WRAP
   box-shadow: none;
 }
 
+.source-split-action {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.source-mquery-actions .source-split-main,
+.source-mquery-actions .source-split-toggle {
+  min-height: 44px;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.source-mquery-actions .source-split-main {
+  border-top-left-radius: 14px;
+  border-bottom-left-radius: 14px;
+}
+
+.source-mquery-actions .source-split-toggle {
+  min-width: 42px;
+  padding: 13px 12px;
+  border-top-right-radius: 14px;
+  border-bottom-right-radius: 14px;
+}
+
+.source-mquery-actions .source-split-download {
+  background: #e8f2fb;
+  color: #075985;
+  border: 1px solid rgba(7, 89, 133, 0.16);
+}
+
+.source-mquery-actions .source-split-main.source-split-download {
+  border-right: 0;
+}
+
+.source-mquery-actions .source-split-toggle.source-split-download {
+  border-left-color: rgba(7, 89, 133, 0.12);
+}
+
+.source-mquery-actions .source-split-download:hover:not(:disabled) {
+  background: #dbeafe;
+}
+
+.source-mquery-actions .source-split-publish {
+  background: #0070c0;
+  color: #fff;
+  border: 1px solid #0070c0;
+}
+
+.source-mquery-actions .source-split-main.source-split-publish {
+  min-width: 96px;
+  border-right-color: rgba(255, 255, 255, 0.24);
+}
+
+.source-mquery-actions .source-split-publish:hover:not(:disabled) {
+  background: #0064ac;
+  border-color: #0064ac;
+}
+
+.source-split-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 5;
+  display: grid;
+  min-width: 168px;
+  padding: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.16);
+}
+
+.source-mquery-actions .source-split-menu button {
+  justify-content: flex-start;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #0f172a;
+  box-shadow: none;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.source-mquery-actions .source-split-menu button:hover:not(:disabled),
+.source-mquery-actions .source-split-menu button.selected {
+  background: #e8f2fb;
+  color: #075985;
+}
+
+.source-mquery-actions .source-split-menu button:disabled {
+  color: #94a3b8;
+  opacity: 1;
+}
+
 .dbt-publish-result {
   display: flex;
   flex-direction: column;
