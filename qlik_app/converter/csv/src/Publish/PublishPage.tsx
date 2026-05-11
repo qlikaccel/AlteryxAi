@@ -107,7 +107,10 @@ export default function PublishPage() {
     (location.state as any)?.publishMode ||
     sessionStorage.getItem("publishMethod") ||
     "M_QUERY";
-  const isBigQueryPublish = publishMode === "DBT_BIGQUERY";
+  const isDbtBigQueryPublish = publishMode === "DBT_BIGQUERY";
+  const isDataformBigQueryPublish = publishMode === "DATAFORM_BIGQUERY";
+  const isDataformRepoPublish = publishMode === "DATAFORM_REPO";
+  const isBigQueryPublish = isDbtBigQueryPublish || isDataformBigQueryPublish;
 
   const conversionSteps = useMemo(() => {
     const raw = sessionStorage.getItem("alteryx_conversion_steps");
@@ -123,7 +126,25 @@ export default function PublishPage() {
   const [publishedAt] = useState(() => new Date());
   const [reportStatus, setReportStatus] = useState("");
   const [publishResult] = useState<any>(() => {
-    if (isBigQueryPublish) {
+    if (isDataformRepoPublish) {
+      const raw = sessionStorage.getItem("alteryx_dataform_repo_publish_result");
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+    if (isDataformBigQueryPublish) {
+      const raw = sessionStorage.getItem("alteryx_dataform_bigquery_publish_result");
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+    if (isDbtBigQueryPublish) {
       const raw = sessionStorage.getItem("alteryx_dbt_bigquery_publish_result");
       if (!raw) return null;
       try {
@@ -140,7 +161,13 @@ export default function PublishPage() {
       return null;
     }
   });
-  const bigQueryFinalModel = publishResult?.final_model || datasetName;
+  const bigQueryFinalModel =
+    publishResult?.final_model ||
+    (
+      publishResult?.project_id && publishResult?.target_dataset && publishResult?.project_name
+        ? `${publishResult.project_id}.${publishResult.target_dataset}.${publishResult.project_name}`
+        : datasetName
+    );
   const bigQueryTarget = parseBigQueryModel(bigQueryFinalModel);
   const macroComplexity = publishResult?.macro_complexity || {};
   const totalToolsUsed =
@@ -168,7 +195,7 @@ export default function PublishPage() {
     sessionStorage.getItem("alteryx_powerbi_workspace_url") ||
     (workspaceId ? `https://app.powerbi.com/groups/${workspaceId}` : "https://app.powerbi.com");
   const gcpUrl = bigQueryTableUrl(bigQueryFinalModel);
-  const publishUrl = isBigQueryPublish ? gcpUrl : powerBiWorkspaceUrl;
+  const publishUrl = isDataformRepoPublish ? publishResult?.workspace_url || "https://console.cloud.google.com/bigquery/dataform" : isBigQueryPublish ? gcpUrl : powerBiWorkspaceUrl;
   const batchId = sessionStorage.getItem("alteryx_batch_id") || "";
   const workflowId = sessionStorage.getItem("alteryx_workflow_id") || "";
   const rowCountCheck = getRowCountCheck(validationResult);
@@ -218,8 +245,17 @@ export default function PublishPage() {
   const steps = [
     { label: "Upload", complete: true },
     { label: "Tool mapping", complete: true },
-    { label: isBigQueryPublish ? "dbt gen" : "M Query gen", complete: true },
-    { label: isBigQueryPublish ? "BQ publish" : "Publish", complete: true },
+    {
+      label: isDataformBigQueryPublish
+        ? "Dataform gen"
+        : isDataformRepoPublish
+          ? "Dataform gen"
+        : isDbtBigQueryPublish
+          ? "dbt gen"
+          : "M Query gen",
+      complete: true,
+    },
+    { label: isDataformRepoPublish ? "Repo publish" : isBigQueryPublish ? "BQ publish" : "Publish", complete: true },
   ];
 
   const openPublishTarget = () => {
@@ -434,7 +470,7 @@ export default function PublishPage() {
         </div>
         <div className="publish-top-actions">
           <button className="dark-btn" onClick={openPublishTarget}>
-            {isBigQueryPublish ? "Open In GCP" : "Open In Power BI"}
+            {isDataformRepoPublish ? "Open Dataform Repo" : isBigQueryPublish ? "Open In GCP" : "Open In Power BI"}
           </button>
         </div>
       </header>
@@ -457,19 +493,19 @@ export default function PublishPage() {
             <h2>Publish target</h2>
           </div>
           <div className="target-row">
-            <span>{isBigQueryPublish ? "GCP project" : "Workspace"}</span>
+            <span>{isDataformRepoPublish ? "Dataform repository" : isBigQueryPublish ? "GCP project" : "Workspace"}</span>
             <strong>
               <a href={publishUrl} target="_blank" rel="noreferrer">
-                {isBigQueryPublish ? bigQueryTarget.project || "BigQuery" : workspaceName}
+                {isDataformRepoPublish ? publishResult?.repository || "Dataform" : isBigQueryPublish ? bigQueryTarget.project || "BigQuery" : workspaceName}
               </a>
             </strong>
           </div>
           <div className="target-row">
-            <span>{isBigQueryPublish ? "Final BigQuery model" : "Dataset name"}</span>
-            <input value={isBigQueryPublish ? bigQueryFinalModel : datasetName} readOnly />
+            <span>{isDataformRepoPublish ? "Workspace" : isBigQueryPublish ? "Final BigQuery model" : "Dataset name"}</span>
+            <input value={isDataformRepoPublish ? publishResult?.workspace || "Not available" : isBigQueryPublish ? bigQueryFinalModel : datasetName} readOnly />
           </div>
           <div className="target-row">
-            <span>{isBigQueryPublish ? "GCP BigQuery URL" : "Power BI publish URL"}</span>
+            <span>{isDataformRepoPublish ? "GCP Dataform URL" : isBigQueryPublish ? "GCP BigQuery URL" : "Power BI publish URL"}</span>
             <div className="copy-url-box">
               <input value={publishUrl} readOnly />
               <button onClick={copyPublishUrl}>{copyStatus || "Copy"}</button>
@@ -499,7 +535,40 @@ export default function PublishPage() {
             </div>
           </div>
           <div className="publish-validation-table-wrap">
-            {isBigQueryPublish ? (
+            {isDataformRepoPublish ? (
+              <table className="publish-validation-table">
+                <tbody>
+                  <tr>
+                    <td>Status</td>
+                    <td>{publishResult?.success ? "Complete" : "Failed"}</td>
+                  </tr>
+                  <tr>
+                    <td>Project</td>
+                    <td>{publishResult?.project_id || "Not available"}</td>
+                  </tr>
+                  <tr>
+                    <td>Location</td>
+                    <td>{publishResult?.location || "Not available"}</td>
+                  </tr>
+                  <tr>
+                    <td>Repository</td>
+                    <td>{publishResult?.repository || "Not available"}</td>
+                  </tr>
+                  <tr>
+                    <td>Workspace</td>
+                    <td>{publishResult?.workspace || "Not available"}</td>
+                  </tr>
+                  <tr>
+                    <td>Files written</td>
+                    <td>{formatMetricValue(publishResult?.file_count)}</td>
+                  </tr>
+                  <tr>
+                    <td>Committed</td>
+                    <td>{publishResult?.committed ? "Yes" : "No"}</td>
+                  </tr>
+                </tbody>
+              </table>
+            ) : isBigQueryPublish ? (
               <table className="publish-validation-table">
                 <tbody>
                   <tr>
@@ -519,7 +588,7 @@ export default function PublishPage() {
                     <td>{bigQueryFinalModel}</td>
                   </tr>
                   <tr>
-                    <td>dbt commands</td>
+                    <td>{isDataformBigQueryPublish ? "Dataform commands" : "dbt commands"}</td>
                     <td>{publishResult?.commands?.filter((command: any) => command.success).length || 0}/{publishResult?.commands?.length || 0} succeeded</td>
                   </tr>
                   <tr>
@@ -586,7 +655,7 @@ export default function PublishPage() {
               </div>
             </div>
           )}
-          {!isBigQueryPublish && <div className="summary-row">
+          {!isBigQueryPublish && !isDataformRepoPublish && <div className="summary-row">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
               <span>Validation & Reconciliation</span>
               <button
@@ -605,13 +674,16 @@ export default function PublishPage() {
       {conversionSteps.length > 0 && (
         <section className="wire-card tool-mapping-card">
           <h2>Alteryx Tool Mapping</h2>
-          <p>Tool conversion mapping from Alteryx workflow to Power Query</p>
+          <p>
+            Tool conversion mapping from Alteryx workflow to{" "}
+            {isDataformRepoPublish ? "GCP Dataform repository" : isDataformBigQueryPublish ? "Dataform / BigQuery" : isDbtBigQueryPublish ? "dbt / BigQuery" : "Power Query"}
+          </p>
           <div className="mapping-table-wrap">
             <table className="tool-mapping-table">
               <thead>
                 <tr>
                   <th>Alteryx Tool</th>
-                  <th>Power Query Mapping</th>
+                  <th>{isBigQueryPublish || isDataformRepoPublish ? "Target Mapping" : "Power Query Mapping"}</th>
                 </tr>
               </thead>
               <tbody>

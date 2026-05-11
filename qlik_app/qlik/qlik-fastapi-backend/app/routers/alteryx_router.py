@@ -46,6 +46,7 @@ from app.services.alteryx_migration_engine import (
 )
 from app.services.alteryx_dbt_publisher import publish_dbt_project_to_bigquery
 from app.services.alteryx_dataform_publisher import publish_dataform_project_to_bigquery
+from app.services.alteryx_dataform_repo_publisher import publish_dataform_project_to_repository
 
 router = APIRouter(prefix="/api/alteryx", tags=["Alteryx"])
 logger = logging.getLogger(__name__)
@@ -1138,6 +1139,31 @@ def publish_alteryx_workflow_dataform_to_bigquery(
     except Exception as exc:
         logger.exception("Failed to publish generated Dataform project to BigQuery")
         raise HTTPException(status_code=500, detail=f"Failed to publish Dataform project to BigQuery: {exc}") from exc
+
+
+@router.post("/batches/{batch_id}/workflows/{workflow_id}/dataform/publish-repository")
+def publish_alteryx_workflow_dataform_to_repository(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    if workflow.get("isMacroDefinition"):
+        raise HTTPException(
+            status_code=400,
+            detail="Select the parent .yxmd workflow for Publish Dataform to GCP Repo.",
+        )
+    project = generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    try:
+        return publish_dataform_project_to_repository(project)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to publish generated Dataform project to GCP Dataform repository")
+        raise HTTPException(status_code=500, detail=f"Failed to publish Dataform project to repository: {exc}") from exc
 
 
 @router.get("/batches/{batch_id}/workflows/{workflow_id}/python")

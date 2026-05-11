@@ -459,6 +459,7 @@ def _validation_artifacts(project_name: str, first_stage: str) -> dict[str, str]
         ),
         f"tests/{project_name}_not_empty.sql": (
             "select 1 as validation_error\n"
+            "from (select 1) as validator\n"
             f"where not exists (select 1 from {{{{ ref('{project_name}') }}}} limit 1)\n"
         ),
     }
@@ -651,12 +652,10 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         source_model_names.append(source_name)
         description = str(source.get("path") or source.get("type") or "")
         identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
-        # Replace backslashes with forward slashes to avoid YAML escape sequence errors
-        safe_description = description.replace("\\", "/")
         source_rows.append(
             f"      - name: {source_name}\n"
             f"{identifier_line}"
-            f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {safe_description.replace(chr(34), '')}\""
+            f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '')}\""
         )
         staging_files[f"models/staging/stg_{source_name}.sql"] = (
             "{{ config(materialized='view') }}\n\n"
@@ -810,7 +809,8 @@ def _sql_to_sqlx(sql: str) -> str:
 
 def generate_dataform_project(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:
     dbt_project = generate_dbt_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
-    project_name = _dbt_identifier(f"{dbt_project.get('project_name') or 'alteryx'}_dataform", "alteryx_dataform")
+    final_table_name = str(dbt_project.get("project_name") or "alteryx")
+    project_name = _dbt_identifier(f"{final_table_name}_dataform", "alteryx_dataform")
     source_project = "YOUR_GCP_PROJECT_ID"
     source_dataset = "YOUR_BIGQUERY_SOURCE_DATASET"
     declarations: list[str] = []
@@ -820,14 +820,6 @@ def generate_dataform_project(workflow: dict[str, Any], sharepoint_url: str = ""
             "defaultDataset: YOUR_DATAFORM_TARGET_DATASET\n"
             "defaultLocation: US\n"
             f"dataformCoreVersion: 3.0.0\n"
-        ),
-        "package.json": (
-            "{\n"
-            f"  \"name\": \"{project_name}\",\n"
-            "  \"dependencies\": {\n"
-            "    \"@dataform/core\": \"3.0.0\"\n"
-            "  }\n"
-            "}\n"
         ),
         "README.md": (
             f"# {workflow.get('name', 'Alteryx Workflow')} Dataform Scaffold\n\n"
@@ -860,6 +852,7 @@ def generate_dataform_project(workflow: dict[str, Any], sharepoint_url: str = ""
     return {
         "success": True,
         "project_name": project_name,
+        "final_table_name": final_table_name,
         "target": "dataform",
         "files": files,
         "file_count": len(files),

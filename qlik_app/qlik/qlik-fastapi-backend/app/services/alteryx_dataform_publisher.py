@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import json
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,14 @@ def _patch_declarations(project_dir: Path, project_id: str, source_dataset: str)
     declarations_path.write_text(text, encoding="utf-8")
 
 
+def _write_dataform_credentials(project_dir: Path, project_id: str, location: str) -> None:
+    credentials_path = project_dir / ".df-credentials.json"
+    credentials_path.write_text(
+        json.dumps({"projectId": project_id, "location": location}, indent=2),
+        encoding="utf-8",
+    )
+
+
 def _write_service_account_json(work_dir: Path, env: dict[str, str]) -> None:
     service_account_json = _env("GCP_SERVICE_ACCOUNT_JSON")
     if service_account_json:
@@ -90,11 +99,14 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
     dataform_executable = _env("DATAFORM_EXECUTABLE", "dataform")
     timeout_seconds = int(_env("DATAFORM_COMMAND_TIMEOUT_SECONDS", "600") or "600")
     project_name = str(project.get("project_name") or "alteryx_dataform_project")
+    final_table_name = str(project.get("final_table_name") or project_name.removesuffix("_dataform"))
+    final_model = f"{project_id}.{target_dataset}.{final_table_name}"
     files = project.get("files") or {}
 
     if not files:
         raise ValueError("No Dataform project files were generated for this workflow.")
-    if not shutil.which(dataform_executable):
+    resolved_dataform_executable = shutil.which(dataform_executable)
+    if not resolved_dataform_executable:
         raise RuntimeError(
             f"Dataform executable '{dataform_executable}' was not found. "
             "Install @dataform/cli and set DATAFORM_EXECUTABLE=dataform."
@@ -110,11 +122,11 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
         _write_project_files(project_dir, files)
         _patch_workflow_settings(project_dir, project_id, target_dataset, location)
         _patch_declarations(project_dir, project_id, source_dataset)
+        _write_dataform_credentials(project_dir, project_id, location)
 
         commands = [
-            [dataform_executable, "install", str(project_dir)],
-            [dataform_executable, "compile", str(project_dir)],
-            [dataform_executable, "run", str(project_dir)],
+            [resolved_dataform_executable, "compile", str(project_dir)],
+            [resolved_dataform_executable, "run", str(project_dir)],
         ]
         command_results: list[dict[str, Any]] = []
         for command in commands:
@@ -136,6 +148,8 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
                     "source_dataset": source_dataset,
                     "location": location,
                     "project_name": project_name,
+                    "final_table_name": final_table_name,
+                    "final_model": final_model,
                     "commands": command_results,
                     "missing_source_tables": missing_tables,
                     "output_targets": project.get("output_targets", []),
@@ -151,6 +165,8 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
         "source_dataset": source_dataset,
         "location": location,
         "project_name": project_name,
+        "final_table_name": final_table_name,
+        "final_model": final_model,
         "commands": command_results,
         "output_targets": project.get("output_targets", []),
         "output_count": project.get("output_count", 0),

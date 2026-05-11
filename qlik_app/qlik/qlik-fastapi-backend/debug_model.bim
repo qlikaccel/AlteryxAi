@@ -11,6 +11,30 @@
     "sourceQueryCulture": "en-US",
     "tables": [
       {
+        "name": "large_fact_100k_raw",
+        "columns": [],
+        "partitions": [
+          {
+            "name": "large_fact_100k_raw-Partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"large_fact_100k.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: large_fact_100k.csv\" else MatchingFiles{0}[Content],",
+                "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
+                "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text}))",
+                "in",
+                "    ChangedTypes"
+              ]
+            }
+          }
+        ]
+      },
+      {
         "name": "Mega_Transformation_Workflow_2000_Tools",
         "columns": [
           {
@@ -36,8 +60,8 @@
                 "let",
                 "    __Source = (let",
                 "    Source = SharePoint.Files(\"https://sorimtechnologies.sharepoint.com\", [ApiVersion = 15]),",
-                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"customer_master_500k.csv\"),",
-                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: customer_master_500k.csv\" else MatchingFiles{0}[Content],",
+                "    MatchingFiles = Table.SelectRows(Source, each [Name] = \"large_fact_100k.csv\"),",
+                "    FileContent = if Table.RowCount(MatchingFiles) = 0 then error \"File not found in SharePoint: large_fact_100k.csv\" else MatchingFiles{0}[Content],",
                 "    CsvData = Csv.Document(FileContent, [Delimiter = \",\", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),",
                 "    PromotedHeaders = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),",
                 "    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, List.Transform(Table.ColumnNames(PromotedHeaders), each {_, type text})),",

@@ -198,6 +198,26 @@ export async function publishAlteryxDataformToBigQuery(
   return data;
 }
 
+export async function publishAlteryxDataformToRepository(
+  batchId: string,
+  workflowId: string,
+  sharePointUrl = "",
+  fileName = ""
+): Promise<any> {
+  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const res = await fetch(
+    `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/dataform/publish-repository?${params.toString()}`,
+    { method: "POST" }
+  );
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.detail || `Failed to publish Dataform project to repository (${res.status})`);
+  }
+
+  return data;
+}
+
 export async function fetchAlteryxBrdHtml(
   batchId: string,
   workflowId: string,

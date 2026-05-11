@@ -1055,6 +1055,7 @@ import {
   fetchAlteryxBrdHtml,
   fetchAlteryxWorkflowAnalysis,
   publishAlteryxDataformToBigQuery,
+  publishAlteryxDataformToRepository,
   publishAlteryxDbtToBigQuery,
   publishAlteryxMQuery,
 } from "../api/alteryxApi";
@@ -1412,6 +1413,7 @@ export default function SummaryPage() {
   const [brdLoading, setBrdLoading] = useState(false);
   const [dbtPublishing, setDbtPublishing] = useState(false);
   const [dataformPublishing, setDataformPublishing] = useState(false);
+  const [dataformRepoPublishing, setDataformRepoPublishing] = useState(false);
   const [dbtPublishResult, setDbtPublishResult] = useState<any>(() => {
     const raw = sessionStorage.getItem("alteryx_dbt_bigquery_publish_result");
     if (!raw) return null;
@@ -1819,6 +1821,48 @@ navigate("/publish", {
     }
   };
 
+  const publishDataformToRepository = async () => {
+    const publishStart = Date.now();
+    if (!batchId || !workflowId) {
+      setError("No uploaded Alteryx workflow batch is available for Dataform repository publish.");
+      return;
+    }
+
+    setDataformRepoPublishing(true);
+    setDbtPublishResult(null);
+    setError("");
+    try {
+      const result = await publishAlteryxDataformToRepository(batchId, workflowId, sharePointUrl, fileName);
+      setDbtPublishResult(result);
+      sessionStorage.setItem("alteryx_dataform_repo_publish_result", JSON.stringify(result));
+      sessionStorage.setItem("publishMethod", "DATAFORM_REPO");
+      sessionStorage.setItem("summaryComplete", "true");
+      sessionStorage.setItem("exportComplete", "true");
+
+      if (result?.success) {
+        const publishDurationMs = Date.now() - publishStart;
+        const publishMins = Math.floor(publishDurationMs / 60000);
+        const publishSecs = Math.floor((publishDurationMs % 60000) / 1000);
+        const publishDuration = publishMins > 0
+          ? `${publishMins}m ${publishSecs}s`
+          : `${publishSecs}s`;
+
+        navigate("/publish", {
+          state: {
+            workflowName: workflow?.name || "Alteryx workflow",
+            datasetName: result.final_table_name || result.project_name || datasetName,
+            publishDuration,
+            publishMode: "DATAFORM_REPO",
+          },
+        });
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to publish Dataform project to GCP Dataform repository.");
+    } finally {
+      setDataformRepoPublishing(false);
+    }
+  };
+
   const downloadWorkflowDiagram = () => {
     const nodes = workflow?.workflowNodes || [];
     const edges = workflow?.workflowEdges || [];
@@ -2053,11 +2097,17 @@ navigate("/publish", {
   );
 }
 
-  if (dbtPublishing || dataformPublishing) {
+  if (dbtPublishing || dataformPublishing || dataformRepoPublishing) {
     return (
       <LoadingOverlay
-        isVisible={dbtPublishing || dataformPublishing}
-        message={dataformPublishing ? "Publishing Dataform project to BigQuery..." : "Publishing dbt models to BigQuery..."}
+        isVisible={dbtPublishing || dataformPublishing || dataformRepoPublishing}
+        message={
+          dataformRepoPublishing
+            ? "Publishing Dataform project to GCP repository..."
+            : dataformPublishing
+              ? "Publishing Dataform project to BigQuery..."
+              : "Publishing dbt models to BigQuery..."
+        }
       />
     );
   }
@@ -2285,21 +2335,28 @@ navigate("/publish", {
                   <button
                     className="source-mquery-download"
                     onClick={publishDbtToBigQuery}
-                    disabled={!batchId || !workflowId || dbtPublishing || dataformPublishing}
+                    disabled={!batchId || !workflowId || dbtPublishing || dataformPublishing || dataformRepoPublishing}
                   >
                     {dbtPublishing ? "Publishing dbt..." : "Publish dbt to BigQuery"}
                   </button>
                   <button
                     className="source-mquery-download"
                     onClick={publishDataformToBigQuery}
-                    disabled={!batchId || !workflowId || dbtPublishing || dataformPublishing}
+                    disabled={!batchId || !workflowId || dbtPublishing || dataformPublishing || dataformRepoPublishing}
                   >
                     {dataformPublishing ? "Publishing Dataform..." : "Publish Dataform to BigQuery"}
+                  </button>
+                  <button
+                    className="source-mquery-download"
+                    onClick={publishDataformToRepository}
+                    disabled={!batchId || !workflowId || dbtPublishing || dataformPublishing || dataformRepoPublishing}
+                  >
+                    {dataformRepoPublishing ? "Publishing to Dataform Repo..." : "Publish Dataform to GCP Repo"}
                   </button>
                   {/* <button onClick={publishSourceMQuery} disabled={!mqueryPreview}>
                     Publish to Power BI
                   </button> */}
-                  <button onClick={publishSourceMQuery} disabled={!mqueryPreview || publishing || dbtPublishing || dataformPublishing}>
+                  <button onClick={publishSourceMQuery} disabled={!mqueryPreview || publishing || dbtPublishing || dataformPublishing || dataformRepoPublishing}>
                     {publishing ? "Publishing..." : "Publish to Power BI"}
                   </button>
                 </div>
