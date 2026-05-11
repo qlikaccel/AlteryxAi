@@ -4360,6 +4360,7 @@ async def publish_dataset_endpoint(
 
 if __name__ == "__main__":
     import uvicorn
+    port = int(os.environ.get("PORT", 8000))
     print("\n" + "="*80)
     print(" " * 20 + "Qlik FastAPI Backend v2.0")
     print("="*80)
@@ -4379,4 +4380,4 @@ if __name__ == "__main__":
         print("  [!] Dataset publisher DISABLED (powerbi_dataset_publisher.py not found)")
     print("\nStarting server...")
     print("="*80 + "\n")
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run("main:app", host="127.0.0.1", port=port, reload=False)
