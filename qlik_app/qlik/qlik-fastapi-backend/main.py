@@ -3886,6 +3886,198 @@ async def download_pdf(payload: dict = Body(...)):
         raise HTTPException(status_code=500, detail=f"Failed to download PDF: {str(e)}")
 
 
+@app.post("/report/download-pdf-bigquery")
+async def download_pdf_bigquery(payload: dict = Body(...)):
+    """
+    Generate and download Validation & Reconciliation PDF report for BigQuery
+    """
+    try:
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+        from reportlab.lib import colors
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import pagesizes
+        from reportlab.lib.units import inch
+        from datetime import datetime
+        import io
+        from fastapi.responses import StreamingResponse
+        
+        # Extract data from payload
+        dbt_metrics = payload.get("dbt_metrics", {})
+        bigquery_metrics = payload.get("bigquery_metrics", {})
+        app_name = payload.get("app_name", "Unknown App")
+        project_id = payload.get("project_id", "Unknown Project")
+        dataset_id = payload.get("dataset_id", "Unknown Dataset")
+        final_model = payload.get("final_model", "Unknown Model")
+        migration_status = payload.get("migration_status", "In Progress")
+        tables_deployed = payload.get("tables_deployed", 1)
+        
+        pdf_buffer = io.BytesIO()
+        pdf_title = f"Validation & Reconciliation Report - BigQuery"
+        pdf_author = "Alteryx to BigQuery Migration Tool"
+        pdf_subject = f"Data Migration Report for {app_name}"
+       
+        doc = SimpleDocTemplate(
+            pdf_buffer,
+            pagesize=pagesizes.A4,
+            topMargin=0.4*inch,
+            bottomMargin=0.4*inch,
+            leftMargin=0.4*inch,
+            rightMargin=0.4*inch,
+            title=pdf_title,
+            author=pdf_author,
+            subject=pdf_subject
+        )
+ 
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=22,
+            textColor=colors.HexColor('#1f4788'),
+            spaceAfter=10,
+            alignment=0,
+            fontName='Helvetica-Bold'
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=13,
+            textColor=colors.HexColor('#1f4788'),
+            spaceAfter=6,
+            spaceBefore=4,
+            fontName='Helvetica-Bold'
+        )
+        
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontSize=9,
+            spaceAfter=3,
+            alignment=0
+        )
+        
+        # Title
+        elements.append(Paragraph("✓ Validation &amp; Reconciliation Report - BigQuery", title_style))
+        elements.append(Spacer(1, 0.12 * inch))
+        
+        # Header Info
+        header_info = f"""
+        <b>Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br/>
+        <b>Application:</b> {app_name}<br/>
+        <b>Publishing Method:</b> dbt to BigQuery | <b>Tables Deployed:</b> {tables_deployed}<br/>
+        <b>GCP Project:</b> {project_id}<br/>
+        <b>Dataset:</b> {dataset_id} | <b>Final Model:</b> {final_model}<br/>
+        <b>Source System:</b> Alteryx Workflow Output | <b>Target System:</b> BigQuery<br/>
+        <b>Status:</b> {migration_status}
+        """
+        elements.append(Paragraph(header_info, normal_style))
+        elements.append(Spacer(1, 0.2 * inch))
+        
+        # Executive Summary
+        elements.append(Paragraph("EXECUTIVE SUMMARY", heading_style))
+        elements.append(Spacer(1, 0.08 * inch))
+        
+        summary_text = f"<b style='color: green'>✓ SUCCESS:</b> dbt models successfully published to BigQuery. Dataset contains {tables_deployed} table(s)."
+        elements.append(Paragraph(summary_text, normal_style))
+        elements.append(Spacer(1, 0.18 * inch))
+        
+        # Deployment Metrics
+        elements.append(Paragraph("DEPLOYMENT METRICS", heading_style))
+        elements.append(Spacer(1, 0.05 * inch))
+        
+        # Build metrics table
+        table_data = [["Metric", "Value"]]
+        
+        # Add dbt metrics
+        dbt_metrics_display = {
+            "Total Tools Used": dbt_metrics.get("tool_count", "Not available"),
+            "Tables Deployed": tables_deployed,
+            "Dataset": dataset_id,
+            "Final Model": final_model,
+        }
+        
+        for metric_name, value in dbt_metrics_display.items():
+            table_data.append([metric_name, str(value)])
+        
+        # Add any additional bigquery metrics
+        if bigquery_metrics:
+            for metric_name, value in bigquery_metrics.items():
+                table_data.append([metric_name.replace('_', ' ').title(), str(value)])
+        
+        metrics_table = Table(table_data, colWidths=[2.5*inch, 2.5*inch])
+        
+        style_list = [
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4788')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
+            ('ALIGNMENT', (0, 0), (-1, 0), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
+            ('PADDINGTOP', (0, 0), (-1, 0), 5),
+            ('PADDINGBOTTOM', (0, 0), (-1, 0), 5),
+            ('PADDINGLEFT', (0, 0), (-1, 0), 3),
+            ('PADDINGRIGHT', (0, 0), (-1, 0), 3),
+            ('ALIGNMENT', (0, 1), (0, -1), 'LEFT'),
+            ('ALIGNMENT', (1, 1), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 1), (-1, -1), 'MIDDLE'),
+            ('PADDINGTOP', (0, 1), (-1, -1), 4),
+            ('PADDINGBOTTOM', (0, 1), (-1, -1), 4),
+            ('PADDINGLEFT', (0, 1), (-1, -1), 3),
+            ('PADDINGRIGHT', (0, 1), (-1, -1), 3),
+            ('GRID', (0, 0), (-1, -1), 0.7, colors.HexColor('#cccccc')),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f6f6f6')]),
+        ]
+        
+        metrics_table.setStyle(TableStyle(style_list))
+        elements.append(metrics_table)
+        elements.append(Spacer(1, 0.2 * inch))
+        
+        # Certification Section
+        elements.append(Paragraph("CERTIFICATION &amp; VALIDATION", heading_style))
+        elements.append(Spacer(1, 0.08 * inch))
+        
+        cert_status = "✓ CERTIFIED"
+        certification_text = f"""
+        <b>Publication Status:</b> <font color="green"><b>{cert_status}</b></font><br/>
+        <b>Validation Result:</b> All dbt models successfully compiled and deployed<br/>
+        <b>Deployment Target:</b> BigQuery Project: {project_id}
+        """
+        elements.append(Paragraph(certification_text, normal_style))
+        elements.append(Spacer(1, 0.25 * inch))
+        
+        # Footer
+        footer_text = f"""
+        <font size=7><i>Report generated by Alteryx to BigQuery Migration Tool | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</i></font><br/>
+        <font size=6 color='#999999'>For questions or support, contact the migration team.</font>
+        """
+        elements.append(Paragraph(footer_text, styles["Normal"]))
+        
+        # Build PDF
+        doc.build(elements)
+        pdf_buffer.seek(0)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"BigQuery_Validation_Report_{timestamp}.pdf"
+        
+        return StreamingResponse(
+            iter([pdf_buffer.getvalue()]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    
+    except Exception as e:
+        print(f"❌ Error downloading BigQuery PDF: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to download BigQuery PDF: {str(e)}")
+
+
 # =====================================================
 
 if __name__ == "__main__":

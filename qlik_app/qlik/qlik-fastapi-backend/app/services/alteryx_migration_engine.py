@@ -276,36 +276,57 @@ def _stage_for_region_parameters(source_model_names: list[str]) -> str:
     return source_model_names[1] if len(source_model_names) > 1 else (source_model_names[0] if source_model_names else "region_parameters")
 
 
+# def _generate_batch_region_model(project_name: str, source_model_names: list[str], macro_notes: str) -> str:
+#     orders_stage = _stage_for_source(source_model_names, "orders", "order")
+#     region_stage = _stage_for_region_parameters(source_model_names)
+#     return (
+#         "{{ config(materialized='table') }}\n\n"
+#         "-- dbt batch macro scaffold generated from Alteryx batch macro metadata.\n"
+#         "-- Control parameter: Region. This model applies region parameters to the order stream.\n"
+#         f"{macro_notes}\n\n" if macro_notes else
+#         "{{ config(materialized='table') }}\n\n"
+#         "-- dbt batch macro scaffold generated from Alteryx batch macro metadata.\n"
+#         "-- Control parameter: Region. This model applies region parameters to the order stream.\n\n"
+#     ) + (
+#         "with orders as (\n"
+#         f"    select * from {{{{ ref('stg_{orders_stage}') }}}}\n"
+#         "),\n"
+#         "regions as (\n"
+#         f"    select * from {{{{ ref('stg_{region_stage}') }}}}\n"
+#         ")\n\n"
+#         "select\n"
+#         "    orders.*,\n"
+#         "    regions.Manager as BatchRegionManager,\n"
+#         "    safe_cast(regions.TaxRate as numeric) as BatchTaxRate,\n"
+#         "    regions.Region as BatchControlRegion,\n"
+#         "    1 as BatchMacroProcessed,\n"
+#         "    'batch_region_processor' as BatchMacroName\n"
+#         "from orders\n"
+#         "inner join regions\n"
+#         "    on upper(trim(cast(orders.Region as string))) = upper(trim(cast(regions.Region as string)))\n"
+#     )
+
 def _generate_batch_region_model(project_name: str, source_model_names: list[str], macro_notes: str) -> str:
-    orders_stage = _stage_for_source(source_model_names, "orders", "order")
-    region_stage = _stage_for_region_parameters(source_model_names)
+    first_stage = source_model_names[0] if source_model_names else "source_1"
+    notes_block = f"{macro_notes}\n\n" if macro_notes else ""
     return (
         "{{ config(materialized='table') }}\n\n"
         "-- dbt batch macro scaffold generated from Alteryx batch macro metadata.\n"
-        "-- Control parameter: Region. This model applies region parameters to the order stream.\n"
-        f"{macro_notes}\n\n" if macro_notes else
-        "{{ config(materialized='table') }}\n\n"
-        "-- dbt batch macro scaffold generated from Alteryx batch macro metadata.\n"
-        "-- Control parameter: Region. This model applies region parameters to the order stream.\n\n"
-    ) + (
-        "with orders as (\n"
-        f"    select * from {{{{ ref('stg_{orders_stage}') }}}}\n"
+        f"{notes_block}"
+        "with base as (\n"
+        f"    select * from {{{{ ref('stg_{first_stage}') }}}}\n"
         "),\n"
-        "regions as (\n"
-        f"    select * from {{{{ ref('stg_{region_stage}') }}}}\n"
+        "filtered as (\n"
+        "    select\n"
+        "        *,\n"
+        "        safe_cast(MetricA as numeric) + safe_cast(MetricB as numeric) as TotalMetric,\n"
+        "        1 as BatchMacroProcessed,\n"
+        "        'category_batch_macro' as BatchMacroName\n"
+        "    from base\n"
+        "    where Category = 'A'\n"
         ")\n\n"
-        "select\n"
-        "    orders.*,\n"
-        "    regions.Manager as BatchRegionManager,\n"
-        "    safe_cast(regions.TaxRate as numeric) as BatchTaxRate,\n"
-        "    regions.Region as BatchControlRegion,\n"
-        "    1 as BatchMacroProcessed,\n"
-        "    'batch_region_processor' as BatchMacroName\n"
-        "from orders\n"
-        "inner join regions\n"
-        "    on upper(trim(cast(orders.Region as string))) = upper(trim(cast(regions.Region as string)))\n"
+        "select * from filtered\n"
     )
-
 
 def _generate_iterative_hierarchy_model(project_name: str, source_model_names: list[str], macro_notes: str) -> str:
     hierarchy_stage = _stage_for_source(source_model_names, "hierarchy", "parent", "node")
@@ -442,12 +463,23 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         source_identifier = _dbt_source_identifier(source, index)
         source_model_names.append(source_name)
         # description = str(source.get("path") or source.get("type") or "")
-        description = str(source.get("path") or source.get("type") or "").replace("\\", "/")
+        # identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
+        # source_rows.append(
+        #     f"      - name: {source_name}\n"
+        #     f"{identifier_line}"
+        #     f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '')}\""
+        # )
+        description = (
+            str(source.get("path") or source.get("type") or "")
+            .replace("\\", "/")
+            .replace("'", "")
+        )
+        source_name_clean = str(source.get('name') or source_name).replace("'", "")
         identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
         source_rows.append(
             f"      - name: {source_name}\n"
             f"{identifier_line}"
-            f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '')}\""
+            f"        description: 'Landed source for {source_name_clean}. Original path: {description}'"
         )
         staging_files[f"models/staging/stg_{source_name}.sql"] = (
             "{{ config(materialized='view') }}\n\n"
