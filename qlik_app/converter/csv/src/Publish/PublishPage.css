@@ -499,7 +499,7 @@
 
 .publish-macro-grid strong {
   color: #0f172a;
-  font-size: 1.25rem;
+  font-size: 1.10rem;
 }
 
 .publish-macro-grid p {
@@ -1499,7 +1499,7 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(110px, 1fr));
   gap: 0;
-  padding: 28px 48px 28px 200px;
+  padding: 28px 48px 28px 346px;
   margin: 0 auto;
   background: #fff;
   box-sizing: border-box;
@@ -1970,7 +1970,6 @@
 .publish-validation-table-wrap {
   margin: 12px 0 14px;
   overflow-x: auto;
-  border: 1px solid #cfd4dc;
   background: #ffffff;
 }
 
