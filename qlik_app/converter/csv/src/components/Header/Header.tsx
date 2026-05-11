@@ -89,14 +89,14 @@ export default function Header() {
  
         <div className="header-text">
           <p className="logo-subtitle">
-            AlteryxAI is an AI-powered workflow acceleration platform designed to transform how enterprises consume, understand, and modernize analytics processes. By leveraging advanced AI/LLM capabilities, AlteryxAI automatically converts existing workflows into interactive Power BI dashboards, generates contextual insights, and streamlines reporting—reducing manual effort, improving productivity, and accelerating data-driven decision-making.
+            AlteryxAI is an AI-powered workflow acceleration platform designed to transform how enterprises consume, understand, and modernize analytics processes. By leveraging advanced AI/LLM capabilities, AlteryxAI automatically converts existing workflows into interactive Power BI dashboards, generates contextual insights, and streamlines reporting — reducing manual effort, improving productivity, and accelerating data-driven decision-making.
           </p>
         </div>
       </div>
  
       <div className="header-right">
-        <a href="#">Docs</a>
-        <a href="#">Support</a>
+        {/* <a href="#">Docs</a> */}
+        {/* <a href="#">Support</a> */}
         {userInfo ? (
           <div className="profile" onClick={handleLogout} style={{ cursor: "pointer" }} title="Click to logout">
             👤 {userInfo.name || userInfo.email}
