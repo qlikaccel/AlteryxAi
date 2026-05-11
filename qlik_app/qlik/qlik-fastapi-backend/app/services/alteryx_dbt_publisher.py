@@ -272,6 +272,14 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     tool_count = int(project.get("tool_count") or 0)
     connection_count = int(project.get("connection_count") or 0)
 
+    # Load Google Cloud credentials from GOOGLE_CREDENTIALS_JSON env var
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+        tmp.write(creds_json)
+        tmp.flush()
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+
     if not files:
         raise ValueError("No dbt project files were generated for this workflow.")
     if not shutil.which(dbt_executable):
