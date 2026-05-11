@@ -2689,7 +2689,7 @@ PAGE WRAP
 .source-generation-badge {
   display: inline-grid;
   gap: 5px;
-  padding: 14px 16px;
+  padding: 16px 16px 108px;
   border-radius: 12px;
   background: #ecfdf5;
   color: #065f46;
@@ -3481,7 +3481,7 @@ PAGE WRAP
   gap: 14px;
   padding: 16px;
   border: 1px solid #d8e3ef;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #f8fbff;
   color: #22324a;
 }
