@@ -1041,6 +1041,7 @@
 
 
 import "./SummaryPage.css";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import LoadingOverlay from "../components/LoadingOverlay/LoadingOverlay";
@@ -1417,6 +1418,7 @@ export default function SummaryPage() {
       return null;
     }
   });
+  const [mqueryCopied, setMqueryCopied] = useState(false);
   const sourceMQueryPanelRef = useRef<HTMLElement | null>(null);
 
   // ─── Data fetch (dev12 backend logic) ──────────────────────────────────────
@@ -1574,6 +1576,24 @@ export default function SummaryPage() {
     setActiveTab("sourceTypes");
     setSelectedSource("scripts");
     setShowSourceMQuery(true);
+  };
+
+  const copySourceMQuery = async () => {
+    if (!mqueryPreview) return;
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(mqueryPreview);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = mqueryPreview;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    setMqueryCopied(true);
+    window.setTimeout(() => setMqueryCopied(false), 1400);
   };
 
   // const publishSourceMQuery = () => {
@@ -2164,7 +2184,7 @@ navigate("/publish", {
                     <span className="source-icon script-icon">📜</span>
                     <div>
                       <h3>Scripts</h3>
-                      <p>Alteryx Worklflow → M-Query</p>
+                      <p>Alteryx Worklflow → .dbt/ Dataform/ Python/ M-Query</p>
                     </div>
                   </div>
                   <p className="source-card-desc">
@@ -2172,6 +2192,9 @@ navigate("/publish", {
                     relationship preservation.
                   </p>
                   <div className="source-tags recommended">
+                    <span>.dbt</span>
+                    <span>Dataform</span>
+                    <span>Python</span>
                     <span>M-QUERY</span>
                     <span>XMLA</span>
                     <span>RELATIONSHIPS</span>
@@ -2183,7 +2206,7 @@ navigate("/publish", {
                         openSourceMQuery();
                       }}
                     >
-                      Open M Query
+                      Open Conversion Scripts
                     </button>
                   )}
                 </article>
@@ -2272,9 +2295,22 @@ navigate("/publish", {
                   )}
                 </div>
 
-                <pre className="source-mquery-preview">
-                  {mqueryPreview || "No generated M Query is available for this workflow."}
-                </pre>
+                <div className="source-mquery-preview-wrap">
+                  <button
+                    className="source-mquery-copy-btn"
+                    type="button"
+                    onClick={copySourceMQuery}
+                    disabled={!mqueryPreview}
+                    aria-label="Copy M Query"
+                    title="Copy M Query"
+                  >
+                    <ContentCopyIcon fontSize="small" />
+                    {mqueryCopied && <span className="source-mquery-copy-tip">Copied!</span>}
+                  </button>
+                  <pre className="source-mquery-preview">
+                    {mqueryPreview || "No generated M Query is available for this workflow."}
+                  </pre>
+                </div>
 
                 <div className="source-mquery-actions">
                   <button
