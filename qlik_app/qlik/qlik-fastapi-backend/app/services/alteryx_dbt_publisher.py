@@ -263,7 +263,7 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     source_dataset = _env("GCP_BIGQUERY_SOURCE_DATASET", target_dataset)
     location = _env("GCP_BIGQUERY_LOCATION", "US")
     auth_method = _env("GCP_DBT_AUTH_METHOD", "oauth")
-    dbt_executable = os.environ.get("DBT_EXECUTABLE") or shutil.which("dbt") or "dbt"
+    dbt_executable = _env("DBT_EXECUTABLE", "dbt")
     threads = int(_env("DBT_THREADS", "4") or "4")
     timeout_seconds = int(_env("DBT_COMMAND_TIMEOUT_SECONDS", "600") or "600")
     project_name = str(project.get("project_name") or "alteryx_dbt_project")
@@ -271,6 +271,14 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     macro_complexity = project.get("macro_complexity") or {}
     tool_count = int(project.get("tool_count") or 0)
     connection_count = int(project.get("connection_count") or 0)
+
+    # Load Google Cloud credentials from GOOGLE_CREDENTIALS_JSON env var
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+        tmp.write(creds_json)
+        tmp.flush()
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
 
     if not files:
         raise ValueError("No dbt project files were generated for this workflow.")
