@@ -170,7 +170,7 @@ def generate_workflow_statistics(
     validation_checks = validate_migration(workflow).get("checks", [])
     return {
         "total_records": total_records,
-        "total_tools_used": int(workflow.get("toolCount") or len(nodes) or 0),
+        "total_tools_used": len(nodes),
         "table_count": table_count,
         "column_count": len(final_columns or source_column_names),
         "source_column_count": len(source_column_names),
@@ -373,7 +373,7 @@ def _macro_complexity_summary(workflow: dict[str, Any], sources: list[dict[str, 
     summary: dict[str, Any] = {
         "has_macros": bool(dependencies),
         "macro_count": len(dependencies),
-        "tool_count": int(workflow.get("toolCount") or len(workflow.get("workflowNodes") or []) or 0),
+        "tool_count": len(workflow.get("workflowNodes") or []),
         "types": sorted({str(item.get("macroType") or "Macro") for item in dependencies}),
         "final_model": project_name,
     }
@@ -416,7 +416,7 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
     Power Query/SharePoint extraction semantics into dbt models.
     """
     project_name = _single_macro_project_name(workflow)
-    tool_count = int(workflow.get("toolCount") or len(workflow.get("workflowNodes") or []) or 0)
+    tool_count = len(workflow.get("workflowNodes") or [])
     connection_count = int(workflow.get("connectionCount") or len(workflow.get("workflowEdges") or []) or 0)
     all_sources = workflow.get("dataSources") or []
     sources = [source for source in all_sources if _is_warehouse_landed_source(source)]

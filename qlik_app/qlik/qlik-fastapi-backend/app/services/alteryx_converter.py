@@ -164,7 +164,7 @@ def choose_generation_strategy(workflow: dict[str, Any]) -> dict[str, Any]:
     """Route simple workflows to rules and complex mapping workflows to LLM assistance."""
     nodes = workflow.get("workflowNodes") or []
     tool_keys = [detect_tool_key(str(node.get("plugin", ""))) for node in nodes]
-    tool_count = int(workflow.get("toolCount") or len(nodes) or 0)
+    tool_count = len(nodes)
     connection_count = int(workflow.get("connectionCount") or len(workflow.get("workflowEdges") or []) or 0)
     unsupported_count = int(workflow.get("unsupportedToolCount") or 0)
     complexity = str(workflow.get("complexity") or "low").lower()
