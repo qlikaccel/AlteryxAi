@@ -1,0 +1,404 @@
+{
+  "batch_id": "056cf527b977a12a",
+  "created_at": 1778476615,
+  "summary": {
+    "workflow_count": 2,
+    "rejected_count": 0,
+    "total_tool_count": 14,
+    "unsupported_tool_count": 2,
+    "macro_definition_count": 1,
+    "macro_reference_count": 1,
+    "uploaded_macro_reference_count": 1,
+    "missing_macro_reference_count": 0,
+    "by_complexity": {
+      "low": 0,
+      "medium": 2,
+      "high": 0
+    },
+    "by_convertibility": {
+      "high": 0,
+      "medium": 2,
+      "low": 0,
+      "manual_review": 0
+    }
+  },
+  "workflows": [
+    {
+      "id": "ea66ff17f8c9dcb3",
+      "name": "category_batch_macro",
+      "sourceFile": "category_batch_macro.yxmc",
+      "packageFile": null,
+      "fileType": "yxmc",
+      "toolCount": 7,
+      "connectionCount": 5,
+      "convertibility": "medium",
+      "complexity": "medium",
+      "supportedToolCount": 6,
+      "unsupportedToolCount": 1,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+        "AlteryxBasePluginsGui.Filter.Filter",
+        "AlteryxBasePluginsGui.Formula.Formula",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+        "AlteryxGuiToolkit.Action.Action",
+        "AlteryxGuiToolkit.Questions.ControlParam.ControlParam",
+        "AlteryxGuiToolkit.Questions.Tab.Tab"
+      ],
+      "unsupportedTools": [
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+      ],
+      "recommendations": [
+        "Macros should be expanded and assessed separately."
+      ],
+      "dataSources": [
+        {
+          "name": "large_fact_100k.csv",
+          "type": "csv",
+          "path": "C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "large_fact_100k.csv",
+          "type": "csv",
+          "path": "e: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "large_fact_100k.csv",
+          "type": "csv",
+          "path": "large_fact_100k.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "large_fact_100k.csv",
+          "type": "csv",
+          "path": "e: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv",
+          "tool": "AlteryxBasePluginsGui.Formula.Formula"
+        },
+        {
+          "name": "large_fact_100k.csv",
+          "type": "csv",
+          "path": "large_fact_100k.csv",
+          "tool": "AlteryxBasePluginsGui.Formula.Formula"
+        },
+        {
+          "name": "large_fact_100k.csv",
+          "type": "csv",
+          "path": "e: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv",
+          "tool": "AlteryxBasePluginsGui.Filter.Filter"
+        },
+        {
+          "name": "large_fact_100k.csv",
+          "type": "csv",
+          "path": "large_fact_100k.csv",
+          "tool": "AlteryxBasePluginsGui.Filter.Filter"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxGuiToolkit.Questions.Tab.Tab",
+          "supported": true,
+          "expression": "False",
+          "configurationText": "1\nAlteryxGuiToolkit.Questions.Tab.Tab\n0\n0\n59\n59\n0\nFalse",
+          "config": {}
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "254",
+          "configurationText": "2\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n54\n54\nFalse\n0\nC:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\n28591\n,\nFalse\n254\nFalse\nTrue\nDoubleQuotes\n1\n0\nlarge_fact_100k.csv\nFalse\nOutput\nRowID\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nCustomerID\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nMetricA\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nMetricB\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nCategory\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nAlteryxBasePluginsEngine.dll\nAlteryxDbFileInput",
+          "config": {}
+        },
+        {
+          "id": "5",
+          "plugin": "AlteryxBasePluginsGui.Formula.Formula",
+          "supported": true,
+          "expression": "ToNumber([MetricA]) + ToNumber([MetricB])",
+          "configurationText": "5\nAlteryxBasePluginsGui.Formula.Formula\n462\n54\nToNumber([MetricA]) + ToNumber([MetricB])\nTotalMetric\n8\nDouble\n0\nTotalMetric = ToNumber([MetricA]) + ToNumber([MetricB])\nFalse\nOutput\nRowID\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nCustomerID\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nMetricA\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nMetricB\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nCategory\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nTotalMetric\nFormula: ToNumber([MetricA]) + ToNumber([MetricB])\nDouble\nAlteryxBasePluginsEngine.dll\nAlteryxFormula",
+          "config": {
+            "formulas": [
+              {
+                "field": "TotalMetric",
+                "expression": "ToNumber([MetricA]) + ToNumber([MetricB])",
+                "type": "Double"
+              }
+            ]
+          }
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxGuiToolkit.Questions.ControlParam.ControlParam",
+          "supported": true,
+          "expression": "False",
+          "configurationText": "3\nAlteryxGuiToolkit.Questions.ControlParam.ControlParam\n30\n210\n59\n59\n0\nControl Parameter (3)\nFalse",
+          "config": {}
+        },
+        {
+          "id": "6",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "False",
+          "configurationText": "6\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n618\n90\nOutput6\n0\nOutput\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxMacroOutput",
+          "config": {}
+        },
+        {
+          "id": "7",
+          "plugin": "AlteryxBasePluginsGui.Filter.Filter",
+          "supported": true,
+          "expression": "[Category] = \"A\"",
+          "configurationText": "7\nAlteryxBasePluginsGui.Filter.Filter\n210\n66\n[Category] = \"A\"\nCustom\n0\n[Category] = \"A\"\nFalse\nTrue\nRowID\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nCustomerID\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nMetricA\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nMetricB\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nCategory\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nFalse\nRowID\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nCustomerID\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nMetricA\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nMetricB\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nCategory\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nAlteryxBasePluginsEngine.dll\nAlteryxFilter",
+          "config": {
+            "filterExpression": "[Category] = \"A\""
+          }
+        },
+        {
+          "id": "8",
+          "plugin": "AlteryxGuiToolkit.Action.Action",
+          "supported": true,
+          "expression": "False",
+          "configurationText": "8\nAlteryxGuiToolkit.Action.Action\n282\n342\n59\n59\n0\nUpdate Value\nFalse",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "2",
+          "to": "7",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "8",
+          "to": "7",
+          "fromAnchor": "Action",
+          "toAnchor": "Action"
+        },
+        {
+          "from": "5",
+          "to": "6",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "3",
+          "to": "8",
+          "fromAnchor": "Question",
+          "toAnchor": "Question"
+        },
+        {
+          "from": "7",
+          "to": "5",
+          "fromAnchor": "True",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": true,
+      "macroDependencies": [],
+      "macroValidation": {
+        "referenced": 0,
+        "uploaded": 0,
+        "missing": 0,
+        "status": "not_applicable",
+        "message": "No macro dependencies detected."
+      }
+    },
+    {
+      "id": "aa4892ba7f5e6fd6",
+      "name": "New Workflow4",
+      "sourceFile": "New Workflow4.yxmd",
+      "packageFile": null,
+      "fileType": "yxmd",
+      "toolCount": 7,
+      "connectionCount": 6,
+      "convertibility": "medium",
+      "complexity": "medium",
+      "supportedToolCount": 6,
+      "unsupportedToolCount": 1,
+      "toolTypes": [
+        "..\\..\\..\\Users\\HP\\Documents\\category_batch_macro.yxmc",
+        "AlteryxBasePluginsGui.BrowseV2.BrowseV2",
+        "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+        "AlteryxBasePluginsGui.Filter.Filter",
+        "AlteryxBasePluginsGui.Formula.Formula",
+        "AlteryxBasePluginsGui.Join.Join",
+        "AlteryxBasePluginsGui.TextInput.TextInput"
+      ],
+      "unsupportedTools": [
+        "..\\..\\..\\Users\\HP\\Documents\\category_batch_macro.yxmc"
+      ],
+      "recommendations": [
+        "Macros should be expanded and assessed separately."
+      ],
+      "dataSources": [
+        {
+          "name": "large_fact_100k.csv",
+          "type": "csv",
+          "path": "e: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv",
+          "tool": "..\\..\\..\\Users\\HP\\Documents\\category_batch_macro.yxmc"
+        },
+        {
+          "name": "large_fact_100k.csv",
+          "type": "csv",
+          "path": "large_fact_100k.csv",
+          "tool": "..\\..\\..\\Users\\HP\\Documents\\category_batch_macro.yxmc"
+        },
+        {
+          "name": "4 AlteryxBasePluginsGui.TextInput.TextInput 30 54 4 Category A B C D 0 False AlteryxBasePluginsEngine.dll AlteryxTextInput",
+          "type": "unknown",
+          "path": "4 AlteryxBasePluginsGui.TextInput.TextInput 30 54 4 Category A B C D 0 False AlteryxBasePluginsEngine.dll AlteryxTextInput",
+          "tool": "AlteryxBasePluginsGui.TextInput.TextInput"
+        },
+        {
+          "name": "customers_ai.csv",
+          "type": "csv",
+          "path": "C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\customers_ai.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "customers_ai.csv",
+          "type": "csv",
+          "path": "e: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\customers_ai.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "customers_ai.csv",
+          "type": "csv",
+          "path": "customers_ai.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "16",
+          "plugin": "..\\..\\..\\Users\\HP\\Documents\\category_batch_macro.yxmc",
+          "supported": false,
+          "expression": "Control Parameter (3)=Category",
+          "configurationText": "16\n186\n54\nControlParams\nControl Parameter (3)=Category\n0\ncategory_batch_macro (5)\nFalse\nOutput6\nRowID\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nCustomerID\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nMetricA\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nMetricB\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nCategory\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\large_fact_100k.csv\nV_String\nTotalMetric\nFormula: ToNumber([MetricA]) + ToNumber([MetricB])\nDouble\n..\\..\\..\\Users\\HP\\Documents\\category_batch_macro.yxmc",
+          "config": {}
+        },
+        {
+          "id": "4",
+          "plugin": "AlteryxBasePluginsGui.TextInput.TextInput",
+          "supported": true,
+          "expression": "4",
+          "configurationText": "4\nAlteryxBasePluginsGui.TextInput.TextInput\n30\n54\n4\nCategory\nA\nB\nC\nD\n0\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxTextInput",
+          "config": {}
+        },
+        {
+          "id": "6",
+          "plugin": "AlteryxBasePluginsGui.BrowseV2.BrowseV2",
+          "supported": true,
+          "expression": "100",
+          "configurationText": "6\nAlteryxBasePluginsGui.BrowseV2.BrowseV2\n450\n174\nC:\\Users\\HP\\AppData\\Local\\Temp\\Alteryx\\Engine_1336_2f1160ce4c954a6eae608d2a0ae3298d_\\Engine_1336_826a8fa1d1fc4d0aa96f5deade792205~.yxdb\nSingle\n100\nProfile\n0\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxBrowseV2",
+          "config": {}
+        },
+        {
+          "id": "12",
+          "plugin": "AlteryxBasePluginsGui.Filter.Filter",
+          "supported": true,
+          "expression": "Category",
+          "configurationText": "12\nAlteryxBasePluginsGui.Filter.Filter\n462\n90\nSimple\n=\nCategory\nTrue\nfixed\n2026-05-07 10:36:43\n0\nA\n2026-05-07 10:36:43\n2026-05-07 10:36:43\n0\n[Category] = \"A\"\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxFilter",
+          "config": {
+            "filterExpression": "Category"
+          }
+        },
+        {
+          "id": "13",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "254",
+          "configurationText": "13\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n30\n222\nFalse\n0\nC:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\customers_ai.csv\n28591\n,\nFalse\n254\nFalse\nTrue\nDoubleQuotes\n1\n0\ncustomers_ai.csv\nFalse\nOutput\nCustomerID\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\customers_ai.csv\nV_String\nCustomerName\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\customers_ai.csv\nV_String\nRegion\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\customers_ai.csv\nV_String\nSegment\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\customers_ai.csv\nV_String\nJoinDate\n254\nFile: C:\\My_Project\\kavie\\alteryx_demo\\alteryx_complex_demo_suite\\data\\customers_ai.csv\nV_String\nAlteryxBasePluginsEngine.dll\nAlteryxDbFileInput",
+          "config": {}
+        },
+        {
+          "id": "14",
+          "plugin": "AlteryxBasePluginsGui.Join.Join",
+          "supported": true,
+          "expression": "CustomerID",
+          "configurationText": "14\nAlteryxBasePluginsGui.Join.Join\n162\n174\nFalse\nLeft\nCustomerID\nRight\nCustomerID\nJoin\nFalse\nFalse\nRight_CustomerID\nTrue\nRight_CustomerID\nRight_\n*Unknown\nTrue\n0\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxJoin",
+          "config": {}
+        },
+        {
+          "id": "15",
+          "plugin": "AlteryxBasePluginsGui.Formula.Formula",
+          "supported": true,
+          "expression": "ToNumber([MetricA]) - ToNumber([MetricB])",
+          "configurationText": "15\nAlteryxBasePluginsGui.Formula.Formula\n306\n210\nToNumber([MetricA]) - ToNumber([MetricB])\nProfit\n8\nDouble\ntrue\n0\nProfit = ToNumber([MetricA]) - ToNumber([MetricB])\nFalse\nAlteryxBasePluginsEngine.dll\nAlteryxFormula",
+          "config": {
+            "formulas": [
+              {
+                "field": "Profit",
+                "expression": "ToNumber([MetricA]) - ToNumber([MetricB])",
+                "type": "Double"
+              }
+            ]
+          }
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "16",
+          "to": "14",
+          "fromAnchor": "Output6",
+          "toAnchor": "Left"
+        },
+        {
+          "from": "13",
+          "to": "14",
+          "fromAnchor": "Output",
+          "toAnchor": "Right"
+        },
+        {
+          "from": "4",
+          "to": "16",
+          "fromAnchor": "Output",
+          "toAnchor": "Control"
+        },
+        {
+          "from": "4",
+          "to": "12",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "14",
+          "to": "15",
+          "fromAnchor": "Join",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "15",
+          "to": "6",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": false,
+      "macroDependencies": [
+        {
+          "toolId": "16",
+          "name": "category_batch_macro.yxmc",
+          "path": "Users/HP/Documents/category_batch_macro.yxmc",
+          "macroType": "Batch",
+          "controlParameter": "",
+          "iterationLimit": "",
+          "stopCondition": "",
+          "uploaded": true,
+          "matchedFile": "category_batch_macro.yxmc",
+          "status": "ready"
+        }
+      ],
+      "macroValidation": {
+        "referenced": 1,
+        "uploaded": 1,
+        "missing": 0,
+        "missingFiles": [],
+        "status": "ready",
+        "message": "All 1 referenced macro file(s) were uploaded."
+      }
+    }
+  ],
+  "rejected": []
+}

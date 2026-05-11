@@ -139,6 +139,18 @@ export async function publishAlteryxDbtToBigQuery(
   return data;
 }
 
+export async function fetchBigQueryTableMetadata(model: string): Promise<any> {
+  const params = new URLSearchParams({ model });
+  const res = await fetch(`${BASE_URL}/api/alteryx/bigquery/table-metadata?${params.toString()}`);
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.detail || `Failed to fetch BigQuery metadata (${res.status})`);
+  }
+
+  return data;
+}
+
 export async function fetchAlteryxBrdHtml(
   batchId: string,
   workflowId: string,
@@ -276,6 +288,30 @@ export async function downloadValidationReportPdf(payload: {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.detail || `Failed to generate PDF (${res.status})`);
+  }
+
+  return res.blob();
+}
+
+export async function downloadBigQueryValidationReportPdf(payload: {
+  app_name: string;
+  project_id: string;
+  dataset_id: string;
+  final_model: string;
+  migration_status: string;
+  tables_deployed?: number;
+  dbt_metrics?: Record<string, any>;
+  bigquery_metrics?: Record<string, any>;
+}): Promise<Blob> {
+  const res = await fetch(`${BASE_URL}/report/download-pdf-bigquery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Failed to generate BigQuery PDF (${res.status})`);
   }
 
   return res.blob();

@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 def _env(name: str, default: str = "") -> str:
@@ -151,6 +151,86 @@ def _create_bigquery_dataset(project_id: str, dataset: str, location: str, env: 
     return {"dataset": f"{project_id}.{dataset}", "created": created, "location": location}
 
 
+def fetch_bigquery_table_metadata(
+    project_id: str,
+    dataset: str,
+    table: str,
+    location: str = "",
+    env: Optional[dict[str, str]] = None,
+) -> dict[str, Any]:
+    """Read row and column counts from the published BigQuery object."""
+    try:
+        from google.cloud import bigquery
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "unavailable",
+            "project_id": project_id,
+            "dataset": dataset,
+            "table": table,
+            "message": "google-cloud-bigquery is not installed in the backend runtime.",
+            "error": str(exc),
+        }
+
+    credentials_path = (env or {}).get("GOOGLE_APPLICATION_CREDENTIALS")
+    if credentials_path:
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+
+    try:
+        service_account_json = (env or {}).get("GCP_SERVICE_ACCOUNT_JSON") or os.getenv("GCP_SERVICE_ACCOUNT_JSON")
+        if not credentials_path and service_account_json:
+            from google.oauth2 import service_account
+
+            credentials = service_account.Credentials.from_service_account_info(json.loads(service_account_json))
+            client = bigquery.Client(project=project_id, credentials=credentials)
+        else:
+            client = bigquery.Client(project=project_id)
+        table_id = f"{project_id}.{dataset}.{table}"
+        table_ref = client.get_table(table_id)
+        columns = [field.name for field in table_ref.schema]
+
+        count_sql = f"select count(1) as row_count from `{project_id}.{dataset}.{table}`"
+        job_config = bigquery.QueryJobConfig(use_legacy_sql=False)
+        count_job = client.query(
+            count_sql,
+            job_config=job_config,
+            location=location or None,
+        )
+        row_count = next(iter(count_job.result())).row_count
+        row_count = int(row_count or 0)
+        column_count = len(columns)
+
+        return {
+            "success": True,
+            "status": "available",
+            "project_id": project_id,
+            "dataset": dataset,
+            "table": table,
+            "final_model": table_id,
+            "row_count": row_count,
+            "total_rows": row_count,
+            "record_count": row_count,
+            "total_records": row_count,
+            "column_count": column_count,
+            "total_columns": column_count,
+            "available_columns": columns,
+            "table_type": getattr(table_ref, "table_type", None),
+            "num_rows_metadata": getattr(table_ref, "num_rows", None),
+            "source": "bigquery_count_query_and_table_schema",
+        }
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "failed",
+            "project_id": project_id,
+            "dataset": dataset,
+            "table": table,
+            "final_model": f"{project_id}.{dataset}.{table}",
+            "message": f"Failed to fetch BigQuery table metadata: {exc}",
+            "error": str(exc),
+        }
+
+
 def _run_dbt_command(command: list[str], cwd: Path, env: dict[str, str], timeout_seconds: int) -> dict[str, Any]:
     started = time.time()
     completed = subprocess.run(
@@ -183,7 +263,7 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     source_dataset = _env("GCP_BIGQUERY_SOURCE_DATASET", target_dataset)
     location = _env("GCP_BIGQUERY_LOCATION", "US")
     auth_method = _env("GCP_DBT_AUTH_METHOD", "oauth")
-    dbt_executable = _env("DBT_EXECUTABLE", "dbt")
+    dbt_executable = os.environ.get("DBT_EXECUTABLE") or shutil.which("dbt") or "dbt"
     threads = int(_env("DBT_THREADS", "4") or "4")
     timeout_seconds = int(_env("DBT_COMMAND_TIMEOUT_SECONDS", "600") or "600")
     project_name = str(project.get("project_name") or "alteryx_dbt_project")
@@ -247,6 +327,14 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
                     "message": message,
                 }
 
+        bigquery_metadata = fetch_bigquery_table_metadata(
+            project_id,
+            target_dataset,
+            project_name,
+            location,
+            run_env,
+        )
+
     return {
         "success": True,
         "status": "published",
@@ -261,5 +349,13 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
         "tool_count": tool_count,
         "connection_count": connection_count,
         "final_model": f"{project_id}.{target_dataset}.{project_name}",
+        "bigquery_metadata": bigquery_metadata,
+        "row_count": bigquery_metadata.get("row_count"),
+        "total_rows": bigquery_metadata.get("total_rows"),
+        "record_count": bigquery_metadata.get("record_count"),
+        "total_records": bigquery_metadata.get("total_records"),
+        "column_count": bigquery_metadata.get("column_count"),
+        "total_columns": bigquery_metadata.get("total_columns"),
+        "available_columns": bigquery_metadata.get("available_columns") or [],
         "message": "dbt project published to BigQuery successfully.",
     }
