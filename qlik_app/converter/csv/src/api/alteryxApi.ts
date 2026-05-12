@@ -1,3 +1,432 @@
+// const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
+// export interface AlteryxWorkflow {
+//   id: string;
+//   name: string;
+//   lastModifiedDate?: string;
+//   runCount?: number;
+//   credentialType?: string;
+//   workerTag?: string;
+//   sourceFile?: string;
+//   packageFile?: string | null;
+//   fileType?: string;
+//   toolCount?: number;
+//   connectionCount?: number;
+//   convertibility?: string;
+//   complexity?: string;
+//   supportedToolCount?: number;
+//   unsupportedToolCount?: number;
+//   toolTypes?: string[];
+//   unsupportedTools?: string[];
+//   recommendations?: string[];
+//   dataSources?: Array<Record<string, any>>;
+//   outputTargets?: Array<Record<string, any>>;
+//   workflowNodes?: Array<Record<string, any>>;
+//   workflowEdges?: Array<Record<string, any>>;
+//   isMacroDefinition?: boolean;
+//   macroDependencies?: Array<Record<string, any>>;
+//   macroValidation?: Record<string, any>;
+// }
+
+// export interface AlteryxBatch {
+//   batch_id: string;
+//   created_at?: number;
+//   summary: Record<string, any>;
+//   workflows: AlteryxWorkflow[];
+//   rejected: Array<{ file: string; reason: string }>;
+// }
+
+// export async function fetchUploadedAlteryxWorkflows(batchId: string): Promise<AlteryxWorkflow[]> {
+//   const res = await fetch(`${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows`);
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Failed to fetch uploaded workflows (${res.status})`);
+//   }
+
+//   return (data.workflows || []).map(normalizeWorkflow);
+// }
+
+// export async function fetchUploadedAlteryxWorkflow(
+//   batchId: string,
+//   workflowId: string
+// ): Promise<AlteryxWorkflow> {
+//   const res = await fetch(
+//     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}`
+//   );
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Failed to fetch workflow assessment (${res.status})`);
+//   }
+
+//   return normalizeWorkflow(data.workflow || data);
+// }
+
+// export async function fetchAlteryxWorkflowAnalysis(
+//   batchId: string,
+//   workflowId: string,
+//   sharePointUrl = "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx",
+//   fileName = "sales_data_1M.csv"
+// ): Promise<any> {
+//   const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+//   const res = await fetch(
+//     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/analysis?${params.toString()}`
+//   );
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Failed to analyze workflow (${res.status})`);
+//   }
+
+//   return data;
+// }
+
+// export async function fetchAlteryxWorkflowMQuery(
+//   batchId: string,
+//   workflowId: string,
+//   sharePointUrl = "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx",
+//   fileName = "sales_data_1M.csv"
+// ): Promise<any> {
+//   const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+//   const res = await fetch(
+//     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/mquery?${params.toString()}`
+//   );
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Failed to generate M Query (${res.status})`);
+//   }
+
+//   return data;
+// }
+
+// export async function downloadAlteryxDbtProject(
+//   batchId: string,
+//   workflowId: string,
+//   sharePointUrl = "",
+//   fileName = ""
+// ): Promise<Blob> {
+//   const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+//   const res = await fetch(
+//     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/dbt.zip?${params.toString()}`
+//   );
+
+//   if (!res.ok) {
+//     const text = await res.text().catch(() => "");
+//     throw new Error(text || `Failed to download dbt project (${res.status})`);
+//   }
+
+//   return res.blob();
+// }
+
+// async function downloadAlteryxArtifact(
+//   batchId: string,
+//   workflowId: string,
+//   artifact: "dataform" | "python",
+//   sharePointUrl = "",
+//   fileName = ""
+// ): Promise<Blob> {
+//   const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+//   const res = await fetch(
+//     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/${artifact}.zip?${params.toString()}`
+//   );
+
+//   if (!res.ok) {
+//     const text = await res.text().catch(() => "");
+//     throw new Error(text || `Failed to download ${artifact} project (${res.status})`);
+//   }
+
+//   return res.blob();
+// }
+
+// export async function downloadAlteryxDataformProject(
+//   batchId: string,
+//   workflowId: string,
+//   sharePointUrl = "",
+//   fileName = ""
+// ): Promise<Blob> {
+//   return downloadAlteryxArtifact(batchId, workflowId, "dataform", sharePointUrl, fileName);
+// }
+
+// export async function downloadAlteryxPythonProject(
+//   batchId: string,
+//   workflowId: string,
+//   sharePointUrl = "",
+//   fileName = ""
+// ): Promise<Blob> {
+//   return downloadAlteryxArtifact(batchId, workflowId, "python", sharePointUrl, fileName);
+// }
+
+// export async function publishAlteryxDbtToBigQuery(
+//   batchId: string,
+//   workflowId: string,
+//   sharePointUrl = "",
+//   fileName = ""
+// ): Promise<any> {
+//   const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+//   const res = await fetch(
+//     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/dbt/publish-bigquery?${params.toString()}`,
+//     { method: "POST" }
+//   );
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Failed to publish dbt project to BigQuery (${res.status})`);
+//   }
+
+//   return data;
+// }
+
+// export async function publishAlteryxDataformToBigQuery(
+//   batchId: string,
+//   workflowId: string,
+//   sharePointUrl = "",
+//   fileName = ""
+// ): Promise<any> {
+//   const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+//   const res = await fetch(
+//     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/dataform/publish-bigquery?${params.toString()}`,
+//     { method: "POST" }
+//   );
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Failed to publish Dataform project to BigQuery (${res.status})`);
+//   }
+
+//   return data;
+// }
+
+// export async function publishAlteryxDataformToRepository(
+//   batchId: string,
+//   workflowId: string,
+//   sharePointUrl = "",
+//   fileName = ""
+// ): Promise<any> {
+//   const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+//   const res = await fetch(
+//     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/dataform/publish-repository?${params.toString()}`,
+//     { method: "POST" }
+//   );
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Failed to publish Dataform project to repository (${res.status})`);
+//   }
+
+//   return data;
+// }
+
+// export async function fetchAlteryxBrdHtml(
+//   batchId: string,
+//   workflowId: string,
+//   sharePointUrl = "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx",
+//   fileName = "sales_data_1M.csv"
+// ): Promise<string> {
+//   const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+//   const res = await fetch(
+//     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/brd?${params.toString()}`
+//   );
+//   const text = await res.text();
+
+//   if (!res.ok) {
+//     throw new Error(text || `Failed to generate BRD (${res.status})`);
+//   }
+
+//   return text;
+// }
+
+// export async function publishAlteryxMQuery(payload: {
+//   dataset_name: string;
+//   combined_mquery: string;
+//   data_source_path?: string;
+//   sharepoint_url?: string;
+//   access_token?: string;
+//   // FIX: source_fields_map from convert_workflow_to_m — maps _raw table name
+//   // to its field list so the BIM builder can emit real column definitions for
+//   // CSV source tables that carry no field schema in the Alteryx workflow JSON.
+//   alteryx_source_fields?: Record<string, Array<{ name: string; type?: string }>>;
+// }): Promise<any> {
+//   const res = await fetch(`${BASE_URL}/api/migration/publish-mquery`, {
+//     method: "POST",
+//     headers: { "Content-Type": "application/json" },
+//     body: JSON.stringify({
+//       dataset_name: payload.dataset_name,
+//       combined_mquery: payload.combined_mquery,
+//       data_source_path: payload.data_source_path || payload.sharepoint_url || "",
+//       sharepoint_url: payload.sharepoint_url || "",
+//       access_token: payload.access_token || sessionStorage.getItem("powerbi_access_token") || "",
+//       qlik_fields_map: {},
+//       app_id: "",
+//       alteryx_source_fields: payload.alteryx_source_fields || {},
+//     }),
+//   });
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Power BI publish failed (${res.status})`);
+//   }
+
+//   return {
+//     ...data,
+//     api_endpoint: `${BASE_URL}/api/migration/publish-mquery`,
+//   };
+// }
+
+// export async function validatePowerBiMigration(payload: {
+//   dataset_id: string;
+//   table_name: string;
+//   workspace_id?: string;
+//   numeric_columns?: string[];
+//   expected_row_count?: number | null;
+//   expected_totals?: Record<string, number>;
+// }): Promise<any> {
+//   const res = await fetch(`${BASE_URL}/api/migration/validate-powerbi`, {
+//     method: "POST",
+//     headers: { "Content-Type": "application/json" },
+//     body: JSON.stringify({
+//       dataset_id: payload.dataset_id,
+//       table_name: payload.table_name,
+//       workspace_id: payload.workspace_id || sessionStorage.getItem("alteryx_workspace_id") || "",
+//       numeric_columns: payload.numeric_columns || [],
+//       expected_row_count: payload.expected_row_count ?? null,
+//       expected_totals: payload.expected_totals || {},
+//     }),
+//   });
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Power BI validation failed (${res.status})`);
+//   }
+
+//   return data;
+// }
+
+// export async function validateAlteryxPowerBiRecordCounts(payload: {
+//   batch_id: string;
+//   workflow_id: string;
+//   dataset_id: string;
+//   table_name: string;
+//   workspace_id?: string;
+//   numeric_columns?: string[];
+//   expected_row_count?: number | null;
+// }): Promise<any> {
+//   const res = await fetch(
+//     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(payload.batch_id)}/workflows/${encodeURIComponent(payload.workflow_id)}/record-count-validation`,
+//     {
+//       method: "POST",
+//       headers: { "Content-Type": "application/json" },
+//       body: JSON.stringify({
+//         dataset_id: payload.dataset_id,
+//         table_name: payload.table_name,
+//         workspace_id: payload.workspace_id || "",
+//         numeric_columns: payload.numeric_columns || [],
+//         expected_row_count: payload.expected_row_count ?? null,
+//       }),
+//     }
+//   );
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Record count validation failed (${res.status})`);
+//   }
+
+//   return data;
+// }
+
+// export async function downloadValidationReportPdf(payload: {
+//   table_name: string;
+//   app_name: string;
+//   migration_status: string;
+//   publishing_method?: string;
+//   tables_deployed?: number;
+//   qlik_metrics: Record<string, any>;
+//   powerbi_metrics: Record<string, any>;
+// }): Promise<Blob> {
+//   const res = await fetch(`${BASE_URL}/report/download-pdf`, {
+//     method: "POST",
+//     headers: { "Content-Type": "application/json" },
+//     body: JSON.stringify(payload),
+//   });
+
+//   if (!res.ok) {
+//     const data = await res.json().catch(() => ({}));
+//     throw new Error(data.detail || `Failed to generate PDF (${res.status})`);
+//   }
+
+//   return res.blob();
+// }
+
+// export async function fetchAlteryxWorkflows(workspaceId: string, accessToken: string): Promise<AlteryxWorkflow[]> {
+//   const workspaceName = sessionStorage.getItem("alteryx_workspace_name");
+//   const alteryxUsername = sessionStorage.getItem("alteryx_username");
+//   const storedRefreshToken = sessionStorage.getItem("alteryx_refresh_token");
+//   const headers: Record<string, string> = {
+//     Authorization: `Bearer ${accessToken}`,
+//     "Content-Type": "application/json",
+//   };
+
+//   if (storedRefreshToken) headers["X-Alteryx-Refresh-Token"] = storedRefreshToken;
+//   if (alteryxUsername) headers["X-Alteryx-Username"] = alteryxUsername;
+
+//   const res = await fetch(
+//     `${BASE_URL}/api/alteryx/workflows?workspace_id=${encodeURIComponent(workspaceId)}${
+//       workspaceName ? `&workspace_name=${encodeURIComponent(workspaceName)}` : ""
+//     }`,
+//     { headers }
+//   );
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Failed to fetch workflows (${res.status})`);
+//   }
+
+//   const refreshedAccessToken = res.headers.get("X-Alteryx-Access-Token");
+//   if (refreshedAccessToken) sessionStorage.setItem("alteryx_access_token", refreshedAccessToken);
+
+//   const rotatedRefreshToken = res.headers.get("X-Alteryx-Refresh-Token");
+//   if (rotatedRefreshToken) sessionStorage.setItem("alteryx_refresh_token", rotatedRefreshToken);
+
+//   return (data.workflows || []).map(normalizeWorkflow);
+// }
+
+// export async function materializeCloudAlteryxWorkflow(payload: {
+//   workflow_id: string;
+//   workflow_name?: string;
+//   workspace_id?: string;
+//   workspace_name?: string;
+// }): Promise<any> {
+//   const res = await fetch(`${BASE_URL}/api/alteryx/workflows/materialize`, {
+//     method: "POST",
+//     headers: { "Content-Type": "application/json" },
+//     body: JSON.stringify(payload),
+//   });
+//   const data = await res.json().catch(() => ({}));
+
+//   if (!res.ok) {
+//     throw new Error(data.detail || `Failed to download workflow package (${res.status})`);
+//   }
+
+//   return data;
+// }
+
+// export function normalizeWorkflow(workflow: any): AlteryxWorkflow {
+//   return {
+//     ...workflow,
+//     id: String(workflow?.id || workflow?.workflowId || workflow?.assetId || workflow?.name || ""),
+//     name: String(workflow?.name || workflow?.workflowName || workflow?.title || "Untitled workflow"),
+//     lastModifiedDate: workflow?.lastModifiedDate || workflow?.updatedAt || workflow?.modifiedAt,
+//     runCount: workflow?.runCount ?? workflow?.toolCount,
+//     credentialType: workflow?.credentialType ?? workflow?.convertibility,
+//     workerTag: workflow?.workerTag ?? workflow?.complexity,
+//   };
+// }
+
+
+
+
+
 const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 export interface AlteryxWorkflow {
@@ -243,9 +672,6 @@ export async function publishAlteryxMQuery(payload: {
   data_source_path?: string;
   sharepoint_url?: string;
   access_token?: string;
-  // FIX: source_fields_map from convert_workflow_to_m — maps _raw table name
-  // to its field list so the BIM builder can emit real column definitions for
-  // CSV source tables that carry no field schema in the Alteryx workflow JSON.
   alteryx_source_fields?: Record<string, Array<{ name: string; type?: string }>>;
 }): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/migration/publish-mquery`, {
@@ -421,4 +847,88 @@ export function normalizeWorkflow(workflow: any): AlteryxWorkflow {
     credentialType: workflow?.credentialType ?? workflow?.convertibility,
     workerTag: workflow?.workerTag ?? workflow?.complexity,
   };
+}
+
+// ─── BigQuery helpers (added for dev51 merge) ────────────────────────────────
+
+/**
+ * Fetches row count, column count, and available columns for a BigQuery table.
+ * The model string must be in "project.dataset.table" format.
+ * Returns a best-effort metadata object; never throws on a 404 — returns nulls instead.
+ */
+export async function fetchBigQueryTableMetadata(finalModel: string): Promise<{
+  row_count: number | null;
+  total_rows: number | null;
+  record_count: number | null;
+  total_records: number | null;
+  column_count: number | null;
+  total_columns: number | null;
+  available_columns: string[];
+}> {
+  const empty = {
+    row_count: null,
+    total_rows: null,
+    record_count: null,
+    total_records: null,
+    column_count: null,
+    total_columns: null,
+    available_columns: [] as string[],
+  };
+
+  if (!finalModel) return empty;
+
+  try {
+    const params = new URLSearchParams({ model: finalModel });
+    const res = await fetch(`${BASE_URL}/api/bigquery/table-metadata?${params.toString()}`);
+
+    // Treat 404 / 422 as "not yet available" rather than a hard error
+    if (res.status === 404 || res.status === 422) return empty;
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return empty;
+
+    const rowCount =
+      data.row_count ?? data.total_rows ?? data.record_count ?? data.total_records ?? null;
+    const colCount =
+      data.column_count ?? data.total_columns ?? data.available_columns?.length ?? null;
+
+    return {
+      row_count: rowCount,
+      total_rows: rowCount,
+      record_count: rowCount,
+      total_records: rowCount,
+      column_count: colCount,
+      total_columns: colCount,
+      available_columns: Array.isArray(data.available_columns) ? data.available_columns : [],
+    };
+  } catch {
+    return empty;
+  }
+}
+
+/**
+ * Downloads a BigQuery-specific validation & reconciliation PDF report.
+ */
+export async function downloadBigQueryValidationReportPdf(payload: {
+  app_name: string;
+  project_id: string;
+  dataset_id: string;
+  final_model: string;
+  migration_status: string;
+  tables_deployed?: number;
+  dbt_metrics?: Record<string, any>;
+  bigquery_metrics?: Record<string, any>;
+}): Promise<Blob> {
+  const res = await fetch(`${BASE_URL}/report/bigquery-validation-pdf`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Failed to generate BigQuery PDF report (${res.status})`);
+  }
+
+  return res.blob();
 }

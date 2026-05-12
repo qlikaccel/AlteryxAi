@@ -179,7 +179,7 @@ export default function PublishPage() {
   const validationTableName = publishResult?.dataset_name || datasetName;
   const finalValidationTableName = publishResult?.final_table_name || validationTableName;
   const publishedTables = publishResult?.published_tables || [];
-  const deployedTables = publishedTables.length || publishResult?.tables_deployed ?? 1;
+  const deployedTables = publishedTables.length || (publishResult?.tables_deployed ?? 1);
 
   const columnCount =
     publishResult?.available_columns?.length ||
