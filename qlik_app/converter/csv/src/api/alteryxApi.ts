@@ -925,6 +925,18 @@ export async function downloadBigQueryValidationReportPdf(payload: {
     body: JSON.stringify(payload),
   });
 
+  if (res.status === 404 || res.status === 405) {
+    return downloadValidationReportPdf({
+      table_name: payload.final_model || payload.dataset_id || "BigQuery model",
+      app_name: payload.app_name,
+      migration_status: payload.migration_status,
+      publishing_method: "BIGQUERY",
+      tables_deployed: payload.tables_deployed,
+      qlik_metrics: payload.dbt_metrics || {},
+      powerbi_metrics: payload.bigquery_metrics || {},
+    });
+  }
+
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.detail || `Failed to generate BigQuery PDF report (${res.status})`);
