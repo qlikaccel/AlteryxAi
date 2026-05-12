@@ -2389,7 +2389,7 @@ navigate("/publish", {
                     <h3 id="source-download-title">Download</h3>
                     <div className="source-option-list">
                       {[
-                        { id: "mquery" as DownloadTarget, label: "mQuery" },
+                        { id: "mquery" as DownloadTarget, label: "MQuery" },
                         { id: "dbt" as DownloadTarget, label: "DBT" },
                         { id: "python" as DownloadTarget, label: "Python Query" },
                       ].map((option) => {
@@ -2489,7 +2489,7 @@ navigate("/publish", {
                   </section>
                 </div>
 
-                <div className="source-mquery-actions">
+                {/* <div className="source-mquery-actions">
                   <div className="source-split-action">
                     <button
                       className="source-split-main source-split-download"
@@ -2581,7 +2581,7 @@ navigate("/publish", {
                       </div>
                     )}
                   </div>
-                </div>
+                </div> */}
               </section>
             )}
           </>
