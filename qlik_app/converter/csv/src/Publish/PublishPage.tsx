@@ -1,3 +1,5 @@
+
+
 import "./PublishPage.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
@@ -228,6 +230,19 @@ export default function PublishPage() {
       return null;
     }
   });
+
+  const [workflow] = useState<any>(() => {
+    const raw = sessionStorage.getItem("alteryx_selected_workflow");
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  });
+
+  const outputTargets = workflow?.outputTargets || [];
+
   const recordValidationRequestedRef = useRef(false);
   const bigQueryAlteryxRecordCountRequestedRef = useRef(false);
   const powerBiWorkspaceUrl =
@@ -536,6 +551,19 @@ export default function PublishPage() {
     try {
       if (isBigQueryPublish) {
         // BigQuery-specific validation report (from dev52)
+        const commandsSucceeded = publishResult?.commands?.filter((command: any) => command.success).length ?? 0;
+        const totalCommands = publishResult?.commands?.length ?? 0;
+
+        // Compute variance values for the metrics comparison table in the PDF
+        const columnVariance =
+          bigQueryColumnCount !== null && columnCount !== null
+            ? bigQueryColumnCount - columnCount
+            : null;
+        const recordVariance =
+          bigQueryRowCount !== null && bigQueryAlteryxRecordCount !== null
+            ? bigQueryRowCount - bigQueryAlteryxRecordCount
+            : null;
+
         const pdfBlob = await downloadBigQueryValidationReportPdf({
           app_name: workflowName,
           project_id: bigQueryTarget.project,
@@ -543,15 +571,28 @@ export default function PublishPage() {
           final_model: bigQueryFinalModel,
           migration_status: publishResult?.success ? "Certified" : "Failed",
           tables_deployed: deployedTables,
+          // Alteryx-side metrics (used for the left column in the comparison table)
           dbt_metrics: {
             tool_count: totalToolsUsed,
+            table_count: deployedTables,
+            column_count: columnCount,
+            total_records: bigQueryAlteryxRecordCount,
+            record_count: bigQueryAlteryxRecordCount,
+            row_count: bigQueryAlteryxRecordCount,
+            commands_succeeded: commandsSucceeded,
+            total_commands: totalCommands,
           },
+          // BigQuery-side metrics (used for the right column in the comparison table)
           bigquery_metrics: {
-            commands_succeeded: publishResult?.commands?.filter((command: any) => command.success).length || 0,
-            total_commands: publishResult?.commands?.length || 0,
-            row_count: bigQueryRowCount,
+            commands_succeeded: commandsSucceeded,
+            total_commands: totalCommands,
+            table_count: deployedTables,
             column_count: bigQueryColumnCount,
+            column_variance: columnVariance,
+            row_count: bigQueryRowCount,
             total_records: bigQueryRecordCount,
+            record_count: bigQueryRecordCount,
+            record_variance: recordVariance,
           },
         });
 
@@ -559,8 +600,10 @@ export default function PublishPage() {
         const anchor = document.createElement("a");
         anchor.href = url;
         anchor.download = `BigQuery_Validation_Report_${safeFileName(datasetName)}_${new Date().toISOString().slice(0, 10)}.pdf`;
+        document.body.appendChild(anchor);
         anchor.click();
-        URL.revokeObjectURL(url);
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
         setReportStatus("Report downloaded");
         window.setTimeout(() => setReportStatus(""), 1800);
       } else {
@@ -632,8 +675,10 @@ export default function PublishPage() {
         const anchor = document.createElement("a");
         anchor.href = url;
         anchor.download = `Validation_Reconciliation_Report_${safeFileName(datasetName)}_${new Date().toISOString().slice(0, 10)}.pdf`;
+        document.body.appendChild(anchor);
         anchor.click();
-        URL.revokeObjectURL(url);
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
         setReportStatus("Report downloaded");
         window.setTimeout(() => setReportStatus(""), 1800);
       }
@@ -698,6 +743,35 @@ export default function PublishPage() {
             </div>
           </div>
         </section>
+
+        {outputTargets.length > 0 && (
+          <section className="wire-card detected-outputs-card">
+            <div className="wire-card-header">
+              <h2>Detected Alteryx Outputs</h2>
+            </div>
+            <div className="macro-validation-header">
+              <strong>{outputTargets.length} output file{outputTargets.length === 1 ? "" : "s"}</strong>
+            </div>
+            <table className="macro-validation-table">
+              <thead>
+                <tr>
+                  <th>Output</th>
+                  <th>Type</th>
+                  <th>Tool</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outputTargets.map((output: any, index: number) => (
+                  <tr key={`${output.toolId || index}-${output.path || output.name}`}>
+                    <td>{output.name || output.path}</td>
+                    <td>{output.type || "output"}</td>
+                    <td>{output.toolId ? `Tool ${output.toolId}` : output.tool || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
 
         <section className="wire-card publish-summary-card">
           <div className="publish-summary-heading">
@@ -852,6 +926,7 @@ export default function PublishPage() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
                 <span>Validation & Reconciliation</span>
                 <button
+                  type="button"
                   className="validation-download-btn"
                   onClick={downloadValidationReport}
                   title="Download validation and reconciliation report"
