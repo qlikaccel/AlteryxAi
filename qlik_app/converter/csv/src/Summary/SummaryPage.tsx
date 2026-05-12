@@ -26,8 +26,8 @@ const DEFAULT_FILE_NAME = sessionStorage.getItem("alteryx_file_name") || "";
 
 type SummaryTab = "sourceTypes" | "summary" | "brd" | "diagram";
 type SourceType = "database" | "scripts";
-type DownloadTarget = "mquery" | "dbt" | "python";
-type PublishTarget = "dbt" | "powerbi" | "python";
+type DownloadTarget = "mquery" | "dbt" | "python" | "dataform" | "pythonscripts";
+type PublishTarget = "dbt" | "powerbi" | "python" | "dataformbq" | "dataformgcp";
 
 // ─── Tab Config ───────────────────────────────────────────────────────────────
 
@@ -383,8 +383,6 @@ export default function SummaryPage() {
   const [mqueryCopied, setMqueryCopied] = useState(false);
   const [selectedDownloadTarget, setSelectedDownloadTarget] = useState<DownloadTarget>("mquery");
   const [selectedPublishTarget, setSelectedPublishTarget] = useState<PublishTarget>("dbt");
-  const [openActionMenu, setOpenActionMenu] = useState<"download" | "publish" | null>(null);
-  const selectedDownloadTargetRef = useRef<DownloadTarget>("mquery");
   const sourceMQueryPanelRef = useRef<HTMLElement | null>(null);
 
   // ─── Data fetch (dev12 backend logic) ──────────────────────────────────────
@@ -663,7 +661,10 @@ navigate("/publish", {
     URL.revokeObjectURL(url);
   };
 
-  const downloadDbtProject = async () => {
+  // New handler function names for the UI
+  const downloadMQuery = downloadSourceMQuery;
+
+  const downloadDBT = async () => {
     if (!batchId || !workflowId) {
       setError("No uploaded Alteryx workflow batch is available for dbt export.");
       return;
@@ -688,20 +689,22 @@ navigate("/publish", {
     }
   };
 
+  const downloadDataform = async () => {
+    await downloadProjectArtifact("dataform");
+  };
+
+  const downloadPythonScripts = async () => {
+    await downloadProjectArtifact("python");
+  };
+
   const handlePythonQueryUnavailable = () => {
     setError("Python Query is not available for this workflow yet.");
-    setOpenActionMenu(null);
   };
 
   const downloadPythonQuery = () => {
     handlePythonQueryUnavailable();
   };
 
-  const selectDownloadTarget = (target: DownloadTarget) => {
-    selectedDownloadTargetRef.current = target;
-    setSelectedDownloadTarget(target);
-    setOpenActionMenu(null);
-  };
 
   const downloadProjectArtifact = async (artifact: "dataform" | "python") => {
     if (!batchId || !workflowId) {
@@ -856,37 +859,63 @@ navigate("/publish", {
     }
   };
 
+  // New handler function names for the UI
+  const publishDBTtoBigQuery = publishDbtToBigQuery;
+  
+  const publishToPowerBI = publishSourceMQuery;
+  
+  const publishDataformToGCPRepo = publishDataformToRepository;
+
   const runDownloadTarget = (target: DownloadTarget) => {
-    selectedDownloadTargetRef.current = target;
     setSelectedDownloadTarget(target);
-    setOpenActionMenu(null);
     if (target === "mquery") {
-      downloadSourceMQuery();
+      downloadMQuery();
       return;
     }
     if (target === "dbt") {
-      downloadDbtProject();
+      downloadDBT();
       return;
     }
-    downloadPythonQuery();
+    if (target === "dataform") {
+      downloadDataform();
+      return;
+    }
+    if (target === "pythonscripts") {
+      downloadPythonScripts();
+      return;
+    }
+    if (target === "python") {
+      downloadPythonQuery();
+      return;
+    }
   };
 
   const runSelectedDownload = () => {
-    runDownloadTarget(selectedDownloadTargetRef.current);
+    runDownloadTarget(selectedDownloadTarget);
   };
 
   const runPublishTarget = (target: PublishTarget) => {
     setSelectedPublishTarget(target);
-    setOpenActionMenu(null);
     if (target === "dbt") {
-      publishDbtToBigQuery();
+      publishDBTtoBigQuery();
       return;
     }
     if (target === "powerbi") {
-      publishSourceMQuery();
+      publishToPowerBI();
       return;
     }
-    handlePythonQueryUnavailable();
+    if (target === "dataformbq") {
+      publishDataformToBigQuery();
+      return;
+    }
+    if (target === "dataformgcp") {
+      publishDataformToGCPRepo();
+      return;
+    }
+    if (target === "python") {
+      handlePythonQueryUnavailable();
+      return;
+    }
   };
 
   const runSelectedPublish = () => {
@@ -898,14 +927,22 @@ navigate("/publish", {
       ? !mqueryPreview
       : selectedDownloadTarget === "dbt"
         ? !batchId || !workflowId
-        : false;
+        : selectedDownloadTarget === "dataform"
+          ? !batchId || !workflowId
+          : selectedDownloadTarget === "pythonscripts"
+            ? !batchId || !workflowId
+            : false;
 
   const selectedPublishDisabled =
     selectedPublishTarget === "dbt"
       ? !batchId || !workflowId || dbtPublishing
       : selectedPublishTarget === "powerbi"
         ? !mqueryPreview || publishing || dbtPublishing
-        : true;
+        : selectedPublishTarget === "dataformbq"
+          ? !batchId || !workflowId || dataformPublishing || dbtPublishing
+          : selectedPublishTarget === "dataformgcp"
+            ? !batchId || !workflowId || dataformRepoPublishing || dbtPublishing
+            : true;
 
   const downloadWorkflowDiagram = () => {
     const nodes = workflow?.workflowNodes || [];
@@ -1436,14 +1473,10 @@ navigate("/publish", {
                         { id: "mquery" as DownloadTarget, label: "mQuery" },
                         { id: "dbt" as DownloadTarget, label: "DBT" },
                         { id: "python" as DownloadTarget, label: "Python Query" },
+                        { id: "dataform" as DownloadTarget, label: "Dataform Project" },
+                        { id: "pythonscripts" as DownloadTarget, label: "Python Scripts" },
                       ].map((option) => {
                         const isSelected = selectedDownloadTarget === option.id;
-                        const isDownloadDisabled =
-                          option.id === "mquery"
-                            ? !mqueryPreview
-                            : option.id === "dbt"
-                              ? !batchId || !workflowId
-                              : false;
 
                         return (
                           <label className="source-download-option" key={option.id}>
@@ -1452,41 +1485,23 @@ navigate("/publish", {
                                 type="radio"
                                 name="source-download-option"
                                 checked={isSelected}
-                                onChange={() => selectDownloadTarget(option.id)}
+                                onChange={() => setSelectedDownloadTarget(option.id)}
                               />
                               <span>{option.label}</span>
                             </span>
-                            {isSelected && (
-                              <button
-                                className="source-inline-download-btn"
-                                type="button"
-                                onClick={() => runDownloadTarget(option.id)}
-                                disabled={isDownloadDisabled}
-                                aria-label={`Download ${option.label}`}
-                                title={`Download ${option.label}`}
-                              >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  width="16"
-                                  height="16"
-                                  aria-hidden="true"
-                                  focusable="false"
-                                >
-                                  <path
-                                    d="M12 3v11m0 0 4-4m-4 4-4-4M5 20h14"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth="2"
-                                  />
-                                </svg>
-                              </button>
-                            )}
                           </label>
                         );
                       })}
                     </div>
+                    <button
+                      className="source-box-action-button source-download-button"
+                      type="button"
+                      onClick={runSelectedDownload}
+                      disabled={selectedDownloadDisabled}
+                      aria-label={`Download ${selectedDownloadTarget}`}
+                    >
+                      Download
+                    </button>
                   </section>
 
                   <section className="source-environment-box" aria-labelledby="source-publish-title">
@@ -1496,14 +1511,10 @@ navigate("/publish", {
                         { id: "dbt" as PublishTarget, label: "DBT to BigQuery" },
                         { id: "powerbi" as PublishTarget, label: "Power BI" },
                         { id: "python" as PublishTarget, label: "Python Query" },
+                        { id: "dataformbq" as PublishTarget, label: "Dataform to BigQuery" },
+                        { id: "dataformgcp" as PublishTarget, label: "Dataform to GCP Repo" },
                       ].map((option) => {
                         const isSelected = selectedPublishTarget === option.id;
-                        const isPublishDisabled =
-                          option.id === "dbt"
-                            ? !batchId || !workflowId || dbtPublishing
-                            : option.id === "powerbi"
-                              ? !mqueryPreview || publishing || dbtPublishing
-                              : false;
 
                         return (
                           <label className="source-publish-option" key={option.id}>
@@ -1516,172 +1527,20 @@ navigate("/publish", {
                               />
                               <span>{option.label}</span>
                             </span>
-                            {isSelected && (
-                              <button
-                                className="source-inline-publish-btn"
-                                type="button"
-                                onClick={() => runPublishTarget(option.id)}
-                                disabled={isPublishDisabled}
-                              >
-                                Publish
-                              </button>
-                            )}
                           </label>
                         );
                       })}
                     </div>
-                  </section>
-                </div>
-
-                <div className="source-mquery-actions">
-                  <div className="source-split-action">
                     <button
-                      className="source-split-main source-split-download"
-                      type="button"
-                      onClick={runSelectedDownload}
-                      disabled={selectedDownloadDisabled}
-                      aria-label={`Download ${selectedDownloadTarget === "mquery" ? "M Query" : selectedDownloadTarget === "dbt" ? "dbt Project" : "Python Query"}`}
-                    >
-                      <span aria-hidden="true">Download</span>
-                    </button>
-                    <button
-                      className="source-split-toggle source-split-download"
-                      type="button"
-                      onClick={() => setOpenActionMenu(openActionMenu === "download" ? null : "download")}
-                      aria-label="Choose download type"
-                      aria-expanded={openActionMenu === "download"}
-                    >
-                      ▾
-                    </button>
-                    {openActionMenu === "download" && (
-                      <div className="source-split-menu">
-                        <button
-                          type="button"
-                          className={selectedDownloadTarget === "mquery" ? "selected" : ""}
-                          onClick={() => selectDownloadTarget("mquery")}
-                        >
-                          M Query
-                        </button>
-                        <button
-                          type="button"
-                          className={selectedDownloadTarget === "dbt" ? "selected" : ""}
-                          onClick={() => selectDownloadTarget("dbt")}
-                        >
-                          dbt Project
-                        </button>
-                        <button
-                          type="button"
-                          className={selectedDownloadTarget === "python" ? "selected" : ""}
-                          onClick={() => selectDownloadTarget("python")}
-                        >
-                          Python Query
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="source-split-action">
-                    <button
-                      className="source-split-main source-split-publish"
+                      className="source-box-action-button source-publish-button"
                       type="button"
                       onClick={runSelectedPublish}
                       disabled={selectedPublishDisabled}
+                      aria-label={`Publish ${selectedPublishTarget}`}
                     >
                       Publish
                     </button>
-                    <button
-                      className="source-split-toggle source-split-publish"
-                      type="button"
-                      onClick={() => setOpenActionMenu(openActionMenu === "publish" ? null : "publish")}
-                      aria-label="Choose publish type"
-                      aria-expanded={openActionMenu === "publish"}
-                    >
-                      ▾
-                    </button>
-                    {openActionMenu === "publish" && (
-                      <div className="source-split-menu">
-                        <button
-                          type="button"
-                          className={selectedPublishTarget === "dbt" ? "selected" : ""}
-                          onClick={() => {
-                            setSelectedPublishTarget("dbt");
-                            setOpenActionMenu(null);
-                          }}
-                        >
-                          dbt to BigQuery
-                        </button>
-                        <button
-                          type="button"
-                          className={selectedPublishTarget === "powerbi" ? "selected" : ""}
-                          onClick={() => {
-                            setSelectedPublishTarget("powerbi");
-                            setOpenActionMenu(null);
-                          }}
-                        >
-                          Power BI
-                        </button>
-                        <button type="button" disabled>
-                          Python Query
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="source-mquery-actions">
-                  <button
-                    className="source-mquery-download"
-                    onClick={downloadSourceMQuery}
-                    disabled={!mqueryPreview}
-                  >
-                    Download M Query
-                  </button>
-                  <button
-                    className="source-mquery-download"
-                    onClick={downloadDbtProject}
-                    disabled={!batchId || !workflowId}
-                  >
-                    Download dbt Project
-                  </button>
-                  <button
-                    className="source-mquery-download"
-                    onClick={() => downloadProjectArtifact("dataform")}
-                    disabled={!batchId || !workflowId}
-                  >
-                    Download Dataform Project
-                  </button>
-                  <button
-                    className="source-mquery-download"
-                    onClick={() => downloadProjectArtifact("python")}
-                    disabled={!batchId || !workflowId}
-                  >
-                    Download Python Scripts
-                  </button>
-                  <button
-                    className="source-mquery-download"
-                    onClick={publishDbtToBigQuery}
-                    disabled={!batchId || !workflowId || dbtPublishing || dataformPublishing || dataformRepoPublishing}
-                  >
-                    {dbtPublishing ? "Publishing dbt..." : "Publish dbt to BigQuery"}
-                  </button>
-                  <button
-                    className="source-mquery-download"
-                    onClick={publishDataformToBigQuery}
-                    disabled={!batchId || !workflowId || dbtPublishing || dataformPublishing || dataformRepoPublishing}
-                  >
-                    {dataformPublishing ? "Publishing Dataform..." : "Publish Dataform to BigQuery"}
-                  </button>
-                  <button
-                    className="source-mquery-download"
-                    onClick={publishDataformToRepository}
-                    disabled={!batchId || !workflowId || dbtPublishing || dataformPublishing || dataformRepoPublishing}
-                  >
-                    {dataformRepoPublishing ? "Publishing to Dataform Repo..." : "Publish Dataform to GCP Repo"}
-                  </button>
-                  {/* <button onClick={publishSourceMQuery} disabled={!mqueryPreview}>
-                    Publish to Power BI
-                  </button> */}
-                  <button onClick={publishSourceMQuery} disabled={!mqueryPreview || publishing || dbtPublishing || dataformPublishing || dataformRepoPublishing}>
-                    {publishing ? "Publishing..." : "Publish to Power BI"}
-                  </button>
+                  </section>
                 </div>
                 {dbtPublishResult && (
                   <div className={`dbt-publish-result ${dbtPublishResult.success ? "success" : "failed"}`}>

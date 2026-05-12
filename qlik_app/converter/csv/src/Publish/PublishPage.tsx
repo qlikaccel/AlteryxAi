@@ -221,7 +221,7 @@ export default function PublishPage() {
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw);
-      return validationMatchesPublish(parsed, publishResult, finalValidationTableName)
+      return isBigQueryPublish || validationMatchesPublish(parsed, publishResult, finalValidationTableName)
         ? parsed
         : null;
     } catch {
@@ -229,6 +229,7 @@ export default function PublishPage() {
     }
   });
   const recordValidationRequestedRef = useRef(false);
+  const bigQueryAlteryxRecordCountRequestedRef = useRef(false);
   const powerBiWorkspaceUrl =
     publishResult?.workspace_url ||
     sessionStorage.getItem("alteryx_powerbi_workspace_url") ||
@@ -251,6 +252,7 @@ export default function PublishPage() {
     asNumber(rowCountCheck?.expected) ??
     asNumber(validationResult?.alteryx?.row_count) ??
     null;
+  const bigQueryExpectedRows = isBigQueryPublish ? expectedRows ?? "Pending" : expectedRows;
 
   const validationMetrics = [
     {
@@ -294,7 +296,7 @@ export default function PublishPage() {
     },
     {
       metric: "Total Records",
-      alteryx: expectedRows,
+      alteryx: bigQueryExpectedRows,
       bigquery: bigQueryRowCount,
       variance: bigQueryRowCount !== null && expectedRows !== null ? bigQueryRowCount - expectedRows : null,
     },
@@ -368,6 +370,46 @@ export default function PublishPage() {
       cancelled = true;
     };
   }, [bigQueryColumnCount, bigQueryFinalModel, bigQueryRowCount, isBigQueryPublish, isDataformBigQueryPublish, isDbtBigQueryPublish, publishResult]);
+
+  useEffect(() => {
+    if (!isBigQueryPublish || bigQueryAlteryxRecordCountRequestedRef.current || !batchId || !workflowId) {
+      return;
+    }
+
+    let cancelled = false;
+    bigQueryAlteryxRecordCountRequestedRef.current = true;
+
+    validateAlteryxPowerBiRecordCounts({
+      batch_id: batchId,
+      workflow_id: workflowId,
+      dataset_id: "",
+      table_name: finalValidationTableName || bigQueryTarget.table || datasetName,
+      workspace_id: "",
+      expected_row_count: null,
+    })
+      .then((validation) => {
+        if (cancelled) return;
+        setValidationResult(validation);
+        sessionStorage.setItem("alteryx_validation_result", JSON.stringify(validation));
+        const fetchedRowCheck = getRowCountCheck(validation);
+        const fetchedRows =
+          asNumber(fetchedRowCheck?.expected) ??
+          asNumber(validation?.alteryx?.row_count);
+        if (fetchedRows !== null) {
+          sessionStorage.setItem("migration_row_count", String(fetchedRows));
+        }
+      })
+      .catch((err: any) => {
+        console.warn("Could not fetch BigQuery Alteryx record count:", err);
+        if (!cancelled) {
+          bigQueryAlteryxRecordCountRequestedRef.current = false;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [batchId, bigQueryTarget.table, datasetName, finalValidationTableName, isBigQueryPublish, workflowId]);
 
   useEffect(() => {
     if (isBigQueryPublish) {
