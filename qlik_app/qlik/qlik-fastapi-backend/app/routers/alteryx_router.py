@@ -36,13 +36,17 @@ from app.services.alteryx_migration_engine import (
     DEFAULT_SHAREPOINT_FILE_NAME,
     DEFAULT_SHAREPOINT_FILE_URL,
     generate_brd_html,
+    generate_dataform_project,
     generate_executive_summary,
     generate_dbt_project,
     generate_m_query,
+    generate_python_project,
     generate_workflow_diagram,
     validate_migration,
 )
-from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata, publish_dbt_project_to_bigquery
+from app.services.alteryx_dbt_publisher import publish_dbt_project_to_bigquery
+from app.services.alteryx_dataform_publisher import publish_dataform_project_to_bigquery
+from app.services.alteryx_dataform_repo_publisher import publish_dataform_project_to_repository
 
 router = APIRouter(prefix="/api/alteryx", tags=["Alteryx"])
 logger = logging.getLogger(__name__)
@@ -1074,6 +1078,117 @@ def download_alteryx_workflow_dbt_project(
     )
 
 
+def _zip_project(project: dict[str, Any], default_root: str, filename_suffix: str) -> Response:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        root = project.get("project_name") or default_root
+        for path, content in (project.get("files") or {}).items():
+            archive.writestr(f"{root}/{path}", str(content))
+    buffer.seek(0)
+    safe_project_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(project.get("project_name") or default_root))
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{safe_project_name}_{filename_suffix}.zip"'},
+    )
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/dataform")
+def get_alteryx_workflow_dataform_project(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    return generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/dataform.zip")
+def download_alteryx_workflow_dataform_project(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    project = generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    return _zip_project(project, "alteryx_dataform_project", "dataform_project")
+
+
+@router.post("/batches/{batch_id}/workflows/{workflow_id}/dataform/publish-bigquery")
+def publish_alteryx_workflow_dataform_to_bigquery(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    if workflow.get("isMacroDefinition"):
+        raise HTTPException(
+            status_code=400,
+            detail="Select the parent .yxmd workflow for Publish Dataform to BigQuery.",
+        )
+    project = generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    try:
+        return publish_dataform_project_to_bigquery(project)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to publish generated Dataform project to BigQuery")
+        raise HTTPException(status_code=500, detail=f"Failed to publish Dataform project to BigQuery: {exc}") from exc
+
+
+@router.post("/batches/{batch_id}/workflows/{workflow_id}/dataform/publish-repository")
+def publish_alteryx_workflow_dataform_to_repository(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    if workflow.get("isMacroDefinition"):
+        raise HTTPException(
+            status_code=400,
+            detail="Select the parent .yxmd workflow for Publish Dataform to GCP Repo.",
+        )
+    project = generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    try:
+        return publish_dataform_project_to_repository(project)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to publish generated Dataform project to GCP Dataform repository")
+        raise HTTPException(status_code=500, detail=f"Failed to publish Dataform project to repository: {exc}") from exc
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/python")
+def get_alteryx_workflow_python_project(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    return generate_python_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/python.zip")
+def download_alteryx_workflow_python_project(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    project = generate_python_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    return _zip_project(project, "alteryx_python_project", "python_project")
+
+
 @router.post("/batches/{batch_id}/workflows/{workflow_id}/dbt/publish-bigquery")
 def publish_alteryx_workflow_dbt_to_bigquery(
     batch_id: str,
@@ -1101,25 +1216,6 @@ def publish_alteryx_workflow_dbt_to_bigquery(
         logger.exception("Failed to publish generated dbt project to BigQuery")
         raise HTTPException(status_code=500, detail=f"Failed to publish dbt project to BigQuery: {exc}") from exc
     return result
-
-
-@router.get("/bigquery/table-metadata")
-def get_bigquery_table_metadata(model: str = Query(...)):
-    parts = [part for part in str(model or "").split(".") if part]
-    if len(parts) < 3:
-        raise HTTPException(
-            status_code=400,
-            detail="BigQuery model must be in project.dataset.table format.",
-        )
-
-    project_id = parts[0]
-    dataset = parts[1]
-    table = ".".join(parts[2:])
-    location = (os.getenv("GCP_BIGQUERY_LOCATION") or "US").strip()
-    metadata = fetch_bigquery_table_metadata(project_id, dataset, table, location, os.environ.copy())
-    if not metadata.get("success"):
-        raise HTTPException(status_code=502, detail=metadata.get("message") or "Failed to fetch BigQuery metadata.")
-    return metadata
 
 
 @router.get("/batches/{batch_id}/workflows/{workflow_id}/diagram")

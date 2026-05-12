@@ -1879,18 +1879,13 @@ def _is_file_based_source(source_type: str, expr_str: str) -> bool:
 def _extract_fields_from_m(expr: str) -> list:
     """
     Extract column names and types from an M expression.
-    
-    ✅ IMPROVED: More aggressive extraction to catch columns that would otherwise be missed
-    during Power BI dataset refresh (which fails for dynamic schema tables).
 
     Patterns (in priority order):
-      A) Table.TransformColumnTypes  — explicit typed column list (including dynamic List.Transform)
+      A) Table.TransformColumnTypes  — explicit typed column list
       B) #table(type table [...])   — inline table schema declaration
-      C) SharePoint.Files/PromoteHeaders → attempt extraction instead of giving up
+      C) SharePoint.Files/PromoteHeaders → return [] (runtime schema)
       D) Table.SelectColumns        — explicit column selection
       E) Table.Group                — group-by column names
-      F) PromotedHeaders step       — promoted column names
-      G) Named step references      — column names in #"StepName" form
     """
     M_TYPE_MAP = {
         "type text":     "string",
@@ -1938,18 +1933,13 @@ def _extract_fields_from_m(expr: str) -> list:
             logger.info("[Extract] Final grouped output schema: %d cols", len(fields))
             return fields
 
-    # Pattern A: Table.TransformColumnTypes - INCLUDING dynamic List.Transform patterns
-    # ✅ FIX: Previously skipped dynamic List.Transform blocks, but we should still scan them
-    # for static column names that might exist elsewhere in the pattern
-    transform_matches = list(re.finditer(
+    # Pattern A: Table.TransformColumnTypes
+    transform_block = re.search(
         r"Table\.TransformColumnTypes\s*\(.*?,\s*\{(.*?)\}\s*\)",
         expr, re.DOTALL,
-    ))
-    
-    for transform_block_match in transform_matches:
-        block = transform_block_match.group(1)
-        
-        # Try extracting explicit typed columns first
+    )
+    if transform_block:
+        block = transform_block.group(1)
         for entry in re.finditer(
             r'\{\s*"([^"]+)"\s*,\s*(type\s+\w+|Int64\.Type|\w+(?:\.\w+)*)\s*\}',
             block,
@@ -1964,26 +1954,9 @@ def _extract_fields_from_m(expr: str) -> list:
                 col_type = _infer_type_from_name(col_name)
             if col_name:
                 fields.append({"name": col_name, "type": col_type})
-        
-        # ✅ NEW: Even if it's a List.Transform pattern, try to extract from surrounding context
-        # Look for column references in AddColumn, SelectColumns, RenameColumns calls nearby
-        if "List.Transform" in block:
-            # This is dynamic schema, but scan nearby M steps for column hints
-            preceding_steps = expr[:transform_block_match.start()]
-            
-            # Look for Table.SelectColumns or Table.RenameColumns that might hint at columns
-            for select_hint in re.finditer(
-                r'Table\.SelectColumns\s*\([^,]+,\s*\{([^}]+)\}',
-                preceding_steps[-500:] if len(preceding_steps) > 500 else preceding_steps,
-            ):
-                for q in re.finditer(r'"([^"]{1,120})"', select_hint.group(1)):
-                    col_name = q.group(1).strip()
-                    if col_name and col_name not in [f["name"] for f in fields]:
-                        fields.append({"name": col_name, "type": "string"})
-    
-    if fields:
-        logger.debug("[Extract] Pattern A (TransformColumnTypes): %d cols", len(fields))
-        return fields
+        if fields:
+            logger.debug("[Extract] Pattern A (TransformColumnTypes): %d cols", len(fields))
+            return fields
 
     # Pattern B: #table(type table [...])
     type_table_match = re.search(r"type\s+table\s+\[(.+?)\]", expr, re.DOTALL)
@@ -2007,47 +1980,101 @@ def _extract_fields_from_m(expr: str) -> list:
             logger.debug("[Extract] Pattern B (#table): %d cols", len(fields))
             return fields
 
-    # Pattern C: PromoteHeaders/SharePoint tables - IMPROVED
-    # ✅ FIX: Don't return [] early. Continue to try all extraction patterns.
+    # Pattern C: PromoteHeaders/SharePoint tables
+    # ── FIX: Do NOT return [] here. ──
+    # Previously this block returned [] as soon as PromoteHeaders was detected,
+    # which prevented ALL downstream fallbacks (D, E, TransformColumnTypes scan, etc.)
+    # for every LOAD * table (Departments, Locations, Projects, Clients, …).
+    #
+    # The correct behaviour: try to extract whatever column references exist in the
+    # M expression (named steps like AddColumn, TransformColumnTypes injected by the
+    # converter), then fall through to Pattern D/E if nothing found.
+    # Only return early with found results — never return [] to block fallbacks.
     if "SharePoint.Files" in expr or "PromoteHeaders" in expr or "PromotedHeaders" in expr:
-        logger.debug("[Extract] Pattern C: PromoteHeaders detected - attempting deeper extraction...")
+        logger.info("[Extract] 🔥 Detecting PromoteHeaders - attempting to extract column references...")
 
-        # Priority 1: Look for PromotedHeaders step which contains actual column names
-        promoted_headers_match = re.search(
-            r'#"Promoted Headers"\s*=\s*Table\.PromoteHeaders\(([^)]+)\)',
-            expr
+        # Priority 1: explicit TransformColumnTypes with named columns (e.g. Employees table)
+        # Re-run Pattern A specifically because it may have been skipped above if there was
+        # ALSO a PromoteHeaders step earlier in the M expression.
+        transform_blocks = re.findall(
+            r"Table\.TransformColumnTypes\s*\(.*?,\s*\{(.*?)\}\s*\)",
+            expr, re.DOTALL,
         )
-        if promoted_headers_match:
-            # Extract the column names from the PromotedHeaders step
-            promoted_expr = promoted_headers_match.group(0)
-            # Look for the previous step which might have column references
-            for col_ref in re.finditer(r'#"([^"]+)"', promoted_expr):
-                step_name = col_ref.group(1)
-                if step_name.lower() not in {'promoted headers', 'csv', 'content', 'data', 'table'}:
-                    if step_name not in [f["name"] for f in fields]:
-                        fields.append({"name": step_name, "type": "string"})
-        
-        # Priority 2: Look for Csv.Document with ColumnNames extraction
-        csv_match = re.search(
-            r'Csv\.Document\([^)]+\)(?:.*?)(?:Table\.ColumnNames|Table\.PromoteHeaders)',
-            expr,
-            re.DOTALL
-        )
-        if csv_match:
-            # Look for column names in the following steps
-            following_idx = csv_match.end()
-            following_expr = expr[following_idx:following_idx+1000]
-            for col_match in re.finditer(r'"([^"]{1,80})"', following_expr[:300]):
-                col_name = col_match.group(1).strip()
-                if (col_name and col_name != "*" and 
-                    not col_name.startswith("http") and
-                    col_name.lower() not in {"delimiter", "csv", "encoding", "quotestyle", "content"}):
-                    if col_name not in [f["name"] for f in fields]:
-                        fields.append({"name": col_name, "type": "string"})
-        
+        for block in transform_blocks:
+            # Skip the dynamic "List.Transform(Columns, each {_, type text})" pattern —
+            # that means LOAD * with runtime schema (no static column names to extract).
+            if "List.Transform" in block:
+                continue
+            for entry in re.finditer(
+                r'\{\s*"([^"]+)"\s*,\s*(type\s+\w+|Int64\.Type|\w+(?:\.\w+)*)\s*\}',
+                block,
+            ):
+                col_name = _strip_qlik_qualifier(entry.group(1).strip())
+                if col_name and col_name not in [f["name"] for f in fields]:
+                    fields.append({"name": col_name, "type": _infer_type_from_name(col_name)})
         if fields:
-            logger.info("[Extract] ✅ Extracted %d columns from PromoteHeaders/CSV context", len(fields))
+            logger.info("[Extract] ✅ Extracted %d columns from PromoteHeaders+TransformColumnTypes", len(fields))
             return fields
+
+        # Priority 2: final grouped schemas. Grouped Alteryx workflows often
+        # return GroupBy columns + aggregation columns + later Formula columns.
+        group_matches = list(re.finditer(r'Table\.Group\s*\(\s*[^,]+\s*,\s*\{([^}]*)\}', expr, re.DOTALL))
+        group_match = group_matches[-1] if group_matches else None
+        if group_match:
+            group_expr = expr[group_match.start():]
+            for col_ref in re.finditer(r'"([^"]+)"', group_match.group(1)):
+                col_name = col_ref.group(1).strip()
+                if col_name and col_name not in [f["name"] for f in fields]:
+                    fields.append({"name": col_name, "type": "string"})
+            for agg_ref in re.finditer(r'\{\s*"([^"]+)"\s*,\s*each\s+(?:List\.|Table\.)', group_expr):
+                col_name = agg_ref.group(1).strip()
+                if col_name and col_name not in [f["name"] for f in fields]:
+                    fields.append({"name": col_name, "type": _infer_type_from_name(col_name)})
+            for add_ref in re.finditer(
+                r'Table\.AddColumn\s*\(\s*[^,]+\s*,\s*"([^"]+)"\s*,.*?,\s*(type\s+\w+|Int64\.Type|\w+(?:\.\w+)*)\s*\)',
+                group_expr,
+                re.DOTALL,
+            ):
+                col_name = add_ref.group(1).strip()
+                if col_name and col_name not in [f["name"] for f in fields]:
+                    col_type_raw = add_ref.group(2).strip()
+                    fields.append({"name": col_name, "type": M_TYPE_MAP.get(col_type_raw, M_TYPE_MAP.get(col_type_raw.lower(), _infer_type_from_name(col_name)))})
+            if fields:
+                logger.info("[Extract] Extracted %d columns from Table.Group/AddColumn output", len(fields))
+                return fields
+
+        # Priority 3: Table.AddColumn steps (e.g. derived/resident tables)
+        for m_add in re.finditer(
+            r'Table\.AddColumn\s*\(\s*\S+\s*,\s*"([^"]+)"',
+            expr,
+        ):
+            col_name = m_add.group(1).strip()
+            if col_name and col_name not in [f["name"] for f in fields]:
+                fields.append({"name": col_name, "type": _infer_type_from_name(col_name)})
+        if fields:
+            logger.info("[Extract] ✅ Extracted %d columns from AddColumn steps", len(fields))
+            return fields
+
+        # Priority 3: #"ColumnName" step references (non-system names)
+        col_refs = re.findall(r'#"([^"]+)"', expr)
+        if col_refs:
+            system_names = {
+                'table', 'source', 'headers', 'csv', 'columns', 'typedtable',
+                'promoted', 'content', 'rows', 'schema', 'data', 'values', 'list',
+                'invoke', 'json', 'binary', 'filtered rows', 'grouped rows',
+                'combined tables', 'kept columns',
+            }
+            for col_name in col_refs:
+                if col_name.lower() not in system_names:
+                    if col_name not in [f["name"] for f in fields]:
+                        fields.append({"name": col_name, "type": _infer_type_from_name(col_name)})
+            if fields:
+                logger.info("[Extract] ✅ Extracted %d columns from #\"...\" references", len(fields))
+                return fields
+
+        # Nothing found — fall through to Pattern D/E below instead of returning [].
+        # This is the critical fix: do NOT return [] here.
+        logger.debug("[Extract] Pattern C: No static column refs found - falling through to D/E")
 
     # Pattern D: Table.SelectColumns
     select_matches = list(re.finditer(r'Table\.SelectColumns\s*\(\s*[^,]+\s*,\s*\{([^}]+)\}\s*\)', expr))
@@ -2150,9 +2177,6 @@ def _ensure_m_outputs_columns(expr: str, columns: List[Dict[str, Any]]) -> str:
     ✅ FIX: Handles column mismatch errors when M sources have columns 
     not in the BIM schema (e.g., Complex_Workflow loading from sales_1.csv 
     with all columns, but BIM only has [Region, Total_Sales]).
-    
-    ✅ FIX 2: When columns are empty, still wrap the expression to ensure
-    Power BI can detect columns from the M query at refresh time.
     """
     col_names: List[str] = []
     seen: set[str] = set()
@@ -2166,12 +2190,7 @@ def _ensure_m_outputs_columns(expr: str, columns: List[Dict[str, Any]]) -> str:
         seen.add(key)
         col_names.append(name)
 
-    if not expr:
-        return expr
-
-    # If no columns specified, return expr as-is but ensure it's valid
-    # Power BI will detect schema from the M query at refresh time
-    if not col_names:
+    if not expr or not col_names:
         return expr
 
     # Build the list of columns to select
@@ -2264,54 +2283,12 @@ def _infer_alteryx_csv_fields(table_name: str, expr: str = "") -> List[Dict[str,
     key = re.sub(r"[^a-z0-9]+", "_", key).strip("_")
 
     columns: List[str] = []
-    if "sales_transactions_2023" in key:
-        columns = [
-            "TxnID",
-            "CustomerID",
-            "ProductID",
-            "RegionCode",
-            "SalesRep",
-            "TxnDate",
-            "Amount",
-            "Quantity",
-            "Discount",
-            "PaymentType",
-            "Status",
-            "Notes",
-            "RawPhone",
-            "RawEmail",
-            "Tags",
-        ]
-    elif "large_fact_100k" in key:
-        columns = ["RowID", "CustomerID", "MetricA", "MetricB", "Category"]
-    elif "customer_master_500k" in key or "customer" in key:
-        columns = [
-            "CustomerID",
-            "FullName",
-            "Segment",
-            "Country",
-            "City",
-            "JoinDate",
-            "Tier",
-            "CreditLimit",
-            "AccountManager",
-            "Phone",
-            "Email",
-            "DOB",
-            "IsActive",
-        ]
-    elif "product_catalog_100k" in key or "product" in key:
-        columns = [
-            "ProductID",
-            "ProductName",
-            "Category",
-            "SubCategory",
-            "UnitCost",
-            "ListPrice",
-            "Currency",
-            "LaunchDate",
-            "IsDiscontinued",
-        ]
+    if "sales" in key:
+        columns = ["CustomerID", "Region", "Sales", "Product", "OrderDate"]
+    elif "customer" in key:
+        columns = ["CustomerID", "CustomerName", "Country"]
+    elif "product" in key:
+        columns = ["Product", "Category", "Price"]
 
     return [
         {
@@ -2339,11 +2316,9 @@ def _resolve_schema_universal(
     2. Extract from M expression (regex + semantic analysis)
     3. Infer from source type hints
     4. 🔥 NEW — qlik_fields_map from GetTablesAndKeys (real column names for LOAD * tables)
-    5. Last resort: check options metadata or infer from table name
+    5. Last resort: check options metadata
     
     Returns: List of column definitions or empty list if unresolvable
-    
-    ✅ IMPROVED: More aggressive column inference from table names and file patterns
     
     This replaces the _schema_loaded_on_refresh hack by ensuring
     we ALWAYS try to find real columns before giving up.
@@ -2513,29 +2488,7 @@ def _resolve_schema_universal(
                 table_name, len(qlik_fields_map)
             )
 
-    # ✅ Step 5: Last resort — infer from table name patterns
-            # ONLY for non-file sources (computed tables, not CSV/SharePoint)
-            # File-based sources should use runtime schema detection instead of guessing
-            if not columns and not is_file:
-                inferred_cols = _infer_alteryx_csv_fields(table_name, expr_str)
-                if inferred_cols:
-                    logger.info(
-                        "[_resolve_schema_universal] '%s': Inferred %d columns from table name pattern",
-                        table_name, len(inferred_cols)
-                    )
-                    for field in inferred_cols:
-                        col_name = field.get("name", "")
-                        if col_name:
-                            columns.append({
-                                "name": col_name,
-                                "dataType": "string",
-                                "sourceColumn": col_name,
-                                "summarizeBy": "none",
-                                "annotations": [{"name": "SummarizationSetBy", "value": "Automatic"}],
-                            })
-                    if columns:
-                        return columns
-    # Step 6: Last resort - return empty and log (don't add fake schema)
+    # Step 5: Last resort - return empty and log (don't add fake schema)
     logger.debug(
         "[_resolve_schema_universal] '%s': No resolvable schema found. "
         "Table will have dynamic schema from M expression at refresh time.",
@@ -2625,29 +2578,6 @@ class _Publisher:
             # ── Step 1: Try resolve_output_columns (handles GROUP BY, APPLYMAP, IF) ──
             resolved_cols = converter.resolve_output_columns(t)
             final_m_fields = _extract_fields_from_m(expr_str) if expr_str else []
-            has_output_shape_steps = any(
-                marker in expr_str
-                for marker in ("Table.Group", "Table.AddColumn", "Table.NestedJoin", "Table.SelectColumns")
-            )
-            exact_file_fields = (
-                _infer_alteryx_csv_fields(table_name, expr_str)
-                if str(table_name).lower().endswith("_raw") or not has_output_shape_steps
-                else []
-            )
-            if exact_file_fields:
-                resolved_cols = [
-                    {
-                        "name": field.get("name"),
-                        "dataType": "string",
-                    }
-                    for field in exact_file_fields
-                    if str(field.get("name") or "").strip()
-                ]
-                logger.info(
-                    "[BIM] '%s': using exact file schema override from source filename: %s",
-                    table_name,
-                    [col["name"] for col in resolved_cols],
-                )
 
             # FIX: When resolve_output_columns returns empty (e.g. for Alteryx _raw
             # CSV source tables whose fields list was empty at parse time) but
@@ -2712,7 +2642,6 @@ class _Publisher:
                         for field in final_m_fields
                     ]
             columns: List[Dict[str, Any]] = []
-            columns_source: str = ""  # Track where columns came from (for wrapping decision)
 
             if resolved_cols:
                 logger.info(
@@ -2720,7 +2649,6 @@ class _Publisher:
                     table_name, len(resolved_cols),
                     [c["name"] for c in resolved_cols[:8]]
                 )
-                columns_source = "resolve_output_columns"
                 seen_cols: set[str] = set()
                 for c in resolved_cols:
                     raw_col_name = (c.get("name") or "").strip()
@@ -2755,7 +2683,6 @@ class _Publisher:
                         "[BIM] '%s': %d columns extracted from M TypedTable: %s",
                         table_name, len(type_anon_cols), type_anon_cols[:5]
                     )
-                    columns_source = "m_typedarticle"
                     for col_name in type_anon_cols:
                         if col_name and col_name != "*":
                             columns.append({
@@ -2795,7 +2722,6 @@ class _Publisher:
                         "[BIM] '%s': %d columns from field list (L2 fallback)",
                         table_name, len(columns)
                     )
-                    columns_source = "field_list"
 
             # ── Step 3: Extract from M expression type annotations ────────────
             if not columns:
@@ -2817,7 +2743,6 @@ class _Publisher:
                         "[BIM] '%s': %d columns from M-expression extraction (L3 fallback)",
                         table_name, len(columns)
                     )
-                    columns_source = "m_expression"
 
             # ── Step 4: Deep M expression scan ───────────────────────────────
             if not columns:
@@ -2843,7 +2768,6 @@ class _Publisher:
                         "[BIM] '%s': %d columns from deep M scan (L4 fallback)",
                         table_name, len(columns)
                     )
-                    columns_source = "m_deep_scan"
 
             # ── Step 5: Last-resort type-annotation scan ──────────────────────
             if not columns:
@@ -2867,7 +2791,6 @@ class _Publisher:
                         "[BIM] '%s': %d columns from type-annotation scan (L5 fallback)",
                         table_name, len(columns)
                     )
-                    columns_source = "m_type_annotation"
 
             # ── SMART SCHEMA RESOLUTION (Future-Proof FIX) ──────────────────
             # Use universal schema resolver instead of fake _schema_loaded_on_refresh hack.
@@ -2879,13 +2802,8 @@ class _Publisher:
                     qlik_fields_map=getattr(self, "qlik_fields_map", {}),
                 )
                 columns.extend(resolved)
-                if resolved:
-                    # Track source - could be M expression, qlik_fields_map, or inferred
-                    columns_source = "resolve_schema_universal"
 
-            # ✅ Infer columns for tables with no detected columns
-            # These are guesses based on table name patterns
-            if not columns:
+            if not columns and table_name.lower().endswith("_raw"):
                 inferred_fields = _infer_alteryx_csv_fields(table_name, expr_str)
                 for f in inferred_fields:
                     col_name = (f.get("name") or "").strip()
@@ -2903,7 +2821,6 @@ class _Publisher:
                         "[BIM] '%s': %d columns from Alteryx CSV filename schema hint",
                         table_name, len(columns)
                     )
-                    columns_source = "inferred_from_name"
                 
             # If STILL empty after all resolution attempts, accept it gracefully.
             if not columns:
@@ -2913,42 +2830,9 @@ class _Publisher:
                     table_name
                 )
 
-            # ✅ CRITICAL FIX: Only wrap M expression with column projection if we have
-            # HIGH CONFIDENCE columns (from M extraction, qlik_fields_map, or metadata).
-            # DO NOT wrap for:
-            #   1. Inferred columns (from table name patterns) - they're guesses
-            #   2. File-based sources - let CSV parser auto-detect columns at refresh
-            # Wrapping with guessed columns causes Power BI to select non-existent columns
-            # and return empty results.
-            should_wrap_columns = (
-                columns_source in {
-                    "resolve_output_columns",     # From Qlik script conversion
-                    "m_typedarticle",            # From explicit M TypedTable step
-                    "field_list",                # From table metadata fields
-                    "m_expression",              # From M expression extraction
-                    "m_deep_scan",               # From M pattern scanning
-                    "m_type_annotation",         # From M type annotation
-                    "resolve_schema_universal",  # From explicit extraction
-                }
-                and not is_file  # Never wrap file-based sources (CSV/SharePoint/Excel)
+            fixed_expr = _fix_multiline_rows(
+                _ensure_m_outputs_columns(_sanitize_m(expr_str), columns)
             )
-            
-            if should_wrap_columns:
-                fixed_expr = _fix_multiline_rows(
-                    _ensure_m_outputs_columns(_sanitize_m(expr_str), columns)
-                )
-                logger.info(
-                    "[BIM] '%s': WRAPPED M expression - columns_source=%s (high confidence), wrapping=True",
-                    table_name, columns_source
-                )
-            else:
-                fixed_expr = _fix_multiline_rows(_sanitize_m(expr_str))
-                reason = "file-based source" if is_file else "inferred columns (unreliable)"
-                logger.info(
-                    "[BIM] '%s': NOT WRAPPING M expression - columns_source=%s (%s)",
-                    table_name, columns_source, reason
-                )
-            
             logger.info(
                 "[BIM] '%s': publishing with %d column(s). M preview:\n%s",
                 table_name, len(columns), fixed_expr[:300]
@@ -3196,7 +3080,7 @@ class _Publisher:
                         "Authorization": f"Bearer {pbi_token}",
                         "Content-Type":  "application/json",
                     }
-                    refresh_triggered = self._trigger_refresh(dataset_id, pbi_headers)
+                    self._trigger_refresh(dataset_id, pbi_headers)
 
                     is_sharepoint = any(
                         d in (data_source_path or "").lower()
@@ -3220,11 +3104,6 @@ class _Publisher:
                         for tbl in bim_tables
                         if tbl.get("name")
                     ]
-                    table_validation = self._validate_powerbi_tables_visible(
-                        dataset_id,
-                        pbi_headers,
-                        published_tables,
-                    )
                     return {
                         "success":          True,
                         "method":           "fabric_items_api",
@@ -3232,8 +3111,6 @@ class _Publisher:
                         "dataset_name":     dataset_name,
                         "tables_published": len(bim_tables),
                         "published_tables":  published_tables,
-                        "refresh_triggered": refresh_triggered,
-                        "powerbi_table_validation": table_validation,
                         "workspace_url":    f"https://app.powerbi.com/groups/{self.workspace_id}",
                         "dataset_url": (
                             f"https://app.powerbi.com/groups/{self.workspace_id}"
@@ -3269,76 +3146,6 @@ class _Publisher:
         except Exception as ex:
             logger.error("[Power BI API] Refresh error: %s", ex)
             return False
-
-    def _validate_powerbi_tables_visible(
-        self,
-        dataset_id: str,
-        headers: Dict,
-        expected_tables: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        expected_names = [
-            str(table.get("name") or "")
-            for table in expected_tables
-            if table.get("name")
-        ]
-        try:
-            url = (
-                f"https://api.powerbi.com/v1.0/myorg/groups/"
-                f"{self.workspace_id}/datasets/{dataset_id}/tables"
-            )
-            resp = requests.get(url, headers=headers, timeout=20)
-            if not resp.ok:
-                logger.warning(
-                    "[Power BI API] Table visibility check failed: %d %s",
-                    resp.status_code,
-                    resp.text[:300],
-                )
-                return {
-                    "status": "unknown",
-                    "expected_table_count": len(expected_names),
-                    "visible_table_count": None,
-                    "missing_tables": [],
-                    "detail": f"Power BI table metadata endpoint returned HTTP {resp.status_code}.",
-                }
-
-            visible_tables = resp.json().get("value", [])
-            visible_names = [
-                str(table.get("name") or "")
-                for table in visible_tables
-                if table.get("name")
-            ]
-            visible_keyed = {
-                re.sub(r"[^a-z0-9]+", "", name.lower()): name
-                for name in visible_names
-            }
-            missing = [
-                name for name in expected_names
-                if re.sub(r"[^a-z0-9]+", "", name.lower()) not in visible_keyed
-            ]
-            status = "pass" if not missing and len(visible_names) >= len(expected_names) else "warning"
-            if missing:
-                logger.warning(
-                    "[Power BI API] Published %d BIM table(s), but visible metadata is missing: %s",
-                    len(expected_names),
-                    missing,
-                )
-            return {
-                "status": status,
-                "expected_table_count": len(expected_names),
-                "visible_table_count": len(visible_names),
-                "expected_tables": expected_names,
-                "visible_tables": visible_names,
-                "missing_tables": missing,
-            }
-        except Exception as ex:
-            logger.warning("[Power BI API] Table visibility check error: %s", ex)
-            return {
-                "status": "unknown",
-                "expected_table_count": len(expected_names),
-                "visible_table_count": None,
-                "missing_tables": [],
-                "detail": str(ex),
-            }
 
     def _poll(self, op_url: str, headers: Dict, max_wait: int = 120) -> str:
         logger.info("[Fabric API] Polling: %s", op_url)

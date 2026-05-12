@@ -1,3 +1,27 @@
+# # Core API framework
+# fastapi>=0.110.0
+# uvicorn[standard]>=0.27.0
+# python-dotenv==1.0.0
+# requests==2.31.0
+# python-multipart==0.0.6
+# websocket-client==1.6.1
+# PyJWT==2.8.0
+# pandas==2.2.3
+# numpy>=1.26.0
+# matplotlib>=3.8.0
+# sqlalchemy
+# httpx
+# pydantic>=2.10.0
+# msal==1.31.0
+# reportlab>=4.0.0
+# beautifulsoup4>=4.12.0
+
+# # Google Cloud
+# google-cloud-bigquery>=3.0.0
+# dbt-bigquery>=1.8.0
+
+
+
 # Core API framework
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
@@ -15,10 +39,10 @@ pydantic>=2.10.0
 msal==1.31.0
 reportlab>=4.0.0
 beautifulsoup4>=4.12.0
-
+ 
 # Google Cloud
 google-cloud-bigquery>=3.0.0
-
+ 
 # dbt with BigQuery support
 # Use version ranges to allow pip to find compatible dependencies
 # Note: For faster builds on Render, use: pip install --no-deps -r requirements.txt

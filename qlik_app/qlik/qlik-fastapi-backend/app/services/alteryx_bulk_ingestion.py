@@ -40,6 +40,7 @@ class WorkflowInventoryItem:
     isMacroDefinition: bool = False
     macroDependencies: list[dict[str, Any]] = field(default_factory=list)
     macroValidation: dict[str, Any] = field(default_factory=dict)
+    outputTargets: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _ensure_cache_dir() -> None:
@@ -112,7 +113,12 @@ def _extract_macro_dependencies(root: ET.Element) -> list[dict[str, Any]]:
         node_id = _node_id(node, index)
         config = node.find(".//Configuration") or node.find("Configuration")
         macro_path = _config_text(config, "MacroPath")
+        macro_path = macro_path or _config_text(config, "MacroFileName")
         macro_type = _config_text(config, "MacroType")
+
+        gui_settings = node.find("GuiSettings")
+        if gui_settings is not None:
+            macro_path = macro_path or gui_settings.attrib.get("Macro", "")
 
         engine_settings = node.find("EngineSettings")
         if engine_settings is not None:
@@ -405,12 +411,6 @@ def _extract_node_config(node: ET.Element, plugin: str) -> dict[str, Any]:
             field_type = field.attrib.get("type") or field.attrib.get("size") or "String"
             if selected:
                 fields.append({"name": name, "rename": rename, "type": field_type})
-        if not fields:
-            select_fields_text = _config_text(config, "SelectFields")
-            for raw_name in re.split(r"[,;\n\r\t]+", select_fields_text or ""):
-                name = raw_name.strip()
-                if name:
-                    fields.append({"name": name, "rename": name, "type": "String"})
         if fields:
             parsed["selectedFields"] = fields
 
@@ -432,22 +432,6 @@ def _extract_node_config(node: ET.Element, plugin: str) -> dict[str, Any]:
                 group_by.append(name)
             else:
                 aggregations.append({"field": name, "action": action, "rename": rename})
-        if not group_by:
-            group_by = [
-                item.strip()
-                for item in re.split(r"[,;\n\r\t]+", _config_text(config, "GroupBy") or "")
-                if item.strip()
-            ]
-        if not aggregations:
-            for action_name in ("Sum", "Count", "Average", "Min", "Max"):
-                for raw_name in re.split(r"[,;\n\r\t]+", _config_text(config, action_name) or ""):
-                    field_name = raw_name.strip()
-                    if field_name:
-                        aggregations.append({
-                            "field": field_name,
-                            "action": action_name,
-                            "rename": field_name,
-                        })
         if group_by:
             parsed["groupBy"] = group_by
         if aggregations:
@@ -461,15 +445,6 @@ def _extract_node_config(node: ET.Element, plugin: str) -> dict[str, Any]:
             field_type = formula.attrib.get("type") or formula.attrib.get("size") or "Double"
             if field and expression:
                 formulas.append({"field": field, "expression": expression, "type": field_type})
-        if not formulas:
-            expression = _config_text(config, "Expression")
-            match = re.match(r"\s*([A-Za-z_][A-Za-z0-9_ .-]*)\s*=\s*(.+?)\s*$", expression or "")
-            if match:
-                formulas.append({
-                    "field": match.group(1).strip(),
-                    "expression": match.group(2).strip(),
-                    "type": "Double",
-                })
         if formulas:
             parsed["formulas"] = formulas
 
@@ -530,7 +505,6 @@ def _parse_row_count_hint(text: str) -> "int | None":
     patterns = [
         r"[~(]?\s*([\d,.]+)\s*([kKmMbB]?)\s*(?:rows?|records?)\b",
         r"\b([\d,.]+)\s*([kKmM])\b",
-        r"[_-]([\d,.]+)\s*([kKmM])(?:[_.-]|$)",
     ]
     for pat in patterns:
         for m in re.finditer(pat, text or "", flags=re.IGNORECASE):
@@ -597,6 +571,33 @@ def _extract_sources(node: ET.Element, plugin: str) -> list[dict[str, Any]]:
     return sources
 
 
+def _extract_outputs(node: ET.Element, plugin: str) -> list[dict[str, Any]]:
+    lowered_plugin = (plugin or "").lower()
+    if "dbfileoutput" not in lowered_plugin and "outputdata" not in lowered_plugin:
+        return []
+
+    config = node.find(".//Configuration") or node.find("Configuration")
+    blob = _node_text_blob(node)
+    file_value = ""
+    if config is not None:
+        file_node = config.find(".//File") or config.find("File")
+        if file_node is not None and file_node.text:
+            file_value = file_node.text.strip()
+    if not file_value:
+        match = re.search(r"[^\\/\n\"'<>]+\.(?:csv|xlsx?|json|xml|txt|parquet|yxdb)", blob, flags=re.IGNORECASE)
+        file_value = match.group(0).strip() if match else ""
+    if not file_value:
+        return []
+
+    return [{
+        "toolId": _node_id(node, 0),
+        "name": os.path.basename(file_value.split("?")[0]) or file_value[:80],
+        "path": file_value,
+        "type": _source_type(file_value, plugin),
+        "tool": plugin,
+    }]
+
+
 def _extract_json_sources(node: dict[str, Any], plugin: str) -> list[dict[str, Any]]:
     blob = _json_text_blob(node)
     candidates: list[str] = []
@@ -636,6 +637,23 @@ def _extract_json_sources(node: dict[str, Any], plugin: str) -> list[dict[str, A
             source["row_count"] = _hint_count
         sources.append(source)
     return sources
+
+
+def _extract_json_outputs(node: dict[str, Any], plugin: str) -> list[dict[str, Any]]:
+    if "output" not in plugin.lower():
+        return []
+    blob = _json_text_blob(node)
+    match = re.search(r"[^\\/\n\"'<>]+\.(?:csv|xlsx?|json|xml|txt|parquet|yxdb)", blob, flags=re.IGNORECASE)
+    if not match:
+        return []
+    file_value = match.group(0).strip()
+    return [{
+        "toolId": _json_node_id(node, 0),
+        "name": os.path.basename(file_value.split("?")[0]) or file_value[:80],
+        "path": file_value,
+        "type": _source_type(file_value, plugin),
+        "tool": plugin,
+    }]
 
 
 def _extract_edges(root: ET.Element) -> list[dict[str, Any]]:
@@ -827,6 +845,7 @@ def parse_workflow_xml(filename: str, content: bytes, package_file: str | None =
     recommendations: list[str] = []
 
     data_sources: list[dict[str, Any]] = []
+    output_targets: list[dict[str, Any]] = []
     workflow_nodes: list[dict[str, Any]] = []
 
     for index, node in enumerate(nodes, start=1):
@@ -842,6 +861,7 @@ def parse_workflow_xml(filename: str, content: bytes, package_file: str | None =
             "config": _extract_node_config(node, plugin),
         })
         data_sources.extend(_extract_sources(node, plugin))
+        output_targets.extend(_extract_outputs(node, plugin))
         supported, reason = _classify_tool(plugin)
         workflow_nodes[-1]["supported"] = supported
         if not supported:
@@ -875,6 +895,7 @@ def parse_workflow_xml(filename: str, content: bytes, package_file: str | None =
         unsupportedTools=unique_unsupported,
         recommendations=recommendations,
         dataSources=data_sources,
+        outputTargets=output_targets,
         workflowNodes=workflow_nodes,
         workflowEdges=_extract_edges(root),
         isMacroDefinition=_extension(filename) == ".yxmc",
@@ -920,6 +941,7 @@ def parse_workflow_json(filename: str, content: bytes, package_file: str | None 
     unsupported_tools: list[str] = []
     recommendations: list[str] = []
     data_sources: list[dict[str, Any]] = []
+    output_targets: list[dict[str, Any]] = []
     workflow_nodes: list[dict[str, Any]] = []
 
     for index, node in enumerate(nodes, start=1):
@@ -935,6 +957,7 @@ def parse_workflow_json(filename: str, content: bytes, package_file: str | None 
             "config": _extract_json_node_config(node, plugin),
         })
         data_sources.extend(_extract_json_sources(node, plugin))
+        output_targets.extend(_extract_json_outputs(node, plugin))
         supported, reason = _classify_tool(plugin)
         workflow_nodes[-1]["supported"] = supported
         if not supported:
@@ -968,6 +991,7 @@ def parse_workflow_json(filename: str, content: bytes, package_file: str | None 
         unsupportedTools=unique_unsupported,
         recommendations=recommendations,
         dataSources=data_sources,
+        outputTargets=output_targets,
         workflowNodes=workflow_nodes,
         workflowEdges=edges,
     )
@@ -1006,6 +1030,7 @@ def _extract_from_archive(filename: str, content: bytes) -> list[WorkflowInvento
 def _resolve_macro_dependencies(workflows: list[dict[str, Any]]) -> None:
     uploaded_paths: dict[str, str] = {}
     uploaded_basenames: dict[str, str] = {}
+    macro_definitions: dict[str, dict[str, Any]] = {}
 
     for workflow in workflows:
         source_file = _normalize_package_path(str(workflow.get("sourceFile") or ""))
@@ -1014,6 +1039,7 @@ def _resolve_macro_dependencies(workflows: list[dict[str, Any]]) -> None:
         if source_file.lower().endswith(".yxmc"):
             uploaded_paths[source_file.lower()] = source_file
             uploaded_basenames[os.path.basename(source_file).lower()] = source_file
+            macro_definitions[source_file.lower()] = workflow
 
     for workflow in workflows:
         dependencies = workflow.get("macroDependencies") or []
@@ -1035,14 +1061,30 @@ def _resolve_macro_dependencies(workflows: list[dict[str, Any]]) -> None:
             macro_name = os.path.basename(macro_path).lower()
             matched_file = uploaded_paths.get(macro_path.lower()) or uploaded_basenames.get(macro_name)
             if matched_file:
+                definition = macro_definitions.get(matched_file.lower()) or {}
                 dependency["uploaded"] = True
                 dependency["matchedFile"] = matched_file
                 dependency["status"] = "ready"
+                dependency["definition"] = {
+                    "name": definition.get("name") or os.path.basename(matched_file),
+                    "sourceFile": matched_file,
+                    "toolCount": definition.get("toolCount", 0),
+                    "connectionCount": definition.get("connectionCount", 0),
+                    "supportedToolCount": definition.get("supportedToolCount", 0),
+                    "unsupportedToolCount": definition.get("unsupportedToolCount", 0),
+                    "toolTypes": definition.get("toolTypes", []),
+                    "unsupportedTools": definition.get("unsupportedTools", []),
+                    "workflowNodes": definition.get("workflowNodes", [])[:250],
+                    "workflowEdges": definition.get("workflowEdges", [])[:500],
+                    "convertibility": definition.get("convertibility", "manual_review"),
+                    "complexity": definition.get("complexity", "medium"),
+                }
                 uploaded_count += 1
             else:
                 dependency["uploaded"] = False
                 dependency["matchedFile"] = ""
                 dependency["status"] = "missing"
+                dependency["definition"] = {}
                 missing.append(macro_path or str(dependency.get("name") or "Unknown macro"))
 
         referenced = len(dependencies)
