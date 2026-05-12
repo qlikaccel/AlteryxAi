@@ -1,0 +1,624 @@
+{
+  "batch_id": "d644117cf4261b33",
+  "created_at": 1778594256,
+  "summary": {
+    "workflow_count": 2,
+    "rejected_count": 0,
+    "total_tool_count": 15,
+    "unsupported_tool_count": 5,
+    "macro_definition_count": 1,
+    "macro_reference_count": 1,
+    "uploaded_macro_reference_count": 1,
+    "missing_macro_reference_count": 0,
+    "by_complexity": {
+      "low": 0,
+      "medium": 1,
+      "high": 1
+    },
+    "by_convertibility": {
+      "high": 0,
+      "medium": 1,
+      "low": 1,
+      "manual_review": 0
+    }
+  },
+  "workflows": [
+    {
+      "id": "72c5c585e5f07920",
+      "name": "Iterative Macro - Salary Equaliser",
+      "sourceFile": "IterativeMacro_SalaryEqualiser.yxmc",
+      "packageFile": "IterativeMacro_SalaryEqualiser.yxzp",
+      "fileType": "yxmc",
+      "toolCount": 7,
+      "connectionCount": 6,
+      "convertibility": "low",
+      "complexity": "high",
+      "supportedToolCount": 3,
+      "unsupportedToolCount": 4,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.AlteryxFilter.AlteryxFilter",
+        "AlteryxBasePluginsGui.AlteryxFormula.AlteryxFormula",
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+        "AlteryxBasePluginsGui.Summarize.Summarize"
+      ],
+      "unsupportedTools": [
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+      ],
+      "recommendations": [
+        "Macros should be expanded and assessed separately."
+      ],
+      "dataSources": [],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+          "supported": false,
+          "expression": "false",
+          "configurationText": "1\nAlteryxBasePluginsGui.MacroInput.MacroInput\n54\n216\nIteration Input\nfalse\nfalse\nfalse",
+          "config": {}
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxBasePluginsGui.AlteryxFormula.AlteryxFormula",
+          "supported": true,
+          "expression": "BaseSalary",
+          "configurationText": "2\nAlteryxBasePluginsGui.AlteryxFormula.AlteryxFormula\n234\n216\nBaseSalary\n19\nDouble\n[BaseSalary] * 1.05\nTotalRaisePct\n8\nDouble\nIIF(IsNull([TotalRaisePct]), 5.0, [TotalRaisePct] + 5.0)\nIterationCount\n4\nInt32\nIIF(IsNull([IterationCount]), 1, [IterationCount] + 1)\nAdjustedTotalComp\n19\nDouble\n[BaseSalary] + [Bonus]\nSalaryBand\n10\nString\nIIF([BaseSalary] < 60000, \"Band-1\",                 IIF([BaseSalary] < 100000, \"Band-2\",                   IIF([BaseSalary] < 150000, \"Band-3\",                     IIF([BaseSalary] < 200000, \"Band-4\", \"Band-5\"))))",
+          "config": {
+            "formulas": [
+              {
+                "field": "BaseSalary",
+                "expression": "[BaseSalary] * 1.05",
+                "type": "Double"
+              },
+              {
+                "field": "TotalRaisePct",
+                "expression": "IIF(IsNull([TotalRaisePct]), 5.0, [TotalRaisePct] + 5.0)",
+                "type": "Double"
+              },
+              {
+                "field": "IterationCount",
+                "expression": "IIF(IsNull([IterationCount]), 1, [IterationCount] + 1)",
+                "type": "Int32"
+              },
+              {
+                "field": "AdjustedTotalComp",
+                "expression": "[BaseSalary] + [Bonus]",
+                "type": "Double"
+              },
+              {
+                "field": "SalaryBand",
+                "expression": "IIF([BaseSalary] < 60000, \"Band-1\",                 IIF([BaseSalary] < 100000, \"Band-2\",                   IIF([BaseSalary] < 150000, \"Band-3\",                     IIF([BaseSalary] < 200000, \"Band-4\", \"Band-5\"))))",
+                "type": "String"
+              }
+            ]
+          }
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxBasePluginsGui.AlteryxFilter.AlteryxFilter",
+          "supported": true,
+          "expression": "[BaseSalary] < 120000",
+          "configurationText": "3\nAlteryxBasePluginsGui.AlteryxFilter.AlteryxFilter\n414\n216\n[BaseSalary] < 120000",
+          "config": {
+            "filterExpression": "[BaseSalary] < 120000"
+          }
+        },
+        {
+          "id": "4",
+          "plugin": "AlteryxBasePluginsGui.Summarize.Summarize",
+          "supported": true,
+          "expression": "Department",
+          "configurationText": "4\nAlteryxBasePluginsGui.Summarize.Summarize\n594\n126\nDepartment\nGroupBy\nSalaryBand\nGroupBy\nEmployeeID\nCount\nEmpCount\nBaseSalary\nAvg\nAvgFinalSalary\nBaseSalary\nSum\nTotalPayroll\nTotalRaisePct\nAvg\nAvgRaisePct\nIterationCount\nAvg\nAvgIterations\nAdjustedTotalComp\nSum\nTotalCompCost",
+          "config": {
+            "groupBy": [
+              "Department",
+              "SalaryBand"
+            ],
+            "aggregations": [
+              {
+                "field": "EmployeeID",
+                "action": "Count",
+                "rename": "EmpCount"
+              },
+              {
+                "field": "BaseSalary",
+                "action": "Avg",
+                "rename": "AvgFinalSalary"
+              },
+              {
+                "field": "BaseSalary",
+                "action": "Sum",
+                "rename": "TotalPayroll"
+              },
+              {
+                "field": "TotalRaisePct",
+                "action": "Avg",
+                "rename": "AvgRaisePct"
+              },
+              {
+                "field": "IterationCount",
+                "action": "Avg",
+                "rename": "AvgIterations"
+              },
+              {
+                "field": "AdjustedTotalComp",
+                "action": "Sum",
+                "rename": "TotalCompCost"
+              }
+            ]
+          }
+        },
+        {
+          "id": "5",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "5\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n774\n126\nDept Salary Summary",
+          "config": {}
+        },
+        {
+          "id": "6",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "6\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n594\n306\nStill Needs Raise",
+          "config": {}
+        },
+        {
+          "id": "7",
+          "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "7\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n594\n198\nResolved Employees",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "1",
+          "to": "2",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "2",
+          "to": "3",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "3",
+          "to": "4",
+          "fromAnchor": "False",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "3",
+          "to": "7",
+          "fromAnchor": "False",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "4",
+          "to": "5",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "3",
+          "to": "6",
+          "fromAnchor": "True",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": true,
+      "macroDependencies": [],
+      "macroValidation": {
+        "referenced": 0,
+        "uploaded": 0,
+        "missing": 0,
+        "status": "not_applicable",
+        "message": "No macro dependencies detected."
+      },
+      "outputTargets": []
+    },
+    {
+      "id": "a1fdeeab5b0107b1",
+      "name": "Workflow - Iterative Macro Salary Equaliser (500K rows)",
+      "sourceFile": "Workflow_IterativeMacro_Main.yxmd",
+      "packageFile": "IterativeMacro_SalaryEqualiser.yxzp",
+      "fileType": "yxmd",
+      "toolCount": 8,
+      "connectionCount": 7,
+      "convertibility": "medium",
+      "complexity": "medium",
+      "supportedToolCount": 7,
+      "unsupportedToolCount": 1,
+      "toolTypes": [
+        "AlteryxBasePluginsGui.AlteryxFilter.AlteryxFilter",
+        "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+        "AlteryxBasePluginsGui.DbFileOutput.DbFileOutput",
+        "AlteryxBasePluginsGui.MacroInput.MacroInput",
+        "AlteryxBasePluginsGui.RecordCount.RecordCount",
+        "AlteryxBasePluginsGui.Sort.Sort"
+      ],
+      "unsupportedTools": [
+        "AlteryxBasePluginsGui.MacroInput.MacroInput"
+      ],
+      "recommendations": [
+        "Macros should be expanded and assessed separately."
+      ],
+      "dataSources": [
+        {
+          "name": "iterative_sample_data.csv",
+          "type": "csv",
+          "path": "iterative_sample_data.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileInput.DbFileInput"
+        },
+        {
+          "name": "output_resolved_employees.csv",
+          "type": "csv",
+          "path": "output_resolved_employees.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileOutput.DbFileOutput"
+        },
+        {
+          "name": "output_dept_salary_summary.csv",
+          "type": "csv",
+          "path": "output_dept_salary_summary.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileOutput.DbFileOutput"
+        },
+        {
+          "name": "output_already_above_threshold.csv",
+          "type": "csv",
+          "path": "output_already_above_threshold.csv",
+          "tool": "AlteryxBasePluginsGui.DbFileOutput.DbFileOutput"
+        }
+      ],
+      "workflowNodes": [
+        {
+          "id": "1",
+          "plugin": "AlteryxBasePluginsGui.DbFileInput.DbFileInput",
+          "supported": true,
+          "expression": "",
+          "configurationText": "1\nAlteryxBasePluginsGui.DbFileInput.DbFileInput\n54\n198\nFalse\n0\niterative_sample_data.csv\nFalse\nFalse\n,\n\"\n28591",
+          "config": {}
+        },
+        {
+          "id": "2",
+          "plugin": "AlteryxBasePluginsGui.AlteryxFilter.AlteryxFilter",
+          "supported": true,
+          "expression": "[BaseSalary] < 120000",
+          "configurationText": "2\nAlteryxBasePluginsGui.AlteryxFilter.AlteryxFilter\n234\n198\n[BaseSalary] < 120000",
+          "config": {
+            "filterExpression": "[BaseSalary] < 120000"
+          }
+        },
+        {
+          "id": "3",
+          "plugin": "AlteryxBasePluginsGui.RecordCount.RecordCount",
+          "supported": true,
+          "expression": "",
+          "configurationText": "3\nAlteryxBasePluginsGui.RecordCount.RecordCount\n414\n198",
+          "config": {}
+        },
+        {
+          "id": "4",
+          "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+          "supported": false,
+          "expression": "",
+          "configurationText": "4\nAlteryxBasePluginsGui.MacroInput.MacroInput\nIterativeMacro_SalaryEqualiser.yxmc\n594\n198\nIterativeMacro_SalaryEqualiser.yxmc",
+          "config": {}
+        },
+        {
+          "id": "5",
+          "plugin": "AlteryxBasePluginsGui.Sort.Sort",
+          "supported": true,
+          "expression": "Department",
+          "configurationText": "5\nAlteryxBasePluginsGui.Sort.Sort\n774\n162\nDepartment\nAscending\nBaseSalary\nDescending",
+          "config": {}
+        },
+        {
+          "id": "6",
+          "plugin": "AlteryxBasePluginsGui.DbFileOutput.DbFileOutput",
+          "supported": true,
+          "expression": "",
+          "configurationText": "6\nAlteryxBasePluginsGui.DbFileOutput.DbFileOutput\n954\n162\noutput_resolved_employees.csv\nFalse\n,\n\"",
+          "config": {}
+        },
+        {
+          "id": "7",
+          "plugin": "AlteryxBasePluginsGui.DbFileOutput.DbFileOutput",
+          "supported": true,
+          "expression": "",
+          "configurationText": "7\nAlteryxBasePluginsGui.DbFileOutput.DbFileOutput\n954\n252\noutput_dept_salary_summary.csv\nFalse\n,\n\"",
+          "config": {}
+        },
+        {
+          "id": "8",
+          "plugin": "AlteryxBasePluginsGui.DbFileOutput.DbFileOutput",
+          "supported": true,
+          "expression": "",
+          "configurationText": "8\nAlteryxBasePluginsGui.DbFileOutput.DbFileOutput\n414\n306\noutput_already_above_threshold.csv\nFalse\n,\n\"",
+          "config": {}
+        }
+      ],
+      "workflowEdges": [
+        {
+          "from": "1",
+          "to": "2",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "2",
+          "to": "3",
+          "fromAnchor": "True",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "2",
+          "to": "8",
+          "fromAnchor": "False",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "3",
+          "to": "4",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "4",
+          "to": "5",
+          "fromAnchor": "Resolved Employees",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "5",
+          "to": "6",
+          "fromAnchor": "Output",
+          "toAnchor": "Input"
+        },
+        {
+          "from": "4",
+          "to": "7",
+          "fromAnchor": "Dept Salary Summary",
+          "toAnchor": "Input"
+        }
+      ],
+      "isMacroDefinition": false,
+      "macroDependencies": [
+        {
+          "toolId": "4",
+          "name": "IterativeMacro_SalaryEqualiser.yxmc",
+          "path": "IterativeMacro_SalaryEqualiser.yxmc",
+          "macroType": "Iterative",
+          "controlParameter": "",
+          "iterationLimit": "",
+          "stopCondition": "",
+          "uploaded": true,
+          "matchedFile": "IterativeMacro_SalaryEqualiser.yxmc",
+          "status": "ready",
+          "definition": {
+            "name": "Iterative Macro - Salary Equaliser",
+            "sourceFile": "IterativeMacro_SalaryEqualiser.yxmc",
+            "toolCount": 7,
+            "connectionCount": 6,
+            "supportedToolCount": 3,
+            "unsupportedToolCount": 4,
+            "toolTypes": [
+              "AlteryxBasePluginsGui.AlteryxFilter.AlteryxFilter",
+              "AlteryxBasePluginsGui.AlteryxFormula.AlteryxFormula",
+              "AlteryxBasePluginsGui.MacroInput.MacroInput",
+              "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+              "AlteryxBasePluginsGui.Summarize.Summarize"
+            ],
+            "unsupportedTools": [
+              "AlteryxBasePluginsGui.MacroInput.MacroInput",
+              "AlteryxBasePluginsGui.MacroOutput.MacroOutput"
+            ],
+            "workflowNodes": [
+              {
+                "id": "1",
+                "plugin": "AlteryxBasePluginsGui.MacroInput.MacroInput",
+                "supported": false,
+                "expression": "false",
+                "configurationText": "1\nAlteryxBasePluginsGui.MacroInput.MacroInput\n54\n216\nIteration Input\nfalse\nfalse\nfalse",
+                "config": {}
+              },
+              {
+                "id": "2",
+                "plugin": "AlteryxBasePluginsGui.AlteryxFormula.AlteryxFormula",
+                "supported": true,
+                "expression": "BaseSalary",
+                "configurationText": "2\nAlteryxBasePluginsGui.AlteryxFormula.AlteryxFormula\n234\n216\nBaseSalary\n19\nDouble\n[BaseSalary] * 1.05\nTotalRaisePct\n8\nDouble\nIIF(IsNull([TotalRaisePct]), 5.0, [TotalRaisePct] + 5.0)\nIterationCount\n4\nInt32\nIIF(IsNull([IterationCount]), 1, [IterationCount] + 1)\nAdjustedTotalComp\n19\nDouble\n[BaseSalary] + [Bonus]\nSalaryBand\n10\nString\nIIF([BaseSalary] < 60000, \"Band-1\",                 IIF([BaseSalary] < 100000, \"Band-2\",                   IIF([BaseSalary] < 150000, \"Band-3\",                     IIF([BaseSalary] < 200000, \"Band-4\", \"Band-5\"))))",
+                "config": {
+                  "formulas": [
+                    {
+                      "field": "BaseSalary",
+                      "expression": "[BaseSalary] * 1.05",
+                      "type": "Double"
+                    },
+                    {
+                      "field": "TotalRaisePct",
+                      "expression": "IIF(IsNull([TotalRaisePct]), 5.0, [TotalRaisePct] + 5.0)",
+                      "type": "Double"
+                    },
+                    {
+                      "field": "IterationCount",
+                      "expression": "IIF(IsNull([IterationCount]), 1, [IterationCount] + 1)",
+                      "type": "Int32"
+                    },
+                    {
+                      "field": "AdjustedTotalComp",
+                      "expression": "[BaseSalary] + [Bonus]",
+                      "type": "Double"
+                    },
+                    {
+                      "field": "SalaryBand",
+                      "expression": "IIF([BaseSalary] < 60000, \"Band-1\",                 IIF([BaseSalary] < 100000, \"Band-2\",                   IIF([BaseSalary] < 150000, \"Band-3\",                     IIF([BaseSalary] < 200000, \"Band-4\", \"Band-5\"))))",
+                      "type": "String"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "3",
+                "plugin": "AlteryxBasePluginsGui.AlteryxFilter.AlteryxFilter",
+                "supported": true,
+                "expression": "[BaseSalary] < 120000",
+                "configurationText": "3\nAlteryxBasePluginsGui.AlteryxFilter.AlteryxFilter\n414\n216\n[BaseSalary] < 120000",
+                "config": {
+                  "filterExpression": "[BaseSalary] < 120000"
+                }
+              },
+              {
+                "id": "4",
+                "plugin": "AlteryxBasePluginsGui.Summarize.Summarize",
+                "supported": true,
+                "expression": "Department",
+                "configurationText": "4\nAlteryxBasePluginsGui.Summarize.Summarize\n594\n126\nDepartment\nGroupBy\nSalaryBand\nGroupBy\nEmployeeID\nCount\nEmpCount\nBaseSalary\nAvg\nAvgFinalSalary\nBaseSalary\nSum\nTotalPayroll\nTotalRaisePct\nAvg\nAvgRaisePct\nIterationCount\nAvg\nAvgIterations\nAdjustedTotalComp\nSum\nTotalCompCost",
+                "config": {
+                  "groupBy": [
+                    "Department",
+                    "SalaryBand"
+                  ],
+                  "aggregations": [
+                    {
+                      "field": "EmployeeID",
+                      "action": "Count",
+                      "rename": "EmpCount"
+                    },
+                    {
+                      "field": "BaseSalary",
+                      "action": "Avg",
+                      "rename": "AvgFinalSalary"
+                    },
+                    {
+                      "field": "BaseSalary",
+                      "action": "Sum",
+                      "rename": "TotalPayroll"
+                    },
+                    {
+                      "field": "TotalRaisePct",
+                      "action": "Avg",
+                      "rename": "AvgRaisePct"
+                    },
+                    {
+                      "field": "IterationCount",
+                      "action": "Avg",
+                      "rename": "AvgIterations"
+                    },
+                    {
+                      "field": "AdjustedTotalComp",
+                      "action": "Sum",
+                      "rename": "TotalCompCost"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "5",
+                "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+                "supported": false,
+                "expression": "",
+                "configurationText": "5\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n774\n126\nDept Salary Summary",
+                "config": {}
+              },
+              {
+                "id": "6",
+                "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+                "supported": false,
+                "expression": "",
+                "configurationText": "6\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n594\n306\nStill Needs Raise",
+                "config": {}
+              },
+              {
+                "id": "7",
+                "plugin": "AlteryxBasePluginsGui.MacroOutput.MacroOutput",
+                "supported": false,
+                "expression": "",
+                "configurationText": "7\nAlteryxBasePluginsGui.MacroOutput.MacroOutput\n594\n198\nResolved Employees",
+                "config": {}
+              }
+            ],
+            "workflowEdges": [
+              {
+                "from": "1",
+                "to": "2",
+                "fromAnchor": "Output",
+                "toAnchor": "Input"
+              },
+              {
+                "from": "2",
+                "to": "3",
+                "fromAnchor": "Output",
+                "toAnchor": "Input"
+              },
+              {
+                "from": "3",
+                "to": "4",
+                "fromAnchor": "False",
+                "toAnchor": "Input"
+              },
+              {
+                "from": "3",
+                "to": "7",
+                "fromAnchor": "False",
+                "toAnchor": "Input"
+              },
+              {
+                "from": "4",
+                "to": "5",
+                "fromAnchor": "Output",
+                "toAnchor": "Input"
+              },
+              {
+                "from": "3",
+                "to": "6",
+                "fromAnchor": "True",
+                "toAnchor": "Input"
+              }
+            ],
+            "convertibility": "low",
+            "complexity": "high"
+          }
+        }
+      ],
+      "macroValidation": {
+        "referenced": 1,
+        "uploaded": 1,
+        "missing": 0,
+        "missingFiles": [],
+        "status": "ready",
+        "message": "All 1 referenced macro file(s) were uploaded."
+      },
+      "outputTargets": [
+        {
+          "toolId": "6",
+          "name": "output_resolved_employees.csv",
+          "path": "output_resolved_employees.csv",
+          "type": "csv",
+          "tool": "AlteryxBasePluginsGui.DbFileOutput.DbFileOutput"
+        },
+        {
+          "toolId": "7",
+          "name": "output_dept_salary_summary.csv",
+          "path": "output_dept_salary_summary.csv",
+          "type": "csv",
+          "tool": "AlteryxBasePluginsGui.DbFileOutput.DbFileOutput"
+        },
+        {
+          "toolId": "8",
+          "name": "output_already_above_threshold.csv",
+          "path": "output_already_above_threshold.csv",
+          "type": "csv",
+          "tool": "AlteryxBasePluginsGui.DbFileOutput.DbFileOutput"
+        }
+      ]
+    }
+  ],
+  "rejected": []
+}
