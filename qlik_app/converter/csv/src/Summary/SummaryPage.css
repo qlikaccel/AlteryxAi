@@ -2940,6 +2940,139 @@ PAGE WRAP
   opacity: 1;
 }
 
+.source-environment-boxes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.source-environment-box {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(30, 58, 95, 0.14);
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1a2e4a;
+  box-shadow: 0 1px 8px rgba(30, 58, 95, 0.06);
+  transition: all 0.25s ease;
+}
+
+.source-environment-box:hover {
+  box-shadow: 0 4px 20px rgba(30, 58, 95, 0.12);
+  transform: translateY(-2px);
+}
+
+.source-environment-box h3 {
+  margin: 0 0 14px;
+  color: #1e3a5f;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.source-option-list {
+  display: grid;
+  gap: 12px;
+}
+
+.source-download-option,
+.source-publish-option {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(30, 58, 95, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.source-download-option:hover,
+.source-publish-option:hover {
+  border-color: rgba(30, 58, 95, 0.18);
+  background: #dbeafe;
+}
+
+.source-download-option,
+.source-publish-option {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.source-option-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  color: #1a2e4a;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.source-option-line input {
+  width: 16px;
+  height: 16px;
+  accent-color: #1e3a5f;
+  flex: 0 0 auto;
+}
+
+.source-option-line span {
+  overflow-wrap: anywhere;
+}
+
+.source-inline-download-btn,
+.source-inline-publish-btn {
+  min-height: 34px;
+  padding: 8px 14px;
+  border: 1px solid #0070c0;
+  border-radius: 8px;
+  background: #0070c0;
+  color: #fff;
+  font-size: 0.84rem;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+}
+
+.source-inline-download-btn {
+  width: 38px;
+  min-width: 38px;
+  padding: 0;
+  background: #0070c0;
+  border-color: #2563eb;
+  color: #ffffff;
+  align-items: center;
+  justify-content: center;
+}
+
+.source-inline-download-btn svg {
+  display: block;
+  width: 35px;
+  height: 22px;
+}
+
+.source-inline-download-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  opacity: 1;
+  transform: translateY(-1px) scale(1.04);
+}
+
+.source-inline-publish-btn:hover:not(:disabled) {
+  background: #0064ac;
+  border-color: #0064ac;
+  opacity: 0.92;
+  transform: translateY(-1px) scale(1.02);
+}
+
+.source-inline-download-btn:disabled,
+.source-inline-publish-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .dbt-publish-result {
   display: flex;
   flex-direction: column;
@@ -3630,6 +3763,7 @@ PAGE WRAP
 @media (max-width: 980px) {
   .alteryx-summary-top,
   .source-type-grid,
+  .source-environment-boxes,
   .alteryx-executive-grid,
   .alteryx-pie-wrap {
     grid-template-columns: 1fr;
