@@ -1787,31 +1787,41 @@ navigate("/publish", {
     }
   };
 
-  const runSelectedDownload = () => {
-    const currentDownloadTarget = selectedDownloadTargetRef.current;
+  const runDownloadTarget = (target: DownloadTarget) => {
+    selectedDownloadTargetRef.current = target;
+    setSelectedDownloadTarget(target);
     setOpenActionMenu(null);
-    if (currentDownloadTarget === "mquery") {
+    if (target === "mquery") {
       downloadSourceMQuery();
       return;
     }
-    if (currentDownloadTarget === "dbt") {
+    if (target === "dbt") {
       downloadDbtProject();
       return;
     }
     downloadPythonQuery();
   };
 
-  const runSelectedPublish = () => {
+  const runSelectedDownload = () => {
+    runDownloadTarget(selectedDownloadTargetRef.current);
+  };
+
+  const runPublishTarget = (target: PublishTarget) => {
+    setSelectedPublishTarget(target);
     setOpenActionMenu(null);
-    if (selectedPublishTarget === "dbt") {
+    if (target === "dbt") {
       publishDbtToBigQuery();
       return;
     }
-    if (selectedPublishTarget === "powerbi") {
+    if (target === "powerbi") {
       publishSourceMQuery();
       return;
     }
     handlePythonQueryUnavailable();
+  };
+
+  const runSelectedPublish = () => {
+    runPublishTarget(selectedPublishTarget);
   };
 
   const selectedDownloadDisabled =
@@ -2372,6 +2382,111 @@ navigate("/publish", {
                   <pre className="source-mquery-preview">
                     {mqueryPreview || "No generated M Query is available for this workflow."}
                   </pre>
+                </div>
+
+                <div className="source-environment-boxes">
+                  <section className="source-environment-box" aria-labelledby="source-download-title">
+                    <h3 id="source-download-title">Download</h3>
+                    <div className="source-option-list">
+                      {[
+                        { id: "mquery" as DownloadTarget, label: "mQuery" },
+                        { id: "dbt" as DownloadTarget, label: "DBT" },
+                        { id: "python" as DownloadTarget, label: "Python Query" },
+                      ].map((option) => {
+                        const isSelected = selectedDownloadTarget === option.id;
+                        const isDownloadDisabled =
+                          option.id === "mquery"
+                            ? !mqueryPreview
+                            : option.id === "dbt"
+                              ? !batchId || !workflowId
+                              : false;
+
+                        return (
+                          <label className="source-download-option" key={option.id}>
+                            <span className="source-option-line">
+                              <input
+                                type="radio"
+                                name="source-download-option"
+                                checked={isSelected}
+                                onChange={() => selectDownloadTarget(option.id)}
+                              />
+                              <span>{option.label}</span>
+                            </span>
+                            {isSelected && (
+                              <button
+                                className="source-inline-download-btn"
+                                type="button"
+                                onClick={() => runDownloadTarget(option.id)}
+                                disabled={isDownloadDisabled}
+                                aria-label={`Download ${option.label}`}
+                                title={`Download ${option.label}`}
+                              >
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  width="16"
+                                  height="16"
+                                  aria-hidden="true"
+                                  focusable="false"
+                                >
+                                  <path
+                                    d="M12 3v11m0 0 4-4m-4 4-4-4M5 20h14"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth="2"
+                                  />
+                                </svg>
+                              </button>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  <section className="source-environment-box" aria-labelledby="source-publish-title">
+                    <h3 id="source-publish-title">Publish to Environment</h3>
+                    <div className="source-option-list">
+                      {[
+                        { id: "dbt" as PublishTarget, label: "DBT to BigQuery" },
+                        { id: "powerbi" as PublishTarget, label: "Power BI" },
+                        { id: "python" as PublishTarget, label: "Python Query" },
+                      ].map((option) => {
+                        const isSelected = selectedPublishTarget === option.id;
+                        const isPublishDisabled =
+                          option.id === "dbt"
+                            ? !batchId || !workflowId || dbtPublishing
+                            : option.id === "powerbi"
+                              ? !mqueryPreview || publishing || dbtPublishing
+                              : false;
+
+                        return (
+                          <label className="source-publish-option" key={option.id}>
+                            <span className="source-option-line">
+                              <input
+                                type="radio"
+                                name="source-publish-option"
+                                checked={isSelected}
+                                onChange={() => setSelectedPublishTarget(option.id)}
+                              />
+                              <span>{option.label}</span>
+                            </span>
+                            {isSelected && (
+                              <button
+                                className="source-inline-publish-btn"
+                                type="button"
+                                onClick={() => runPublishTarget(option.id)}
+                                disabled={isPublishDisabled}
+                              >
+                                Publish
+                              </button>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </section>
                 </div>
 
                 <div className="source-mquery-actions">
