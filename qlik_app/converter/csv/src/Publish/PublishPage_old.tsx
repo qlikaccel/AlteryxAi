@@ -3,8 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   downloadValidationReportPdf,
-  downloadBigQueryValidationReportPdf,
-  fetchBigQueryTableMetadata,
   validateAlteryxPowerBiRecordCounts,
   validatePowerBiMigration,
 } from "../api/alteryxApi";
@@ -127,7 +125,7 @@ export default function PublishPage() {
   const [copyStatus, setCopyStatus] = useState("");
   const [publishedAt] = useState(() => new Date());
   const [reportStatus, setReportStatus] = useState("");
-  const [publishResult, setPublishResult] = useState<any>(() => {
+  const [publishResult] = useState<any>(() => {
     if (isDataformRepoPublish) {
       const raw = sessionStorage.getItem("alteryx_dataform_repo_publish_result");
       if (!raw) return null;
@@ -178,44 +176,6 @@ export default function PublishPage() {
     asNumber(sessionStorage.getItem("alteryx_tool_count"));
   const validationTableName = publishResult?.dataset_name || datasetName;
   const finalValidationTableName = publishResult?.final_table_name || validationTableName;
-  const publishedTables = publishResult?.published_tables || [];
-  const deployedTables = publishedTables.length || publishResult?.tables_deployed ?? 1;
-
-  const columnCount =
-    publishResult?.available_columns?.length ||
-    publishResult?.published_tables?.find((table: any) => tableMatchKey(table?.name) === tableMatchKey(finalValidationTableName))?.columns?.length ||
-    0;
-
-  // BigQuery-specific data extraction (from dev52)
-  const bigQueryMetadata = publishResult?.bigquery_metadata || {};
-  const bigQueryRowCount = isBigQueryPublish
-    ? asNumber(publishResult?.row_count) ??
-      asNumber(publishResult?.total_rows) ??
-      asNumber(publishResult?.record_count) ??
-      asNumber(bigQueryMetadata?.row_count) ??
-      asNumber(bigQueryMetadata?.total_rows) ??
-      asNumber(bigQueryMetadata?.record_count) ??
-      null
-    : null;
-
-  const bigQueryColumnCount = isBigQueryPublish
-    ? asNumber(publishResult?.column_count) ??
-      asNumber(publishResult?.total_columns) ??
-      asNumber(bigQueryMetadata?.column_count) ??
-      asNumber(bigQueryMetadata?.total_columns) ??
-      publishResult?.available_columns?.length ??
-      bigQueryMetadata?.available_columns?.length ??
-      null
-    : null;
-
-  const bigQueryRecordCount = isBigQueryPublish
-    ? asNumber(publishResult?.record_count) ??
-      asNumber(publishResult?.total_records) ??
-      asNumber(bigQueryMetadata?.record_count) ??
-      asNumber(bigQueryMetadata?.total_records) ??
-      bigQueryRowCount
-    : null;
-
   const [validationResult, setValidationResult] = useState<any>(() => {
     const raw = sessionStorage.getItem("alteryx_validation_result");
     if (!raw) return null;
@@ -229,16 +189,13 @@ export default function PublishPage() {
     }
   });
   const recordValidationRequestedRef = useRef(false);
+  const deployedTables = publishResult?.tables_deployed ?? 1;
   const powerBiWorkspaceUrl =
     publishResult?.workspace_url ||
     sessionStorage.getItem("alteryx_powerbi_workspace_url") ||
     (workspaceId ? `https://app.powerbi.com/groups/${workspaceId}` : "https://app.powerbi.com");
   const gcpUrl = bigQueryTableUrl(bigQueryFinalModel);
-  const publishUrl = isDataformRepoPublish
-    ? publishResult?.workspace_url || "https://console.cloud.google.com/bigquery/dataform"
-    : isBigQueryPublish
-    ? gcpUrl
-    : powerBiWorkspaceUrl;
+  const publishUrl = isDataformRepoPublish ? publishResult?.workspace_url || "https://console.cloud.google.com/bigquery/dataform" : isBigQueryPublish ? gcpUrl : powerBiWorkspaceUrl;
   const batchId = sessionStorage.getItem("alteryx_batch_id") || "";
   const workflowId = sessionStorage.getItem("alteryx_workflow_id") || "";
   const rowCountCheck = getRowCountCheck(validationResult);
@@ -251,6 +208,12 @@ export default function PublishPage() {
     asNumber(rowCountCheck?.expected) ??
     asNumber(validationResult?.alteryx?.row_count) ??
     null;
+
+  const columnCount =
+    validationResult?.available_columns?.length ||
+    publishResult?.available_columns?.length ||
+    publishResult?.published_tables?.find((table: any) => tableMatchKey(table?.name) === tableMatchKey(finalValidationTableName))?.columns?.length ||
+    0;
 
   const validationMetrics = [
     {
@@ -279,32 +242,33 @@ export default function PublishPage() {
     },
   ];
 
-  const bigQueryValidationMetrics = [
-    {
-      metric: "Table Count",
-      alteryx: deployedTables,
-      bigquery: deployedTables,
-      variance: 0,
-    },
-    {
-      metric: "Column Count",
-      alteryx: columnCount,
-      bigquery: bigQueryColumnCount,
-      variance: bigQueryColumnCount !== null && columnCount !== null ? bigQueryColumnCount - columnCount : null,
-    },
-    {
-      metric: "Total Records",
-      alteryx: expectedRows,
-      bigquery: bigQueryRowCount,
-      variance: bigQueryRowCount !== null && expectedRows !== null ? bigQueryRowCount - expectedRows : null,
-    },
-    {
-      metric: "Total Tools Used",
-      alteryx: totalToolsUsed,
-      bigquery: "N/A",
-      variance: "N/A",
-    },
-  ];
+  // const bigQueryValidationMetrics = [
+  //   {
+  //     metric: "Table Count",
+  //     alteryx: deployedTables,
+  //     bigquery: deployedTables,
+  //     variance: 0,
+  //   },
+  //   {
+  //     metric: "Column Count",
+  //     alteryx: columnCount,
+  //     bigquery: bigQueryColumnCount,
+  //     variance: bigQueryColumnCount !== null && columnCount !== null ? bigQueryColumnCount - columnCount : null,
+  //   },
+  //   {
+  //     metric: "Total Records",
+  //     alteryx: expectedRows,
+  //     bigquery: bigQueryRowCount,
+  //     variance: bigQueryRowCount !== null && expectedRows !== null ? bigQueryRowCount - expectedRows : null,
+  //   },
+  //   {
+  //     metric: "Total Tools Used",
+  //     alteryx: totalToolsUsed,
+  //     bigquery: "N/A",
+  //     variance: "N/A",
+  //   },
+  // ];
+
 
   const steps = [
     { label: "Upload", complete: true },
@@ -331,43 +295,6 @@ export default function PublishPage() {
     setCopyStatus("Copied");
     window.setTimeout(() => setCopyStatus(""), 1600);
   };
-
-  // BigQuery metadata fetch useEffect (from dev52)
-  useEffect(() => {
-    if (!isBigQueryPublish || !bigQueryFinalModel || bigQueryRowCount !== null || bigQueryColumnCount !== null) {
-      return;
-    }
-
-    let cancelled = false;
-    fetchBigQueryTableMetadata(bigQueryFinalModel)
-      .then((metadata) => {
-        if (cancelled) return;
-        const merged = {
-          ...(publishResult || {}),
-          bigquery_metadata: metadata,
-          row_count: metadata.row_count,
-          total_rows: metadata.total_rows,
-          record_count: metadata.record_count,
-          total_records: metadata.total_records,
-          column_count: metadata.column_count,
-          total_columns: metadata.total_columns,
-          available_columns: metadata.available_columns || publishResult?.available_columns || [],
-        };
-        setPublishResult(merged);
-        if (isDbtBigQueryPublish) {
-          sessionStorage.setItem("alteryx_dbt_bigquery_publish_result", JSON.stringify(merged));
-        } else if (isDataformBigQueryPublish) {
-          sessionStorage.setItem("alteryx_dataform_bigquery_publish_result", JSON.stringify(merged));
-        }
-      })
-      .catch((err) => {
-        console.warn("Could not fetch BigQuery table metadata:", err);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bigQueryColumnCount, bigQueryFinalModel, bigQueryRowCount, isBigQueryPublish, isDataformBigQueryPublish, isDbtBigQueryPublish, publishResult]);
 
   useEffect(() => {
     if (isBigQueryPublish) {
@@ -470,7 +397,7 @@ export default function PublishPage() {
         if (!cancelled) {
           recordValidationRequestedRef.current = false;
         }
-      });
+      })
 
     return () => {
       cancelled = true;
@@ -480,109 +407,78 @@ export default function PublishPage() {
   const downloadValidationReport = async () => {
     setReportStatus("Preparing report...");
     try {
-      if (isBigQueryPublish) {
-        // BigQuery-specific validation report (from dev52)
-        const pdfBlob = await downloadBigQueryValidationReportPdf({
-          app_name: workflowName,
-          project_id: bigQueryTarget.project,
-          dataset_id: bigQueryTarget.dataset,
-          final_model: bigQueryFinalModel,
-          migration_status: publishResult?.success ? "Certified" : "Failed",
-          tables_deployed: deployedTables,
-          dbt_metrics: {
-            tool_count: totalToolsUsed,
-          },
-          bigquery_metrics: {
-            commands_succeeded: publishResult?.commands?.filter((command: any) => command.success).length || 0,
-            total_commands: publishResult?.commands?.length || 0,
-            row_count: bigQueryRowCount,
-            column_count: bigQueryColumnCount,
-            total_records: bigQueryRecordCount,
-          },
-        });
+      let validationData = validationResult;
 
-        const url = URL.createObjectURL(pdfBlob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `BigQuery_Validation_Report_${safeFileName(datasetName)}_${new Date().toISOString().slice(0, 10)}.pdf`;
-        anchor.click();
-        URL.revokeObjectURL(url);
-        setReportStatus("Report downloaded");
-        window.setTimeout(() => setReportStatus(""), 1800);
-      } else {
-        let validationData = validationResult;
-
-        if (!validationData && publishResult?.dataset_id) {
-          try {
-            setReportStatus("Fetching validation data...");
-            if (batchId && workflowId) {
-              validationData = await validateAlteryxPowerBiRecordCounts({
-                batch_id: batchId,
-                workflow_id: workflowId,
-                dataset_id: publishResult.dataset_id,
-                table_name: finalValidationTableName,
-                workspace_id: workspaceId,
-                expected_row_count: null,
-              });
-            } else {
-              validationData = await validatePowerBiMigration({
-                dataset_id: publishResult.dataset_id,
-                table_name: finalValidationTableName,
-                workspace_id: workspaceId,
-              });
-            }
-          } catch (err: any) {
-            console.warn("Could not fetch validation data:", err);
-            setReportStatus("Note: Using stored data (validation pending)");
+      if (!validationData && publishResult?.dataset_id) {
+        try {
+          setReportStatus("Fetching validation data...");
+          if (batchId && workflowId) {
+            validationData = await validateAlteryxPowerBiRecordCounts({
+              batch_id: batchId,
+              workflow_id: workflowId,
+              dataset_id: publishResult.dataset_id,
+              table_name: finalValidationTableName,
+              workspace_id: workspaceId,
+              expected_row_count: null,
+            });
+          } else {
+            validationData = await validatePowerBiMigration({
+              dataset_id: publishResult.dataset_id,
+              table_name: finalValidationTableName,
+              workspace_id: workspaceId,
+            });
           }
+        } catch (err: any) {
+          console.warn("Could not fetch validation data:", err);
+          setReportStatus("Note: Using stored data (validation pending)");
         }
-
-        const reportRowCountCheck = getRowCountCheck(validationData);
-        const reportPowerBiRows =
-          asNumber(reportRowCountCheck?.actual) ??
-          asNumber(validationData?.actual?.RowCount) ??
-          asNumber(validationData?.powerbi?.actual?.RowCount) ??
-          null;
-        const reportExpectedRows =
-          asNumber(reportRowCountCheck?.expected) ??
-          asNumber(validationData?.alteryx?.row_count) ??
-          null;
-
-        const reportColumnCount =
-          validationData?.available_columns?.length ||
-          publishResult?.available_columns?.length ||
-          publishResult?.published_tables?.find((table: any) => tableMatchKey(table?.name) === tableMatchKey(finalValidationTableName))?.columns?.length ||
-          columnCount;
-
-        const pdfBlob = await downloadValidationReportPdf({
-          table_name: validationData?.table_name || validationResult?.table_name || finalValidationTableName,
-          app_name: workflowName,
-          migration_status: "Certified",
-          publishing_method: "M_QUERY",
-          tables_deployed: deployedTables,
-          qlik_metrics: {
-            total_records: reportExpectedRows,
-            table_count: deployedTables,
-            column_count: reportColumnCount,
-            certification_status: "Pass",
-          },
-          powerbi_metrics: {
-            total_records: reportPowerBiRows,
-            table_count: deployedTables,
-            column_count: reportColumnCount,
-            certification_status: "Pass",
-          },
-        });
-
-        const url = URL.createObjectURL(pdfBlob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `Validation_Reconciliation_Report_${safeFileName(datasetName)}_${new Date().toISOString().slice(0, 10)}.pdf`;
-        anchor.click();
-        URL.revokeObjectURL(url);
-        setReportStatus("Report downloaded");
-        window.setTimeout(() => setReportStatus(""), 1800);
       }
+
+      const reportRowCountCheck = getRowCountCheck(validationData);
+      const reportPowerBiRows =
+        asNumber(reportRowCountCheck?.actual) ??
+        asNumber(validationData?.actual?.RowCount) ??
+        asNumber(validationData?.powerbi?.actual?.RowCount) ??
+        null;
+      const reportExpectedRows =
+        asNumber(reportRowCountCheck?.expected) ??
+        asNumber(validationData?.alteryx?.row_count) ??
+        null;
+
+      const reportColumnCount =
+        validationData?.available_columns?.length ||
+        publishResult?.available_columns?.length ||
+        publishResult?.published_tables?.find((table: any) => tableMatchKey(table?.name) === tableMatchKey(finalValidationTableName))?.columns?.length ||
+        columnCount;
+
+      const pdfBlob = await downloadValidationReportPdf({
+        table_name: validationData?.table_name || validationResult?.table_name || finalValidationTableName,
+        app_name: workflowName,
+        migration_status: "Certified",
+        publishing_method: "M_QUERY",
+        tables_deployed: deployedTables,
+        qlik_metrics: {
+          total_records: reportExpectedRows,
+          table_count: deployedTables,
+          column_count: reportColumnCount,
+          certification_status: "Pass",
+        },
+        powerbi_metrics: {
+          total_records: reportPowerBiRows,
+          table_count: deployedTables,
+          column_count: reportColumnCount,
+          certification_status: "Pass",
+        },
+      });
+
+      const url = URL.createObjectURL(pdfBlob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `Validation_Reconciliation_Report_${safeFileName(datasetName)}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setReportStatus("Report downloaded");
+      window.setTimeout(() => setReportStatus(""), 1800);
     } catch (err: any) {
       setReportStatus(err?.message || "Failed to download report");
       window.setTimeout(() => setReportStatus(""), 2000);
@@ -701,46 +597,34 @@ export default function PublishPage() {
                 </tbody>
               </table>
             ) : isBigQueryPublish ? (
-              <>
-                <table className="publish-validation-table">
-                  <thead>
-                    <tr>
-                      <th>Metric</th>
-                      <th>Alteryx</th>
-                      <th>BigQuery</th>
-                      <th>Variance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bigQueryValidationMetrics.map((row) => (
-                      <tr key={row.metric}>
-                        <td>{row.metric}</td>
-                        <td>{formatMetricValue(row.alteryx)}</td>
-                        <td>{formatMetricValue(row.bigquery)}</td>
-                        <td>{formatMetricValue(row.variance)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="publish-bigquery-info">
-                  <div className="info-row">
-                    <span>GCP project</span>
-                    <strong>{bigQueryTarget.project || publishResult?.project_id || "Not available"}</strong>
-                  </div>
-                  <div className="info-row">
-                    <span>Dataset</span>
-                    <strong>{bigQueryTarget.dataset || publishResult?.target_dataset || "Not available"}</strong>
-                  </div>
-                  <div className="info-row">
-                    <span>Final model</span>
-                    <strong>{bigQueryFinalModel}</strong>
-                  </div>
-                  <div className="info-row">
-                    <span>{isDataformBigQueryPublish ? "Dataform commands" : "dbt commands"}</span>
-                    <strong>{publishResult?.commands?.filter((command: any) => command.success).length || 0}/{publishResult?.commands?.length || 0} succeeded</strong>
-                  </div>
-                </div>
-              </>
+              <table className="publish-validation-table">
+                <tbody>
+                  <tr>
+                    <td>Status</td>
+                    <td>{publishResult?.success ? "Complete" : "Failed"}</td>
+                  </tr>
+                  <tr>
+                    <td>Project</td>
+                    <td>{bigQueryTarget.project || publishResult?.project_id || "Not available"}</td>
+                  </tr>
+                  <tr>
+                    <td>Dataset</td>
+                    <td>{bigQueryTarget.dataset || publishResult?.target_dataset || "Not available"}</td>
+                  </tr>
+                  <tr>
+                    <td>Final model</td>
+                    <td>{bigQueryFinalModel}</td>
+                  </tr>
+                  <tr>
+                    <td>{isDataformBigQueryPublish ? "Dataform commands" : "dbt commands"}</td>
+                    <td>{publishResult?.commands?.filter((command: any) => command.success).length || 0}/{publishResult?.commands?.length || 0} succeeded</td>
+                  </tr>
+                  <tr>
+                    <td>Total tools used</td>
+                    <td>{formatMetricValue(totalToolsUsed)}</td>
+                  </tr>
+                </tbody>
+              </table>
             ) : (
               <table className="publish-validation-table">
                 <thead>
@@ -755,9 +639,15 @@ export default function PublishPage() {
                   {validationMetrics.map((row) => (
                     <tr key={row.metric}>
                       <td>{row.metric}</td>
-                      <td>{formatMetricValue(row.alteryx)}</td>
-                      <td>{formatMetricValue(row.powerbi)}</td>
-                      <td>{formatMetricValue(row.variance)}</td>
+                      <td>
+                        {formatMetricValue(row.alteryx)}
+                      </td>
+                      <td>
+                        {formatMetricValue(row.powerbi)}
+                      </td>
+                      <td>
+                        {formatMetricValue(row.variance)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -793,20 +683,18 @@ export default function PublishPage() {
               </div>
             </div>
           )}
-          {!isDataformRepoPublish && (
-            <div className="summary-row">
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-                <span>Validation & Reconciliation</span>
-                <button
-                  className="validation-download-btn"
-                  onClick={downloadValidationReport}
-                  title="Download validation and reconciliation report"
-                >
-                  Download
-                </button>
-              </div>
+          {!isBigQueryPublish && !isDataformRepoPublish && <div className="summary-row">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+              <span>Validation & Reconciliation</span>
+              <button
+                className="validation-download-btn"
+                onClick={downloadValidationReport}
+                title="Download validation and reconciliation report"
+              >
+                Download
+              </button>
             </div>
-          )}
+          </div>}
           {reportStatus && <p className="report-status">{reportStatus}</p>}
         </section>
       </main>
