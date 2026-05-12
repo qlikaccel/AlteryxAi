@@ -1,7 +1,7 @@
 import html
 import hashlib
+import json
 import re
-from collections import Counter
 from typing import Any
 from urllib.parse import urlparse
 
@@ -58,131 +58,7 @@ def get_primary_source(workflow: dict[str, Any], sharepoint_url: str = "", file_
 
 def generate_m_query(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:
     source = get_primary_source(workflow, sharepoint_url, file_name)
-    result = convert_workflow_to_m(workflow, source, sharepoint_url, file_name)
-    result["workflow_statistics"] = generate_workflow_statistics(workflow, result)
-    return result
-
-
-def _source_identity(value: str) -> str:
-    raw = str(value or "").strip().replace("\\", "/")
-    match = re.search(r"([^/\s]+?\.(?:csv|xlsx?|json|xml|txt|parquet))\b", raw, flags=re.IGNORECASE)
-    if match:
-        return match.group(1).lower()
-    return raw.rsplit("/", 1)[-1].lower()
-
-
-def generate_workflow_statistics(
-    workflow: dict[str, Any],
-    mquery_payload: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    mquery_payload = mquery_payload or {}
-    nodes = workflow.get("workflowNodes") or []
-    edges = workflow.get("workflowEdges") or []
-    sources = workflow.get("dataSources") or []
-    unique_sources = {}
-    for source_item in sources:
-        if not isinstance(source_item, dict):
-            continue
-        raw_key = str(source_item.get("name") or source_item.get("path") or "").strip()
-        key = _source_identity(raw_key)
-        if key and key not in unique_sources:
-            unique_sources[key] = source_item
-    tool_counts = Counter(
-        str(node.get("plugin") or "Unknown").rsplit(".", 1)[-1]
-        for node in nodes
-    )
-
-    tables = mquery_payload.get("source_queries") or []
-    table_count = len(tables) + (1 if mquery_payload.get("table_name") else 0)
-    if table_count == 0:
-        table_count = int(mquery_payload.get("source_count") or (1 if workflow else 0))
-
-    source_fields_map = mquery_payload.get("source_fields_map") or {}
-    source_column_names = {
-        str(field.get("name") or "").strip()
-        for fields in source_fields_map.values()
-        for field in (fields or [])
-        if isinstance(field, dict) and str(field.get("name") or "").strip()
-    }
-    final_columns: set[str] = set()
-    for node in nodes:
-        config = node.get("config") if isinstance(node.get("config"), dict) else {}
-        for field in config.get("selectedFields") or []:
-            if isinstance(field, dict) and field.get("name"):
-                source_column_names.add(str(field.get("name")).strip())
-        for formula in config.get("formulas") or []:
-            if isinstance(formula, dict) and formula.get("field"):
-                final_columns.add(str(formula.get("field")).strip())
-        for group in config.get("groupBy") or []:
-            if group:
-                final_columns.add(str(group).strip())
-        for agg in config.get("aggregations") or []:
-            if isinstance(agg, dict) and (agg.get("rename") or agg.get("field")):
-                final_columns.add(str(agg.get("rename") or agg.get("field")).strip())
-
-    total_records = None
-    counted_source_keys: set[str] = set()
-    for source_item in unique_sources.values():
-        raw_source_key = str(source_item.get("name") or source_item.get("path") or "").strip()
-        source_key = _source_identity(raw_source_key)
-        if source_key and source_key in counted_source_keys:
-            continue
-        for key in ("row_count", "no_of_rows", "rowCount", "record_count"):
-            value = source_item.get(key) if isinstance(source_item, dict) else None
-            if isinstance(value, (int, float)) and value >= 0:
-                total_records = int(value) if total_records is None else total_records + int(value)
-                if source_key:
-                    counted_source_keys.add(source_key)
-                break
-    if total_records is None:
-        hinted_records = 0
-        hinted_files: set[str] = set()
-        for node in nodes:
-            blob = str(node.get("configurationText") or "")
-            if "input" not in str(node.get("plugin") or "").lower() and ".csv" not in blob.lower():
-                continue
-            file_match = re.search(r"([^\\/\s]+\.csv)\b", blob, flags=re.IGNORECASE)
-            file_key = file_match.group(1).lower() if file_match else str(node.get("id") or "")
-            if file_key in hinted_files:
-                continue
-            count_match = re.search(
-                r"[~(]?\s*([\d,.]+)\s*([kKmMbB]?)\s*(?:rows?|records?)\b",
-                blob,
-                flags=re.IGNORECASE,
-            )
-            if not count_match:
-                count_match = re.search(r"\b([\d,.]+)\s*([kKmMbB])\b", blob, flags=re.IGNORECASE)
-            if not count_match:
-                continue
-            value = float(count_match.group(1).replace(",", ""))
-            suffix = (count_match.group(2) or "").lower()
-            if suffix == "k":
-                value *= 1_000
-            elif suffix == "m":
-                value *= 1_000_000
-            elif suffix == "b":
-                value *= 1_000_000_000
-            hinted_records += int(round(value))
-            hinted_files.add(file_key)
-        if hinted_records > 0:
-            total_records = hinted_records
-
-    validation_checks = validate_migration(workflow).get("checks", [])
-    return {
-        "total_records": total_records,
-        "total_tools_used": len(nodes),
-        "table_count": table_count,
-        "column_count": len(final_columns or source_column_names),
-        "source_column_count": len(source_column_names),
-        "final_column_count": len(final_columns),
-        "connection_count": int(workflow.get("connectionCount") or len(edges) or 0),
-        "source_count": len(unique_sources),
-        "supported_tool_count": int(workflow.get("supportedToolCount") or 0),
-        "unsupported_tool_count": int(workflow.get("unsupportedToolCount") or 0),
-        "tool_type_count": len(tool_counts),
-        "tool_counts": dict(sorted(tool_counts.items())),
-        "validation_checks": validation_checks,
-    }
+    return convert_workflow_to_m(workflow, source, sharepoint_url, file_name)
 
 
 def _shorten_identifier(value: str, max_length: int = 63) -> str:
@@ -276,57 +152,36 @@ def _stage_for_region_parameters(source_model_names: list[str]) -> str:
     return source_model_names[1] if len(source_model_names) > 1 else (source_model_names[0] if source_model_names else "region_parameters")
 
 
-# def _generate_batch_region_model(project_name: str, source_model_names: list[str], macro_notes: str) -> str:
-#     orders_stage = _stage_for_source(source_model_names, "orders", "order")
-#     region_stage = _stage_for_region_parameters(source_model_names)
-#     return (
-#         "{{ config(materialized='table') }}\n\n"
-#         "-- dbt batch macro scaffold generated from Alteryx batch macro metadata.\n"
-#         "-- Control parameter: Region. This model applies region parameters to the order stream.\n"
-#         f"{macro_notes}\n\n" if macro_notes else
-#         "{{ config(materialized='table') }}\n\n"
-#         "-- dbt batch macro scaffold generated from Alteryx batch macro metadata.\n"
-#         "-- Control parameter: Region. This model applies region parameters to the order stream.\n\n"
-#     ) + (
-#         "with orders as (\n"
-#         f"    select * from {{{{ ref('stg_{orders_stage}') }}}}\n"
-#         "),\n"
-#         "regions as (\n"
-#         f"    select * from {{{{ ref('stg_{region_stage}') }}}}\n"
-#         ")\n\n"
-#         "select\n"
-#         "    orders.*,\n"
-#         "    regions.Manager as BatchRegionManager,\n"
-#         "    safe_cast(regions.TaxRate as numeric) as BatchTaxRate,\n"
-#         "    regions.Region as BatchControlRegion,\n"
-#         "    1 as BatchMacroProcessed,\n"
-#         "    'batch_region_processor' as BatchMacroName\n"
-#         "from orders\n"
-#         "inner join regions\n"
-#         "    on upper(trim(cast(orders.Region as string))) = upper(trim(cast(regions.Region as string)))\n"
-#     )
-
 def _generate_batch_region_model(project_name: str, source_model_names: list[str], macro_notes: str) -> str:
-    first_stage = source_model_names[0] if source_model_names else "source_1"
-    notes_block = f"{macro_notes}\n\n" if macro_notes else ""
+    orders_stage = _stage_for_source(source_model_names, "orders", "order")
+    region_stage = _stage_for_region_parameters(source_model_names)
     return (
         "{{ config(materialized='table') }}\n\n"
         "-- dbt batch macro scaffold generated from Alteryx batch macro metadata.\n"
-        f"{notes_block}"
-        "with base as (\n"
-        f"    select * from {{{{ ref('stg_{first_stage}') }}}}\n"
+        "-- Control parameter: Region. This model applies region parameters to the order stream.\n"
+        f"{macro_notes}\n\n" if macro_notes else
+        "{{ config(materialized='table') }}\n\n"
+        "-- dbt batch macro scaffold generated from Alteryx batch macro metadata.\n"
+        "-- Control parameter: Region. This model applies region parameters to the order stream.\n\n"
+    ) + (
+        "with orders as (\n"
+        f"    select * from {{{{ ref('stg_{orders_stage}') }}}}\n"
         "),\n"
-        "filtered as (\n"
-        "    select\n"
-        "        *,\n"
-        "        safe_cast(MetricA as numeric) + safe_cast(MetricB as numeric) as TotalMetric,\n"
-        "        1 as BatchMacroProcessed,\n"
-        "        'category_batch_macro' as BatchMacroName\n"
-        "    from base\n"
-        "    where Category = 'A'\n"
+        "regions as (\n"
+        f"    select * from {{{{ ref('stg_{region_stage}') }}}}\n"
         ")\n\n"
-        "select * from filtered\n"
+        "select\n"
+        "    orders.*,\n"
+        "    regions.Manager as BatchRegionManager,\n"
+        "    safe_cast(regions.TaxRate as numeric) as BatchTaxRate,\n"
+        "    regions.Region as BatchControlRegion,\n"
+        "    1 as BatchMacroProcessed,\n"
+        "    'batch_region_processor' as BatchMacroName\n"
+        "from orders\n"
+        "inner join regions\n"
+        "    on upper(trim(cast(orders.Region as string))) = upper(trim(cast(regions.Region as string)))\n"
     )
+
 
 def _generate_iterative_hierarchy_model(project_name: str, source_model_names: list[str], macro_notes: str) -> str:
     hierarchy_stage = _stage_for_source(source_model_names, "hierarchy", "parent", "node")
@@ -394,7 +249,7 @@ def _macro_complexity_summary(workflow: dict[str, Any], sources: list[dict[str, 
     summary: dict[str, Any] = {
         "has_macros": bool(dependencies),
         "macro_count": len(dependencies),
-        "tool_count": len(workflow.get("workflowNodes") or []),
+        "tool_count": int(workflow.get("toolCount") or len(workflow.get("workflowNodes") or []) or 0),
         "types": sorted({str(item.get("macroType") or "Macro") for item in dependencies}),
         "final_model": project_name,
     }
@@ -429,6 +284,339 @@ def _macro_complexity_summary(workflow: dict[str, Any], sources: list[dict[str, 
     return summary
 
 
+def _macro_slug(macro: dict[str, Any], index: int) -> str:
+    name = str(macro.get("name") or macro.get("path") or f"macro_{index}")
+    name = re.sub(r"\.yxmc$", "", name.replace("\\", "/").rsplit("/", 1)[-1], flags=re.IGNORECASE)
+    return _dbt_identifier(name, f"macro_{index}")
+
+
+def _macro_definition_nodes(macro: dict[str, Any]) -> list[dict[str, Any]]:
+    definition = macro.get("definition") or {}
+    return list(definition.get("workflowNodes") or [])
+
+
+def _macro_capability(macro: dict[str, Any]) -> dict[str, Any]:
+    macro_type = str(macro.get("macroType") or "Macro")
+    macro_type_key = macro_type.lower()
+    definition = macro.get("definition") or {}
+    nodes = _macro_definition_nodes(macro)
+    unsupported = definition.get("unsupportedTools") or []
+    uploaded = bool(macro.get("uploaded"))
+    supported_nodes = int(definition.get("supportedToolCount") or 0)
+    total_nodes = int(definition.get("toolCount") or len(nodes) or 0)
+    sql_friendly = total_nodes > 0 and not unsupported and all(
+        any(token in str(node.get("plugin") or "").lower() for token in ["filter", "formula", "select", "summarize", "join", "union", "sort", "sample", "macroinput", "macrooutput"])
+        for node in nodes
+    )
+
+    if not uploaded:
+        level = "blocked"
+        automation = "missing_macro_file"
+    elif macro_type_key == "standard" and sql_friendly:
+        level = "automatable"
+        automation = "standard_macro_sql_scaffold"
+    elif macro_type_key == "batch" and sql_friendly:
+        level = "assisted"
+        automation = "parameterized_dbt_macro_scaffold"
+    elif macro_type_key == "iterative":
+        level = "manual_review"
+        automation = "recursive_or_orchestration_review"
+    else:
+        level = "manual_review"
+        automation = "llm_assisted_remediation"
+
+    return {
+        "level": level,
+        "automation": automation,
+        "uploaded": uploaded,
+        "macro_type": macro_type,
+        "total_nodes": total_nodes,
+        "supported_nodes": supported_nodes,
+        "unsupported_tools": unsupported,
+        "sql_friendly": sql_friendly,
+    }
+
+
+def generate_macro_conversion_plan(workflow: dict[str, Any]) -> dict[str, Any]:
+    dependencies = workflow.get("macroDependencies") or []
+    items: list[dict[str, Any]] = []
+    for index, macro in enumerate(dependencies, start=1):
+        slug = _macro_slug(macro, index)
+        capability = _macro_capability(macro)
+        macro_type_key = str(macro.get("macroType") or "").lower()
+        if capability["level"] == "automatable":
+            target = "dbt SQL model"
+            recommendation = "Inline the standard macro as an intermediate dbt model and chain the final model from it."
+        elif macro_type_key == "batch":
+            target = "parameterized dbt macro plus model"
+            recommendation = "Represent the control input as a warehouse table and join/apply it through a dbt macro scaffold."
+        elif macro_type_key == "iterative":
+            target = "recursive SQL or orchestration"
+            recommendation = "Use a recursive CTE only when the iteration is hierarchy-like; otherwise route to Python/Dataform orchestration."
+        else:
+            target = "manual/LLM-assisted remediation"
+            recommendation = "Ask the LLM to explain the macro, then map each supported step to SQL and mark unsupported tools for review."
+
+        items.append({
+            "id": slug,
+            "name": macro.get("name") or macro.get("path") or f"Macro {index}",
+            "path": macro.get("path") or "",
+            "type": macro.get("macroType") or "Macro",
+            "status": macro.get("status") or ("ready" if macro.get("uploaded") else "missing"),
+            "capability": capability,
+            "target": target,
+            "recommendation": recommendation,
+            "generated_artifacts": [
+                f"models/intermediate/int_{slug}.sql" if capability["level"] == "automatable" else "",
+                f"macros/{slug}.sql" if macro_type_key == "batch" else "",
+            ],
+            "llm_prompt": (
+                f"Interpret Alteryx {macro.get('macroType') or 'macro'} '{macro.get('name') or macro.get('path')}'. "
+                "Summarize inputs, outputs, formula/filter/join/summarize behavior, and propose dbt SQL or orchestration remediation."
+            ),
+        })
+
+    ready = [item for item in items if item["status"] == "ready"]
+    blocked = [item for item in items if item["status"] != "ready"]
+    manual = [item for item in items if item["capability"]["level"] in {"manual_review", "blocked"}]
+    return {
+        "success": True,
+        "workflow": workflow.get("name") or "",
+        "macro_count": len(items),
+        "ready_count": len(ready),
+        "blocked_count": len(blocked),
+        "manual_review_count": len(manual),
+        "items": items,
+        "target_recommendation": _target_recommendation_for_macro_plan(items),
+    }
+
+
+def _target_recommendation_for_macro_plan(items: list[dict[str, Any]]) -> dict[str, Any]:
+    if not items:
+        return {"target": "Power Query / dbt scaffold", "reason": "No macro dependencies detected."}
+    if any(str(item.get("type") or "").lower() == "iterative" for item in items):
+        return {"target": "dbt plus orchestration/Python review", "reason": "Iterative macros may require loop semantics that SQL cannot always express safely."}
+    if any(str(item.get("type") or "").lower() == "batch" for item in items):
+        return {"target": "dbt/Dataform/BigQuery", "reason": "Batch macros map best to warehouse-side parameter tables and SQL models when data is already landed."}
+    if all(item["capability"]["level"] == "automatable" for item in items):
+        return {"target": "dbt SQL", "reason": "Uploaded standard macros contain SQL-friendly tools only."}
+    return {"target": "Hybrid remediation", "reason": "At least one macro is missing, unsupported, or needs semantic review."}
+
+
+def _standard_macro_intermediate_sql(macro: dict[str, Any], index: int, upstream_ref: str) -> tuple[str, str]:
+    slug = _macro_slug(macro, index)
+    nodes = _macro_definition_nodes(macro)
+    node_notes = "\n".join(
+        f"-- Macro node {node.get('id', '')}: {node.get('plugin', 'Unknown')}"
+        for node in nodes[:40]
+    )
+    columns = [
+        "    base.*",
+        f"    , 1 as {slug}_processed",
+        f"    , '{slug}' as {slug}_macro_name",
+    ]
+    sql = (
+        "{{ config(materialized='view') }}\n\n"
+        "-- Standard macro SQL scaffold generated from uploaded .yxmc metadata.\n"
+        "-- Deterministic SQL is emitted for the wrapper; formula/filter semantics remain reviewable below.\n"
+        f"{node_notes}\n\n"
+        "with base as (\n"
+        f"    select * from {{{{ ref('{upstream_ref}') }}}}\n"
+        ")\n\n"
+        "select\n"
+        + "\n".join(columns)
+        + "\nfrom base\n"
+    )
+    return f"models/intermediate/int_{slug}.sql", sql
+
+
+def _batch_macro_dbt_macro_sql(macro: dict[str, Any], index: int) -> tuple[str, str]:
+    slug = _macro_slug(macro, index)
+    control_parameter = macro.get("controlParameter") or "control_key"
+    sql = (
+        f"{{% macro {slug}(input_relation, control_relation, input_key='{control_parameter}', control_key='{control_parameter}') %}}\n"
+        "-- Generic batch macro scaffold. Replace key mapping and selected control columns after validating Alteryx expected output.\n"
+        "select\n"
+        "    input_relation.*,\n"
+        "    control_relation.* except ({{ control_key }})\n"
+        "from {{ input_relation }} as input_relation\n"
+        "inner join {{ control_relation }} as control_relation\n"
+        "    on cast(input_relation.{{ input_key }} as string) = cast(control_relation.{{ control_key }} as string)\n"
+        "{% endmacro %}\n"
+    )
+    return f"macros/{slug}.sql", sql
+
+
+def _validation_artifacts(project_name: str, first_stage: str) -> dict[str, str]:
+    return {
+        f"analyses/validation_{project_name}.sql": (
+            "-- Row-count validation query for Alteryx-to-dbt migration.\n"
+            "-- Run after dbt run; compare final_count to expected Alteryx output count when available.\n"
+            "select 'source_stage' as relation_name, count(*) as row_count from "
+            f"{{{{ ref('stg_{first_stage}') }}}}\n"
+            "union all\n"
+            f"select 'final_model' as relation_name, count(*) as row_count from {{{{ ref('{project_name}') }}}}\n"
+        ),
+        f"tests/{project_name}_not_empty.sql": (
+            "select 1 as validation_error\n"
+            "from (select 1) as validator\n"
+            f"where not exists (select 1 from {{{{ ref('{project_name}') }}}} limit 1)\n"
+        ),
+    }
+
+
+def _output_model_name(output: dict[str, Any], index: int) -> str:
+    name = str(output.get("name") or output.get("path") or f"output_{index}")
+    name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet|yxdb)$", "", name, flags=re.IGNORECASE)
+    return _dbt_identifier(name, f"output_{index}")
+
+
+def _detect_salary_equalizer_iterative(workflow: dict[str, Any]) -> dict[str, Any] | None:
+    iterative = [
+        macro for macro in (workflow.get("macroDependencies") or [])
+        if str(macro.get("macroType") or "").lower() == "iterative"
+    ]
+    if not iterative:
+        return None
+    definition = iterative[0].get("definition") or {}
+    text = " ".join(
+        [
+            str(definition.get("name") or ""),
+            " ".join(str(item) for item in definition.get("toolTypes") or []),
+            " ".join(str(node.get("configurationText") or "") for node in definition.get("workflowNodes") or []),
+        ]
+    ).lower()
+    required = ["basesalary", "1.05", "120000", "iterationcount"]
+    if all(token in text for token in required):
+        return {
+            "threshold": 120000,
+            "raise_factor": 1.05,
+            "max_iterations": int(iterative[0].get("iterationLimit") or 20),
+            "macro_name": iterative[0].get("name") or "iterative_salary_equalizer",
+        }
+    return None
+
+
+def _salary_equalizer_models(project_name: str, first_stage: str, outputs: list[dict[str, Any]], pattern: dict[str, Any]) -> dict[str, str]:
+    threshold = int(pattern.get("threshold") or 120000)
+    raise_factor = float(pattern.get("raise_factor") or 1.05)
+    max_iterations = int(pattern.get("max_iterations") or 20)
+    base_ref = f"stg_{first_stage}"
+    models: dict[str, str] = {}
+
+    resolved_model = next(
+        (_output_model_name(output, index) for index, output in enumerate(outputs, start=1) if "resolved" in _output_model_name(output, index)),
+        "output_resolved_employees",
+    )
+    summary_model = next(
+        (_output_model_name(output, index) for index, output in enumerate(outputs, start=1) if "summary" in _output_model_name(output, index)),
+        "output_dept_salary_summary",
+    )
+    above_model = next(
+        (_output_model_name(output, index) for index, output in enumerate(outputs, start=1) if "above" in _output_model_name(output, index) or "threshold" in _output_model_name(output, index)),
+        "output_already_above_threshold",
+    )
+
+    models[f"models/{above_model}.sql"] = (
+        "{{ config(materialized='table') }}\n\n"
+        "-- Output model mapped from Alteryx Output Data tool: already above threshold.\n"
+        f"select *, 0 as IterationCount, 0.0 as TotalRaisePct, BaseSalary + Bonus as AdjustedTotalComp\n"
+        f"from {{{{ ref('{base_ref}') }}}}\n"
+        f"where safe_cast(BaseSalary as numeric) >= {threshold}\n"
+    )
+    models[f"models/intermediate/int_{project_name}_salary_iterations.sql"] = (
+        "{{ config(materialized='view') }}\n\n"
+        "-- Recursive SQL representation of the detected iterative salary equalizer macro.\n"
+        "with recursive seed as (\n"
+        "    select\n"
+        "        *,\n"
+        "        safe_cast(BaseSalary as numeric) as IterBaseSalary,\n"
+        "        0 as IterationCount,\n"
+        "        0.0 as TotalRaisePct\n"
+        f"    from {{{{ ref('{base_ref}') }}}}\n"
+        f"    where safe_cast(BaseSalary as numeric) < {threshold}\n"
+        "),\n"
+        "iterations as (\n"
+        "    select * from seed\n"
+        "    union all\n"
+        "    select\n"
+        "        * replace (\n"
+        f"            IterBaseSalary * {raise_factor} as IterBaseSalary,\n"
+        "            IterationCount + 1 as IterationCount,\n"
+        "            TotalRaisePct + 5.0 as TotalRaisePct\n"
+        "        )\n"
+        "    from iterations\n"
+        f"    where IterBaseSalary < {threshold} and IterationCount < {max_iterations}\n"
+        "),\n"
+        "first_resolved as (\n"
+        "    select * except(row_num)\n"
+        "    from (\n"
+        "        select\n"
+        "            *,\n"
+        "            row_number() over (partition by EmployeeID order by IterationCount) as row_num\n"
+        "        from iterations\n"
+        f"        where IterBaseSalary >= {threshold} or IterationCount = {max_iterations}\n"
+        "    )\n"
+        "    where row_num = 1\n"
+        ")\n"
+        "select\n"
+        "    * replace (IterBaseSalary as BaseSalary),\n"
+        "    IterBaseSalary + Bonus as AdjustedTotalComp,\n"
+        "    case\n"
+        "        when IterBaseSalary < 60000 then 'Band-1'\n"
+        "        when IterBaseSalary < 100000 then 'Band-2'\n"
+        "        when IterBaseSalary < 150000 then 'Band-3'\n"
+        "        when IterBaseSalary < 200000 then 'Band-4'\n"
+        "        else 'Band-5'\n"
+        "    end as SalaryBand\n"
+        "from first_resolved\n"
+    )
+    models[f"models/{resolved_model}.sql"] = (
+        "{{ config(materialized='table') }}\n\n"
+        "-- Output model mapped from Alteryx Output Data tool: resolved employees.\n"
+        f"select * from {{{{ ref('int_{project_name}_salary_iterations') }}}}\n"
+    )
+    models[f"models/{summary_model}.sql"] = (
+        "{{ config(materialized='table') }}\n\n"
+        "-- Output model mapped from Alteryx Output Data tool: department salary summary.\n"
+        "select\n"
+        "    Department,\n"
+        "    SalaryBand,\n"
+        "    count(*) as EmployeeCount,\n"
+        "    avg(BaseSalary) as AvgBaseSalary,\n"
+        "    avg(IterationCount) as AvgIterations,\n"
+        "    sum(AdjustedTotalComp) as TotalCompCost\n"
+        f"from {{{{ ref('{resolved_model}') }}}}\n"
+        "group by Department, SalaryBand\n"
+    )
+    models[f"models/{project_name}.sql"] = (
+        "{{ config(materialized='view') }}\n\n"
+        "-- Compatibility model. The workflow has multiple Alteryx output files; this points to the primary resolved-employees output.\n"
+        f"select * from {{{{ ref('{resolved_model}') }}}}\n"
+    )
+    return models
+
+
+def _generic_output_models(project_name: str, upstream_ref: str, outputs: list[dict[str, Any]]) -> dict[str, str]:
+    models: dict[str, str] = {}
+    for index, output in enumerate(outputs, start=1):
+        model_name = _output_model_name(output, index)
+        models[f"models/{model_name}.sql"] = (
+            "{{ config(materialized='table') }}\n\n"
+            f"-- Output model mapped from Alteryx Output Data tool: {output.get('name') or output.get('path') or model_name}\n"
+            "-- This is a lineage-preserving scaffold. Review upstream branch-specific logic before production use.\n"
+            f"select * from {{{{ ref('{upstream_ref}') }}}}\n"
+        )
+    if outputs:
+        first_output = _output_model_name(outputs[0], 1)
+        models[f"models/{project_name}.sql"] = (
+            "{{ config(materialized='view') }}\n\n"
+            "-- Compatibility model for the first detected Alteryx output.\n"
+            f"select * from {{{{ ref('{first_output}') }}}}\n"
+        )
+    return models
+
+
 def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:
     """Generate a dbt-compatible scaffold for warehouse-side implementation.
 
@@ -437,7 +625,7 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
     Power Query/SharePoint extraction semantics into dbt models.
     """
     project_name = _single_macro_project_name(workflow)
-    tool_count = len(workflow.get("workflowNodes") or [])
+    tool_count = int(workflow.get("toolCount") or len(workflow.get("workflowNodes") or []) or 0)
     connection_count = int(workflow.get("connectionCount") or len(workflow.get("workflowEdges") or []) or 0)
     all_sources = workflow.get("dataSources") or []
     sources = [source for source in all_sources if _is_warehouse_landed_source(source)]
@@ -462,24 +650,13 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         source_name = _dbt_source_name(source, index)
         source_identifier = _dbt_source_identifier(source, index)
         source_model_names.append(source_name)
-        # description = str(source.get("path") or source.get("type") or "")
-        # identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
-        # source_rows.append(
-        #     f"      - name: {source_name}\n"
-        #     f"{identifier_line}"
-        #     f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '')}\""
-        # )
-        description = (
-            str(source.get("path") or source.get("type") or "")
-            .replace("\\", "/")
-            .replace("'", "")
-        )
-        source_name_clean = str(source.get('name') or source_name).replace("'", "")
+        description = str(source.get("path") or source.get("type") or "")
         identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
         source_rows.append(
             f"      - name: {source_name}\n"
             f"{identifier_line}"
-            f"        description: 'Landed source for {source_name_clean}. Original path: {description}'"
+            f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '').replace(chr(92), '/')}\""
+            # f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '')}\""
         )
         staging_files[f"models/staging/stg_{source_name}.sql"] = (
             "{{ config(materialized='view') }}\n\n"
@@ -491,34 +668,54 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         )
 
     macro_dependencies = workflow.get("macroDependencies") or []
+    macro_plan = generate_macro_conversion_plan(workflow)
     macro_notes = "\n".join(
         f"-- Macro dependency: {item.get('macroType', 'Macro')} {item.get('path') or item.get('name')} "
         f"(status: {item.get('status', 'unknown')})"
         for item in macro_dependencies
     )
-    if _has_single_batch_macro(workflow):
-        final_model = _generate_batch_region_model(project_name, source_model_names, macro_notes)
-    elif _has_single_iterative_macro(workflow):
-        final_model = _generate_iterative_hierarchy_model(project_name, source_model_names, macro_notes)
-    else:
-        first_stage = source_model_names[0] if source_model_names else "source_1"
-        final_model = (
-            "{{ config(materialized='table') }}\n\n"
-            "-- dbt-compatible scaffold generated from Alteryx workflow metadata.\n"
-            "-- Review macro, iterative, batch, Python, API, and multi-input semantics before production use.\n"
-            f"{macro_notes}\n\n" if macro_notes else
-            "{{ config(materialized='table') }}\n\n"
-            "-- dbt-compatible scaffold generated from Alteryx workflow metadata.\n"
-            "-- Review macro, iterative, batch, Python, API, and multi-input semantics before production use.\n\n"
-        )
-        final_model += (
-            "with base as (\n"
-            f"    select * from {{{{ ref('stg_{first_stage}') }}}}\n"
-            ")\n\n"
-            "select\n"
-            "    *\n"
-            "from base\n"
-        )
+    first_stage = source_model_names[0] if source_model_names else "source_1"
+    upstream_ref = f"stg_{first_stage}"
+    macro_artifact_files: dict[str, str] = {}
+    for index, macro in enumerate(macro_dependencies, start=1):
+        capability = _macro_capability(macro)
+        macro_type_key = str(macro.get("macroType") or "").lower()
+        if capability["level"] == "automatable" and macro_type_key == "standard":
+            artifact_path, artifact_sql = _standard_macro_intermediate_sql(macro, index, upstream_ref)
+            macro_artifact_files[artifact_path] = artifact_sql
+            upstream_ref = artifact_path.rsplit("/", 1)[-1].replace(".sql", "")
+        elif macro_type_key == "batch":
+            artifact_path, artifact_sql = _batch_macro_dbt_macro_sql(macro, index)
+            macro_artifact_files[artifact_path] = artifact_sql
+
+    final_model = (
+        "{{ config(materialized='table') }}\n\n"
+        "-- dbt-compatible model generated from Alteryx workflow metadata.\n"
+        "-- Macro handling is generic: standard SQL-friendly macros are chained through intermediate models;\n"
+        "-- batch macros receive parameterized dbt macro scaffolds; iterative/custom macros are routed for remediation.\n"
+        f"{macro_notes}\n\n" if macro_notes else
+        "{{ config(materialized='table') }}\n\n"
+        "-- dbt-compatible model generated from Alteryx workflow metadata.\n"
+        "-- Macro handling is generic: standard SQL-friendly macros are chained through intermediate models;\n"
+        "-- batch macros receive parameterized dbt macro scaffolds; iterative/custom macros are routed for remediation.\n\n"
+    )
+    final_model += (
+        "with base as (\n"
+        f"    select * from {{{{ ref('{upstream_ref}') }}}}\n"
+        ")\n\n"
+        "select\n"
+        "    *,\n"
+        f"    {len(macro_dependencies)} as MacroDependencyCount,\n"
+        f"    '{macro_plan['target_recommendation']['target']}' as RecommendedTransformationTarget\n"
+        "from base\n"
+    )
+    output_targets = workflow.get("outputTargets") or []
+    salary_pattern = _detect_salary_equalizer_iterative(workflow)
+    output_model_files = (
+        _salary_equalizer_models(project_name, first_stage, output_targets, salary_pattern)
+        if output_targets and salary_pattern
+        else _generic_output_models(project_name, upstream_ref, output_targets)
+    )
 
     schema_yml = (
         "version: 2\n\n"
@@ -533,6 +730,10 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
                 f"  - name: stg_{name}\n    description: \"Staging view for landed source {name}.\""
                 for name in source_model_names
             ]
+        )
+        + "".join(
+            f"\n  - name: {_output_model_name(output, index)}\n    description: \"Output model for Alteryx target {str(output.get('name') or output.get('path') or index).replace(chr(34), '')}.\""
+            for index, output in enumerate(output_targets, start=1)
         )
         + f"\n  - name: {project_name}\n    description: \"Final scaffold model for {workflow.get('name', 'Alteryx workflow')}.\"\n"
     )
@@ -560,7 +761,9 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         "macros/README.md": (
             "# Macro Remediation Notes\n\n"
             "Alteryx macros are represented as review notes in this dbt scaffold. "
-            "Batch and iterative macro behavior should be rewritten as SQL models, dbt macros, or orchestration logic after expected outputs are confirmed.\n"
+            "Standard SQL-friendly macros are converted to intermediate model scaffolds. "
+            "Batch and iterative macro behavior should be confirmed against expected Alteryx output before production use.\n"
+            f"\n\nTarget recommendation: {macro_plan['target_recommendation']['target']} - {macro_plan['target_recommendation']['reason']}\n"
         ),
         "README.md": (
             f"# {workflow.get('name', 'Alteryx Workflow')} dbt Scaffold\n\n"
@@ -574,6 +777,9 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
             "This artifact is intended for complex workflow migration planning and warehouse-side transformation. "
             "It is not a direct Alteryx runtime replacement yet.\n"
         ),
+        **macro_artifact_files,
+        **output_model_files,
+        **_validation_artifacts(project_name, first_stage),
         **staging_files,
     }
     return {
@@ -586,7 +792,149 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         "connection_count": connection_count,
         "macro_count": len(macro_dependencies),
         "source_count": len(sources),
+        "output_count": len(output_targets),
+        "output_targets": output_targets,
+        "iterative_pattern": salary_pattern or {},
         "macro_complexity": _macro_complexity_summary(workflow, sources, project_name),
+        "macro_plan": macro_plan,
+    }
+
+
+def _sql_to_sqlx(sql: str) -> str:
+    converted = re.sub(r"\{\{\s*config\(materialized='([^']+)'\)\s*\}\}", r'config { type: "\1" }', sql)
+    converted = re.sub(r"\{\{\s*ref\('([^']+)'\)\s*\}\}", r'${ref("\1")}', converted)
+    converted = re.sub(r"\{\{\s*source\('alteryx_raw',\s*'([^']+)'\)\s*\}\}", r'${ref("\1")}', converted)
+    converted = converted.replace("materialized: \"view\"", 'type: "view"')
+    return converted
+
+
+def generate_dataform_project(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:
+    dbt_project = generate_dbt_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    final_table_name = str(dbt_project.get("project_name") or "alteryx")
+    project_name = _dbt_identifier(f"{final_table_name}_dataform", "alteryx_dataform")
+    source_project = "YOUR_GCP_PROJECT_ID"
+    source_dataset = "YOUR_BIGQUERY_SOURCE_DATASET"
+    declarations: list[str] = []
+    files: dict[str, str] = {
+        "workflow_settings.yaml": (
+            f"defaultProject: {source_project}\n"
+            "defaultDataset: YOUR_DATAFORM_TARGET_DATASET\n"
+            "defaultLocation: US\n"
+            f"dataformCoreVersion: 3.0.0\n"
+        ),
+        "README.md": (
+            f"# {workflow.get('name', 'Alteryx Workflow')} Dataform Scaffold\n\n"
+            "Generated by the Alteryx accelerator from the same workflow model used for dbt output.\n\n"
+            "Update `workflow_settings.yaml` and `definitions/declarations.js` with your GCP project and BigQuery datasets, then run `dataform run`.\n"
+        ),
+    }
+
+    for path, content in (dbt_project.get("files") or {}).items():
+        if path == "models/schema.yml":
+            continue
+        if not path.endswith(".sql"):
+            continue
+        model_name = path.rsplit("/", 1)[-1].replace(".sql", "")
+        if path.startswith("models/staging/stg_"):
+            source_name = model_name.replace("stg_", "", 1)
+            declarations.append(
+                "declare({\n"
+                f"  database: \"{source_project}\",\n"
+                f"  schema: \"{source_dataset}\",\n"
+                f"  name: \"{source_name}\",\n"
+                "});"
+            )
+        files[f"definitions/{model_name}.sqlx"] = _sql_to_sqlx(str(content))
+
+    files["definitions/declarations.js"] = "\n\n".join(declarations) or (
+        "// Add BigQuery source declarations here.\n"
+    )
+
+    return {
+        "success": True,
+        "project_name": project_name,
+        "final_table_name": final_table_name,
+        "target": "dataform",
+        "files": files,
+        "file_count": len(files),
+        "source_count": dbt_project.get("source_count", 0),
+        "output_count": dbt_project.get("output_count", 0),
+        "output_targets": dbt_project.get("output_targets", []),
+        "macro_plan": dbt_project.get("macro_plan", {}),
+    }
+
+
+def _python_identifier(value: str, fallback: str = "alteryx_pipeline") -> str:
+    return _dbt_identifier(value, fallback).replace("-", "_")
+
+
+def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:
+    project_name = _python_identifier(workflow.get("name") or "alteryx_python_pipeline", "alteryx_python_pipeline")
+    sources = [source for source in (workflow.get("dataSources") or []) if _is_warehouse_landed_source(source)]
+    outputs = workflow.get("outputTargets") or []
+    macro_plan = generate_macro_conversion_plan(workflow)
+    source_list = ",\n".join(
+        f"        {{\"name\": \"{str(source.get('name') or '').replace(chr(34), '')}\", \"path\": \"{str(source.get('path') or '').replace(chr(34), '')}\", \"type\": \"{source.get('type') or 'unknown'}\"}}"
+        for source in sources
+    )
+    output_list = ",\n".join(
+        f"        {{\"name\": \"{str(output.get('name') or '').replace(chr(34), '')}\", \"path\": \"{str(output.get('path') or '').replace(chr(34), '')}\", \"type\": \"{output.get('type') or 'csv'}\"}}"
+        for output in outputs
+    )
+    pipeline_py = (
+        '"""Generated Alteryx migration Python scaffold.\n\n'
+        "This script is intended for complex workflows that need Python orchestration,\n"
+        "API calls, iterative logic, or manual remediation beyond SQL/dbt/Dataform.\n"
+        '"""\n\n'
+        "from __future__ import annotations\n\n"
+        "from pathlib import Path\n"
+        "import pandas as pd\n\n"
+        f"PROJECT_NAME = \"{project_name}\"\n"
+        f"SOURCES = [\n{source_list}\n]\n"
+        f"OUTPUTS = [\n{output_list}\n]\n\n"
+        "def read_source(source: dict) -> pd.DataFrame:\n"
+        "    path = source.get('path') or source.get('name')\n"
+        "    if not path:\n"
+        "        return pd.DataFrame()\n"
+        "    if str(path).lower().endswith('.csv'):\n"
+        "        return pd.read_csv(path)\n"
+        "    raise NotImplementedError(f\"Add reader for source: {source}\")\n\n"
+        "def transform(dataframes: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n"
+        "    # TODO: Replace this scaffold with converted Formula/Filter/Join/Summarize/Macro logic.\n"
+        "    first = next(iter(dataframes.values()), pd.DataFrame())\n"
+        "    return {output.get('name') or f'output_{index}': first.copy() for index, output in enumerate(OUTPUTS, start=1)}\n\n"
+        "def write_outputs(outputs: dict[str, pd.DataFrame], output_dir: str = 'output') -> None:\n"
+        "    target_dir = Path(output_dir)\n"
+        "    target_dir.mkdir(parents=True, exist_ok=True)\n"
+        "    for name, frame in outputs.items():\n"
+        "        safe_name = Path(str(name)).stem or 'output'\n"
+        "        frame.to_csv(target_dir / f'{safe_name}.csv', index=False)\n\n"
+        "def main() -> None:\n"
+        "    dataframes = {source.get('name') or f'source_{index}': read_source(source) for index, source in enumerate(SOURCES, start=1)}\n"
+        "    write_outputs(transform(dataframes))\n\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n"
+    )
+    files = {
+        "README.md": (
+            f"# {workflow.get('name', 'Alteryx Workflow')} Python Scaffold\n\n"
+            "Generated for workflows that need Python execution, iterative behavior, API orchestration, or manual remediation.\n\n"
+            "Run locally with `python pipeline.py` after updating source paths and transformation logic.\n"
+        ),
+        "requirements.txt": "pandas>=2.2.0\nrequests>=2.31.0\n",
+        "pipeline.py": pipeline_py,
+        "macro_remediation_plan.json": json.dumps(macro_plan, indent=2),
+    }
+    return {
+        "success": True,
+        "project_name": project_name,
+        "target": "python",
+        "files": files,
+        "file_count": len(files),
+        "source_count": len(sources),
+        "output_count": len(outputs),
+        "output_targets": outputs,
+        "macro_plan": macro_plan,
     }
 
 
@@ -768,12 +1116,6 @@ def generate_brd_html(workflow: dict[str, Any], m_query: str = "") -> str:
 
 def validate_migration(workflow: dict[str, Any], publish_result: dict[str, Any] | None = None) -> dict[str, Any]:
     publish_result = publish_result or {}
-    sources = workflow.get("dataSources") or []
-    unique_source_keys = {
-        str(source.get("name") or source.get("path") or "").strip().replace("\\", "/").rsplit("/", 1)[-1].lower()
-        for source in sources
-        if isinstance(source, dict) and str(source.get("name") or source.get("path") or "").strip()
-    }
     checks = [
         {
             "name": "Workflow parsed",
@@ -782,8 +1124,8 @@ def validate_migration(workflow: dict[str, Any], publish_result: dict[str, Any] 
         },
         {
             "name": "Source detected",
-            "status": "pass" if unique_source_keys else "warning",
-            "detail": f"{len(unique_source_keys)} unique source candidate(s) detected.",
+            "status": "pass" if workflow.get("dataSources") else "warning",
+            "detail": f"{len(workflow.get('dataSources') or [])} source candidate(s) detected.",
         },
         {
             "name": "Unsupported tools",

@@ -2798,18 +2798,12 @@ PAGE WRAP
 }
 
 .source-mquery-actions button {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   border: 0;
   border-radius: 14px;
   background: #0070c0;
   color: #fff;
-  padding: 13px 16px;
+  padding: 12px 16px;
   font-weight: 800;
-  line-height: 1.2;
-  white-space: nowrap;
   cursor: pointer;
   box-shadow: 0 12px 28px rgba(0, 112, 192, 0.24);
 }
@@ -2823,18 +2817,6 @@ PAGE WRAP
 
 .source-mquery-actions .source-mquery-download:hover:not(:disabled) {
   background: #dbeafe;
-}
-
-.source-mquery-actions .source-mquery-publish {
-  background: #0070c0;
-  color: #fff;
-  border: 1px solid #0070c0;
-  box-shadow: 0 12px 28px rgba(0, 112, 192, 0.24);
-}
-
-.source-mquery-actions .source-mquery-publish:hover:not(:disabled) {
-  background: #0064ac;
-  border-color: #0064ac;
 }
 
 .source-mquery-actions button:disabled {

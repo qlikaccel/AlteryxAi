@@ -164,7 +164,7 @@ def choose_generation_strategy(workflow: dict[str, Any]) -> dict[str, Any]:
     """Route simple workflows to rules and complex mapping workflows to LLM assistance."""
     nodes = workflow.get("workflowNodes") or []
     tool_keys = [detect_tool_key(str(node.get("plugin", ""))) for node in nodes]
-    tool_count = len(nodes)
+    tool_count = int(workflow.get("toolCount") or len(nodes) or 0)
     connection_count = int(workflow.get("connectionCount") or len(workflow.get("workflowEdges") or []) or 0)
     unsupported_count = int(workflow.get("unsupportedToolCount") or 0)
     complexity = str(workflow.get("complexity") or "low").lower()
@@ -727,18 +727,6 @@ def _selected_fields(node: dict[str, Any]) -> list[dict[str, str]]:
             if isinstance(item, dict) and item.get("name")
         ]
 
-    match = re.search(
-        r"(?:^|\n)\s*SelectFields\s*\n\s*([^\n]+)",
-        str(node.get("configurationText") or ""),
-        flags=re.IGNORECASE,
-    )
-    if match:
-        return [
-            {"name": name.strip(), "rename": name.strip(), "type": "String"}
-            for name in re.split(r"[,;]+", match.group(1))
-            if name.strip()
-        ]
-
     lines = _config_lines(node)
     fields: list[dict[str, str]] = []
     index = 0
@@ -762,22 +750,6 @@ def _summarize_config(node: dict[str, Any]) -> tuple[list[str], list[dict[str, s
             for item in aggregations
             if isinstance(item, dict) and item.get("field")
         ]
-
-    text = str(node.get("configurationText") or "")
-    simple_group = re.search(r"(?:^|\n)\s*GroupBy\s*\n\s*([^\n]+)", text, flags=re.IGNORECASE)
-    simple_sum = re.search(r"(?:^|\n)\s*Sum\s*\n\s*([^\n]+)", text, flags=re.IGNORECASE)
-    if simple_group or simple_sum:
-        parsed_groups = [
-            item.strip()
-            for item in re.split(r"[,;]+", simple_group.group(1) if simple_group else "")
-            if item.strip()
-        ]
-        parsed_aggs = [
-            {"field": item.strip(), "action": "Sum", "rename": item.strip()}
-            for item in re.split(r"[,;]+", simple_sum.group(1) if simple_sum else "")
-            if item.strip()
-        ]
-        return parsed_groups, parsed_aggs
 
     lines = _config_lines(node)
     parsed_groups: list[str] = []
@@ -811,15 +783,6 @@ def _formula_config(node: dict[str, Any]) -> list[dict[str, str]]:
             for item in explicit
             if isinstance(item, dict) and item.get("field") and item.get("expression")
         ]
-
-    simple_expression = _node_expression(node)
-    match = re.match(r"\s*([A-Za-z_][A-Za-z0-9_ .-]*)\s*=\s*(.+?)\s*$", simple_expression or "")
-    if match:
-        return [{
-            "field": match.group(1).strip(),
-            "expression": match.group(2).strip(),
-            "type": "Double",
-        }]
 
     plugin = str(node.get("plugin") or "").lower()
     lines = _tool_config_lines(node)
@@ -879,20 +842,6 @@ def _formula_config(node: dict[str, Any]) -> list[dict[str, str]]:
             formulas.append({"field": field, "expression": expression, "type": field_type or "Double"})
         index = max(cursor, index + 1)
     return formulas
-
-
-def _workflow_source_field_hints(workflow: dict[str, Any]) -> list[dict[str, str]]:
-    for node in workflow.get("workflowNodes") or []:
-        if detect_tool_key(str(node.get("plugin") or "")) != "select":
-            continue
-        fields = _selected_fields(node)
-        if fields:
-            return [
-                {"name": str(item.get("name") or "").strip(), "type": str(item.get("type") or "String")}
-                for item in fields
-                if str(item.get("name") or "").strip()
-            ]
-    return []
 
 
 def _convert_iif_expression(expression: str) -> str:
@@ -1517,14 +1466,6 @@ def convert_workflow_to_m(
 ) -> dict[str, Any]:
     strategy = choose_generation_strategy(workflow)
     detected_file_sources = _workflow_file_sources(workflow)
-    source_field_hints = _workflow_source_field_hints(workflow)
-    if source_field_hints:
-        if detected_file_sources:
-            for detected_source in detected_file_sources:
-                if not detected_source.get("fields"):
-                    detected_source["fields"] = source_field_hints
-        elif not source.get("fields"):
-            source = {**source, "fields": source_field_hints}
     if sharepoint_url and detected_file_sources:
         detected_file_sources = [
             _source_with_sharepoint_context(item, sharepoint_url)
