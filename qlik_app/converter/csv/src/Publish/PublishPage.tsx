@@ -252,7 +252,19 @@ export default function PublishPage() {
     asNumber(rowCountCheck?.expected) ??
     asNumber(validationResult?.alteryx?.row_count) ??
     null;
-  const bigQueryExpectedRows = isBigQueryPublish ? expectedRows ?? "Pending" : expectedRows;
+  
+  // BigQuery Alteryx record count - try multiple sources before defaulting to "Pending"
+  const bigQueryAlteryxRecordCount = isBigQueryPublish
+    ? asNumber(publishResult?.expected_row_count) ??
+      asNumber(publishResult?.alteryx_row_count) ??
+      asNumber(rowCountCheck?.expected) ??
+      asNumber(validationResult?.alteryx?.row_count) ??
+      asNumber(publishResult?.row_count) ??
+      expectedRows ??
+      null
+    : expectedRows;
+  
+  const bigQueryExpectedRows = isBigQueryPublish ? bigQueryAlteryxRecordCount ?? "Pending" : expectedRows;
 
   const validationMetrics = [
     {
@@ -298,7 +310,7 @@ export default function PublishPage() {
       metric: "Total Records",
       alteryx: bigQueryExpectedRows,
       bigquery: bigQueryRowCount,
-      variance: bigQueryRowCount !== null && expectedRows !== null ? bigQueryRowCount - expectedRows : null,
+      variance: bigQueryRowCount !== null && bigQueryAlteryxRecordCount !== null ? bigQueryRowCount - bigQueryAlteryxRecordCount : null,
     },
     {
       metric: "Total Tools Used",
