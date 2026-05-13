@@ -713,7 +713,7 @@ export default function SummaryPage() {
         sessionStorage.setItem("migration_row_count", String(getPowerBiExpectedRows(validationResult) ?? getPowerBiRecordCount(validationResult) ?? ""));
         sessionStorage.setItem("migration_columns", JSON.stringify(validationResult?.available_columns || []));
 
-        const reportRowCountCheck = getRowCountCheck(validationResult);
+        // const reportRowCountCheck = getRowCountCheck(validationResult);
         const reportPowerBiRows = getPowerBiRecordCount(validationResult);
         const reportExpectedRows = getPowerBiExpectedRows(validationResult);
         const reportColumnCount =
