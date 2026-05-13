@@ -80,7 +80,7 @@ def _normalize_schema_description_text(value: str) -> str:
     text = str(value or "")
     text = text.replace(chr(34), "")
     text = text.replace("\\", "/")
-    text = re.sub(r"(?i)\b[a-z]:(?=[/\\])", "", text)
+    text = re.sub(r"(?i)\b[a-z]:(?=(?:[/\\]|\s|$))", "", text)
     return text
 
 
@@ -659,12 +659,16 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         source_identifier = _dbt_source_identifier(source, index)
         source_model_names.append(source_name)
         description = str(source.get("path") or source.get("type") or "")
-        normalized_description = _normalize_schema_description_text(description)
+        raw_description_text = (
+            f"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. "
+            f"Original path: {description}"
+        )
+        normalized_description = _normalize_schema_description_text(raw_description_text)
         identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
         source_rows.append(
             f"      - name: {source_name}\n"
             f"{identifier_line}"
-            f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {normalized_description}\""
+            f"        description: \"{normalized_description}\""
         )
         staging_files[f"models/staging/stg_{source_name}.sql"] = (
             "{{ config(materialized='view') }}\n\n"
