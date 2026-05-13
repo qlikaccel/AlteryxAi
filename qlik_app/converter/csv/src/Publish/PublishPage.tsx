@@ -86,6 +86,17 @@ const validationMatchesPublish = (validation: any, publishResult: any, tableName
   return true;
 };
 
+const getPowerBiRecordCount = (validation: any) =>
+  asNumber(getRowCountCheck(validation)?.actual) ??
+  asNumber(validation?.actual?.RowCount) ??
+  asNumber(validation?.powerbi?.actual?.RowCount) ??
+  null;
+
+const getPowerBiExpectedRows = (validation: any) =>
+  asNumber(getRowCountCheck(validation)?.expected) ??
+  asNumber(validation?.alteryx?.row_count) ??
+  null;
+
 const withTimeout = <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
   Promise.race([
     promise,
@@ -96,14 +107,19 @@ const withTimeout = <T,>(promise: Promise<T>, ms: number, label: string): Promis
 
 export default function PublishPage() {
   const location = useLocation();
+  const routeState = (location.state as any) || {};
   const workflowName =
-    (location.state as any)?.workflowName ||
+    routeState.workflowName ||
     sessionStorage.getItem("alteryx_workflow_name") ||
     "Alteryx workflow";
   const datasetName =
-    (location.state as any)?.datasetName ||
+    routeState.datasetName ||
     sessionStorage.getItem("migration_dataset_name") ||
     workflowName;
+  const routeReportBlob = routeState.reportBlob as Blob | undefined;
+  const routeReportFilename =
+    routeState.reportFilename ||
+    `Validation_Reconciliation_Report_${safeFileName(datasetName)}_${new Date().toISOString().slice(0, 10)}.pdf`;
   const workspaceName = sessionStorage.getItem("alteryx_workspace_name") || "Power BI workspace";
   const workspaceId = sessionStorage.getItem("alteryx_workspace_id") || "";
   const publishDuration = (location.state as any)?.publishDuration || "";
@@ -183,10 +199,36 @@ export default function PublishPage() {
   const publishedTables = publishResult?.published_tables || [];
   const deployedTables = publishedTables.length || (publishResult?.tables_deployed ?? 1);
 
+  const [validationResult, setValidationResult] = useState<any>(() => {
+    if (routeState.validationResult) return routeState.validationResult;
+    const raw = sessionStorage.getItem("alteryx_validation_result");
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return validationMatchesPublish(parsed, publishResult, finalValidationTableName) ? parsed : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [powerBiValidationLoading, setPowerBiValidationLoading] = useState(
+    !isBigQueryPublish && validationResult === null && !!publishResult?.dataset_id && !!finalValidationTableName
+  );
+  const powerBiValidationPollingRef = useRef(false);
+
+  const publishedTableColumnCount = publishResult?.published_tables?.reduce(
+    (sum: number, table: any) => sum + (Array.isArray(table?.columns) ? table.columns.length : 0),
+    0
+  );
+
   const columnCount =
-    publishResult?.available_columns?.length ||
-    publishResult?.published_tables?.find((table: any) => tableMatchKey(table?.name) === tableMatchKey(finalValidationTableName))?.columns?.length ||
-    0;
+    (validationResult?.available_columns?.length ?? 0) > 0
+      ? validationResult.available_columns.length
+      : publishedTableColumnCount > 0
+      ? publishedTableColumnCount
+      : Array.isArray(publishResult?.available_columns)
+      ? publishResult.available_columns.length
+      : 0;
 
   // BigQuery-specific data extraction (from dev52)
   const bigQueryMetadata = publishResult?.bigquery_metadata || {};
@@ -218,19 +260,6 @@ export default function PublishPage() {
       bigQueryRowCount
     : null;
 
-  const [validationResult, setValidationResult] = useState<any>(() => {
-    const raw = sessionStorage.getItem("alteryx_validation_result");
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw);
-      return isBigQueryPublish || validationMatchesPublish(parsed, publishResult, finalValidationTableName)
-        ? parsed
-        : null;
-    } catch {
-      return null;
-    }
-  });
-
   const [workflow] = useState<any>(() => {
     const raw = sessionStorage.getItem("alteryx_selected_workflow");
     if (!raw) return null;
@@ -243,7 +272,6 @@ export default function PublishPage() {
 
   const outputTargets = workflow?.outputTargets || [];
 
-  const recordValidationRequestedRef = useRef(false);
   const bigQueryAlteryxRecordCountRequestedRef = useRef(false);
   const powerBiWorkspaceUrl =
     publishResult?.workspace_url ||
@@ -258,15 +286,8 @@ export default function PublishPage() {
   const batchId = sessionStorage.getItem("alteryx_batch_id") || "";
   const workflowId = sessionStorage.getItem("alteryx_workflow_id") || "";
   const rowCountCheck = getRowCountCheck(validationResult);
-  const powerBiRows =
-    asNumber(rowCountCheck?.actual) ??
-    asNumber(validationResult?.actual?.RowCount) ??
-    asNumber(validationResult?.powerbi?.actual?.RowCount) ??
-    null;
-  const expectedRows =
-    asNumber(rowCountCheck?.expected) ??
-    asNumber(validationResult?.alteryx?.row_count) ??
-    null;
+  const powerBiRows = getPowerBiRecordCount(validationResult);
+  const expectedRows = getPowerBiExpectedRows(validationResult);
   
   // BigQuery Alteryx record count - try multiple sources before defaulting to "Pending"
   const bigQueryAlteryxRecordCount = isBigQueryPublish
@@ -442,15 +463,16 @@ export default function PublishPage() {
     if (isBigQueryPublish) {
       return;
     }
-    if (recordValidationRequestedRef.current || !publishResult?.dataset_id || !finalValidationTableName) {
+    if (powerBiValidationPollingRef.current || validationResult !== null || !publishResult?.dataset_id || !finalValidationTableName) {
       return;
     }
 
     let cancelled = false;
-    recordValidationRequestedRef.current = true;
+    powerBiValidationPollingRef.current = true;
+    setPowerBiValidationLoading(true);
 
-    const directPowerBiValidation = () =>
-      withTimeout(
+    const directPowerBiValidation = async () => {
+      const powerbiValidation = await withTimeout(
         validatePowerBiMigration({
           dataset_id: publishResult.dataset_id,
           table_name: finalValidationTableName,
@@ -459,19 +481,17 @@ export default function PublishPage() {
         }),
         45000,
         "Power BI row count validation"
-      ).then((powerbiValidation) => {
-        const fetchedRowCheck = getRowCountCheck(powerbiValidation);
-        const fetchedRows =
-          asNumber(fetchedRowCheck?.actual) ??
-          asNumber(powerbiValidation?.actual?.RowCount);
+      );
 
-        return {
-          success: true,
-          dataset_id: publishResult.dataset_id,
-          table_name: powerbiValidation?.table_name || finalValidationTableName,
-          requested_table_name: powerbiValidation?.requested_table_name || finalValidationTableName,
-          available_columns: powerbiValidation?.available_columns || [],
-          alteryx: fetchedRows !== null
+      const fetchedRows = getPowerBiRecordCount(powerbiValidation);
+      return {
+        success: true,
+        dataset_id: publishResult.dataset_id,
+        table_name: powerbiValidation?.table_name || finalValidationTableName,
+        requested_table_name: powerbiValidation?.requested_table_name || finalValidationTableName,
+        available_columns: powerbiValidation?.available_columns || [],
+        alteryx:
+          fetchedRows !== null
             ? {
                 row_count: fetchedRows,
                 method: "final_table_mquery_count",
@@ -479,72 +499,91 @@ export default function PublishPage() {
                 confidence: "medium",
               }
             : { row_count: null, method: "unavailable", confidence: "none" },
-          powerbi: powerbiValidation,
-          checks: [
-            {
-              name: "Row count",
-              expected: fetchedRows,
-              actual: fetchedRows,
-              variance: fetchedRows !== null ? 0 : null,
-              status: fetchedRows !== null ? "PASS" : "INFO",
-            },
-          ],
-        };
-      });
+        powerbi: powerbiValidation,
+        checks: [
+          {
+            name: "Row count",
+            expected: fetchedRows,
+            actual: fetchedRows,
+            variance: fetchedRows !== null ? 0 : null,
+            status: fetchedRows !== null ? "PASS" : "INFO",
+          },
+        ],
+      };
+    };
 
-    const validationRequest =
-      batchId && workflowId
-        ? withTimeout(
-            validateAlteryxPowerBiRecordCounts({
-              batch_id: batchId,
-              workflow_id: workflowId,
-              dataset_id: publishResult.dataset_id,
-              table_name: finalValidationTableName,
-              workspace_id: workspaceId,
-              expected_row_count: null,
-            }),
-            45000,
-            "Combined record count validation"
-          )
-            .then((validation) => {
-              const fetchedRowCheck = getRowCountCheck(validation);
-              const fetchedRows =
-                asNumber(fetchedRowCheck?.actual) ??
-                asNumber(validation?.powerbi?.actual?.RowCount) ??
-                asNumber(validation?.actual?.RowCount);
-              return fetchedRows === null ? directPowerBiValidation() : validation;
-            })
-            .catch((err: any) => {
-              console.warn("Combined record count validation failed; trying direct Power BI validation:", err);
-              return directPowerBiValidation();
-            })
-        : directPowerBiValidation();
+    const getCombinedValidation = async () => {
+      const validation = await withTimeout(
+        validateAlteryxPowerBiRecordCounts({
+          batch_id: batchId,
+          workflow_id: workflowId,
+          dataset_id: publishResult.dataset_id,
+          table_name: finalValidationTableName,
+          workspace_id: workspaceId,
+          expected_row_count: null,
+        }),
+        45000,
+        "Combined record count validation"
+      );
+      const fetchedRows = getPowerBiRecordCount(validation);
+      return fetchedRows === null ? await directPowerBiValidation() : validation;
+    };
 
-    validationRequest
-      .then((validation) => {
+    const pollPowerBiValidation = async () => {
+      const start = Date.now();
+      const timeoutMs = 90000;
+      const intervalMs = 5000;
+      let lastResult: any = null;
+      let lastError: any = null;
+
+      while (!cancelled && Date.now() - start < timeoutMs) {
+        try {
+          lastResult = batchId && workflowId ? await getCombinedValidation() : await directPowerBiValidation();
+          const fetchedRows = getPowerBiRecordCount(lastResult);
+          if (fetchedRows !== null && fetchedRows > 0) {
+            return lastResult;
+          }
+          if (cancelled) break;
+          await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+        } catch (err: any) {
+          lastError = err;
+          console.warn("Power BI validation poll attempt failed:", err);
+          if (cancelled) break;
+          await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+        }
+      }
+
+      if (lastError) {
+        throw lastError;
+      }
+      return lastResult;
+    };
+
+    (async () => {
+      try {
+        const validation = await pollPowerBiValidation();
         if (cancelled) return;
-        setValidationResult(validation);
-        sessionStorage.setItem("alteryx_validation_result", JSON.stringify(validation));
-        const fetchedRowCheck = getRowCountCheck(validation);
-        const fetchedRows =
-          asNumber(fetchedRowCheck?.actual) ??
-          asNumber(validation?.powerbi?.actual?.RowCount) ??
-          asNumber(validation?.actual?.RowCount);
-        if (fetchedRows !== null) {
-          sessionStorage.setItem("migration_row_count", String(fetchedRows));
+        if (validation) {
+          setValidationResult(validation);
+          sessionStorage.setItem("alteryx_validation_result", JSON.stringify(validation));
+          const fetchedRows = getPowerBiRecordCount(validation);
+          if (fetchedRows !== null) {
+            sessionStorage.setItem("migration_row_count", String(fetchedRows));
+          }
         }
-      })
-      .catch((err: any) => {
+      } catch (err: any) {
         console.warn("Could not fetch publish summary record counts:", err);
+      } finally {
         if (!cancelled) {
-          recordValidationRequestedRef.current = false;
+          setPowerBiValidationLoading(false);
         }
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [batchId, finalValidationTableName, isBigQueryPublish, publishResult, workflowId, workspaceId]);
+  }, [batchId, finalValidationTableName, isBigQueryPublish, publishResult, validationResult, workflowId, workspaceId]);
 
   const downloadValidationReport = async () => {
     setReportStatus("Preparing report...");
@@ -607,6 +646,20 @@ export default function PublishPage() {
         setReportStatus("Report downloaded");
         window.setTimeout(() => setReportStatus(""), 1800);
       } else {
+        if (routeReportBlob) {
+          const url = URL.createObjectURL(routeReportBlob);
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = routeReportFilename;
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+          window.setTimeout(() => URL.revokeObjectURL(url), 0);
+          setReportStatus("Report downloaded");
+          window.setTimeout(() => setReportStatus(""), 1800);
+          return;
+        }
+
         let validationData = validationResult;
 
         if (!validationData && publishResult?.dataset_id) {
@@ -667,7 +720,7 @@ export default function PublishPage() {
             total_records: reportPowerBiRows,
             table_count: deployedTables,
             column_count: reportColumnCount,
-            certification_status: "Pass",
+            certification_status: reportPowerBiRows !== null ? "Pass" : "Pending",
           },
         });
 
@@ -869,6 +922,8 @@ export default function PublishPage() {
                   </div>
                 </div>
               </>
+            ) : powerBiValidationLoading ? (
+              <div className="publish-validation-loading">Fetching validation data...</div>
             ) : (
               <table className="publish-validation-table">
                 <thead>

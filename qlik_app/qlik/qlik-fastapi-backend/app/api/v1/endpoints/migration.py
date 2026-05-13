@@ -1707,33 +1707,12 @@ async def validate_powerbi_dataset_endpoint(request: PowerBiValidationRequest):
     available_metadata, metadata_issue = _get_powerbi_table_metadata_result(workspace_id, request.dataset_id, headers)
     available_tables = [table.get("name", "") for table in available_metadata if table.get("name")]
     if not available_metadata and metadata_issue.get("is_push_dataset_error"):
-        return {
-            "success": True,
-            "validation_status": "deferred",
-            "dataset_id": request.dataset_id,
-            "table_name": request.table_name,
-            "requested_table_name": request.table_name,
-            "workspace_id": workspace_id,
-            "available_tables": [],
-            "available_columns": [],
-            "actual": {},
-            "refresh": {},
-            "checks": [
-                {
-                    "name": "Semantic model publish",
-                    "expected": "Fabric semantic model",
-                    "actual": "Published semantic model is not a Push API dataset",
-                    "variance": None,
-                    "status": "INFO",
-                    "message": (
-                        "Publish succeeded, but table discovery through the Push Dataset API is not supported for this "
-                        "Fabric semantic model. Use refresh history, executeQueries after refresh, or XMLA/Fabric semantic "
-                        "model metadata for Phase 2 validation."
-                    ),
-                }
-            ],
-            "metadata_issue": metadata_issue,
-        }
+        logger.info(
+            "[validate_powerbi] Push dataset detected; skipping table discovery and querying executeQueries directly."
+        )
+        available_metadata = []
+        available_tables = []
+
     actual_table_name = _resolve_powerbi_table_name(request.table_name, available_metadata)
     actual_columns = next(
         (table.get("columns", []) for table in available_metadata if table.get("name") == actual_table_name),
