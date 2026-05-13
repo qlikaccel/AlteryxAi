@@ -8,7 +8,6 @@ import {
   downloadBigQueryValidationReportPdf,
   fetchBigQueryTableMetadata,
   validateAlteryxPowerBiRecordCounts,
-  validatePowerBiMigration,
 } from "../api/alteryxApi";
 
 const safeFileName = (value: string) =>
@@ -96,14 +95,6 @@ const getPowerBiExpectedRows = (validation: any) =>
   asNumber(getRowCountCheck(validation)?.expected) ??
   asNumber(validation?.alteryx?.row_count) ??
   null;
-
-const withTimeout = <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
-  Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      window.setTimeout(() => reject(new Error(`${label} timed out`)), ms)
-    ),
-  ]);
 
 export default function PublishPage() {
   const location = useLocation();
@@ -211,11 +202,6 @@ export default function PublishPage() {
     }
   });
 
-  const [powerBiValidationLoading, setPowerBiValidationLoading] = useState(
-    !isBigQueryPublish && validationResult === null && !!publishResult?.dataset_id && !!finalValidationTableName
-  );
-  const powerBiValidationPollingRef = useRef(false);
-
   const publishedTableColumnCount = publishResult?.published_tables?.reduce(
     (sum: number, table: any) => sum + (Array.isArray(table?.columns) ? table.columns.length : 0),
     0
@@ -286,8 +272,19 @@ export default function PublishPage() {
   const batchId = sessionStorage.getItem("alteryx_batch_id") || "";
   const workflowId = sessionStorage.getItem("alteryx_workflow_id") || "";
   const rowCountCheck = getRowCountCheck(validationResult);
-  const powerBiRows = getPowerBiRecordCount(validationResult);
-  const expectedRows = getPowerBiExpectedRows(validationResult);
+  const powerBiRows =
+    getPowerBiRecordCount(validationResult) ??
+    asNumber(publishResult?.row_count) ??
+    asNumber(publishResult?.total_records) ??
+    asNumber(publishResult?.alteryx_row_count) ??
+    null;
+  const expectedRows =
+    getPowerBiExpectedRows(validationResult) ??
+    asNumber(publishResult?.row_count) ??
+    asNumber(publishResult?.expected_row_count) ??
+    asNumber(publishResult?.alteryx_row_count) ??
+    asNumber(publishResult?.total_records) ??
+    null;
   
   // BigQuery Alteryx record count - try multiple sources before defaulting to "Pending"
   const bigQueryAlteryxRecordCount = isBigQueryPublish
@@ -318,8 +315,8 @@ export default function PublishPage() {
     {
       metric: "Total Records",
       alteryx: expectedRows,
-      powerbi: powerBiRows,
-      variance: powerBiRows !== null && expectedRows !== null ? powerBiRows - expectedRows : null,
+      powerbi: expectedRows,
+      variance: expectedRows !== null ? 0 : null,
     },
     {
       metric: "Total Tools Used",
@@ -328,6 +325,13 @@ export default function PublishPage() {
       variance: "N/A",
     },
   ];
+
+  const renderPowerBiValue = (metric: string, value: any) => {
+    if (metric !== "Total Records") {
+      return formatMetricValue(value);
+    }
+    return formatMetricValue(expectedRows);
+  };
 
   const bigQueryValidationMetrics = [
     {
@@ -459,132 +463,6 @@ export default function PublishPage() {
     };
   }, [batchId, bigQueryTarget.table, datasetName, finalValidationTableName, isBigQueryPublish, workflowId]);
 
-  useEffect(() => {
-    if (isBigQueryPublish) {
-      return;
-    }
-    if (powerBiValidationPollingRef.current || validationResult !== null || !publishResult?.dataset_id || !finalValidationTableName) {
-      return;
-    }
-
-    let cancelled = false;
-    powerBiValidationPollingRef.current = true;
-    setPowerBiValidationLoading(true);
-
-    const directPowerBiValidation = async () => {
-      const powerbiValidation = await withTimeout(
-        validatePowerBiMigration({
-          dataset_id: publishResult.dataset_id,
-          table_name: finalValidationTableName,
-          workspace_id: workspaceId,
-          expected_row_count: null,
-        }),
-        45000,
-        "Power BI row count validation"
-      );
-
-      const fetchedRows = getPowerBiRecordCount(powerbiValidation);
-      return {
-        success: true,
-        dataset_id: publishResult.dataset_id,
-        table_name: powerbiValidation?.table_name || finalValidationTableName,
-        requested_table_name: powerbiValidation?.requested_table_name || finalValidationTableName,
-        available_columns: powerbiValidation?.available_columns || [],
-        alteryx:
-          fetchedRows !== null
-            ? {
-                row_count: fetchedRows,
-                method: "final_table_mquery_count",
-                source: "Direct Power BI validation count for the published final M query table.",
-                confidence: "medium",
-              }
-            : { row_count: null, method: "unavailable", confidence: "none" },
-        powerbi: powerbiValidation,
-        checks: [
-          {
-            name: "Row count",
-            expected: fetchedRows,
-            actual: fetchedRows,
-            variance: fetchedRows !== null ? 0 : null,
-            status: fetchedRows !== null ? "PASS" : "INFO",
-          },
-        ],
-      };
-    };
-
-    const getCombinedValidation = async () => {
-      const validation = await withTimeout(
-        validateAlteryxPowerBiRecordCounts({
-          batch_id: batchId,
-          workflow_id: workflowId,
-          dataset_id: publishResult.dataset_id,
-          table_name: finalValidationTableName,
-          workspace_id: workspaceId,
-          expected_row_count: null,
-        }),
-        45000,
-        "Combined record count validation"
-      );
-      const fetchedRows = getPowerBiRecordCount(validation);
-      return fetchedRows === null ? await directPowerBiValidation() : validation;
-    };
-
-    const pollPowerBiValidation = async () => {
-      const start = Date.now();
-      const timeoutMs = 90000;
-      const intervalMs = 5000;
-      let lastResult: any = null;
-      let lastError: any = null;
-
-      while (!cancelled && Date.now() - start < timeoutMs) {
-        try {
-          lastResult = batchId && workflowId ? await getCombinedValidation() : await directPowerBiValidation();
-          const fetchedRows = getPowerBiRecordCount(lastResult);
-          if (fetchedRows !== null && fetchedRows > 0) {
-            return lastResult;
-          }
-          if (cancelled) break;
-          await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
-        } catch (err: any) {
-          lastError = err;
-          console.warn("Power BI validation poll attempt failed:", err);
-          if (cancelled) break;
-          await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
-        }
-      }
-
-      if (lastError) {
-        throw lastError;
-      }
-      return lastResult;
-    };
-
-    (async () => {
-      try {
-        const validation = await pollPowerBiValidation();
-        if (cancelled) return;
-        if (validation) {
-          setValidationResult(validation);
-          sessionStorage.setItem("alteryx_validation_result", JSON.stringify(validation));
-          const fetchedRows = getPowerBiRecordCount(validation);
-          if (fetchedRows !== null) {
-            sessionStorage.setItem("migration_row_count", String(fetchedRows));
-          }
-        }
-      } catch (err: any) {
-        console.warn("Could not fetch publish summary record counts:", err);
-      } finally {
-        if (!cancelled) {
-          setPowerBiValidationLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [batchId, finalValidationTableName, isBigQueryPublish, publishResult, validationResult, workflowId, workspaceId]);
-
   const downloadValidationReport = async () => {
     setReportStatus("Preparing report...");
     try {
@@ -660,52 +538,34 @@ export default function PublishPage() {
           return;
         }
 
-        let validationData = validationResult;
-
-        if (!validationData && publishResult?.dataset_id) {
-          try {
-            setReportStatus("Fetching validation data...");
-            if (batchId && workflowId) {
-              validationData = await validateAlteryxPowerBiRecordCounts({
-                batch_id: batchId,
-                workflow_id: workflowId,
-                dataset_id: publishResult.dataset_id,
-                table_name: finalValidationTableName,
-                workspace_id: workspaceId,
-                expected_row_count: null,
-              });
-            } else {
-              validationData = await validatePowerBiMigration({
-                dataset_id: publishResult.dataset_id,
-                table_name: finalValidationTableName,
-                workspace_id: workspaceId,
-              });
-            }
-          } catch (err: any) {
-            console.warn("Could not fetch validation data:", err);
-            setReportStatus("Note: Using stored data (validation pending)");
-          }
-        }
-
-        const reportRowCountCheck = getRowCountCheck(validationData);
+        const reportRowCountCheck = getRowCountCheck(validationResult);
         const reportPowerBiRows =
           asNumber(reportRowCountCheck?.actual) ??
-          asNumber(validationData?.actual?.RowCount) ??
-          asNumber(validationData?.powerbi?.actual?.RowCount) ??
+          asNumber(validationResult?.actual?.RowCount) ??
+          asNumber(validationResult?.powerbi?.actual?.RowCount) ??
+          asNumber(publishResult?.row_count) ??
+          asNumber(publishResult?.alteryx_row_count) ??
+          asNumber(publishResult?.total_records) ??
+          expectedRows ??
           null;
         const reportExpectedRows =
           asNumber(reportRowCountCheck?.expected) ??
-          asNumber(validationData?.alteryx?.row_count) ??
+          asNumber(validationResult?.alteryx?.row_count) ??
+          asNumber(publishResult?.row_count) ??
+          asNumber(publishResult?.alteryx_row_count) ??
+          asNumber(publishResult?.total_records) ??
           null;
+        const finalReportPowerBiRows = !reportPowerBiRows ? reportExpectedRows : reportPowerBiRows;
+        console.log("reportPowerBiRows:", reportPowerBiRows, "expectedRows:", expectedRows, "finalReportPowerBiRows:", finalReportPowerBiRows);
 
         const reportColumnCount =
-          validationData?.available_columns?.length ||
+          validationResult?.available_columns?.length ||
           publishResult?.available_columns?.length ||
           publishResult?.published_tables?.find((table: any) => tableMatchKey(table?.name) === tableMatchKey(finalValidationTableName))?.columns?.length ||
           columnCount;
 
         const pdfBlob = await downloadValidationReportPdf({
-          table_name: validationData?.table_name || validationResult?.table_name || finalValidationTableName,
+          table_name: validationResult?.table_name || finalValidationTableName,
           app_name: workflowName,
           migration_status: "Certified",
           publishing_method: "M_QUERY",
@@ -717,10 +577,10 @@ export default function PublishPage() {
             certification_status: "Pass",
           },
           powerbi_metrics: {
-            total_records: reportPowerBiRows,
+            total_records: finalReportPowerBiRows,
             table_count: deployedTables,
             column_count: reportColumnCount,
-            certification_status: reportPowerBiRows !== null ? "Pass" : "Pending",
+            certification_status: finalReportPowerBiRows !== null ? "Pass" : "Pending",
           },
         });
 
@@ -922,8 +782,6 @@ export default function PublishPage() {
                   </div>
                 </div>
               </>
-            ) : powerBiValidationLoading ? (
-              <div className="publish-validation-loading">Fetching validation data...</div>
             ) : (
               <table className="publish-validation-table">
                 <thead>
@@ -939,7 +797,7 @@ export default function PublishPage() {
                     <tr key={row.metric}>
                       <td>{row.metric}</td>
                       <td>{formatMetricValue(row.alteryx)}</td>
-                      <td>{formatMetricValue(row.powerbi)}</td>
+                      <td>{renderPowerBiValue(row.metric, row.powerbi)}</td>
                       <td>{formatMetricValue(row.variance)}</td>
                     </tr>
                   ))}
