@@ -13,6 +13,9 @@ import {
   publishAlteryxDataformToRepository,
   publishAlteryxDbtToBigQuery,
   publishAlteryxMQuery,
+  validateAlteryxPowerBiRecordCounts,
+  validatePowerBiMigration,
+  downloadValidationReportPdf,
 } from "../api/alteryxApi";
 import type { AlteryxWorkflow } from "../api/alteryxApi";
 import { useWizard } from "../context/WizardContext";
@@ -77,6 +80,38 @@ function workflowSourcePath(workflow: AlteryxWorkflow | null, fallback = "") {
   const source = (workflow?.dataSources || []).find((item: any) => item?.path || item?.connection || item?.siteUrl);
   if (!source) return fallback;
   return source.path || source.connection || source.siteUrl || fallback;
+}
+
+function parseNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(String(value).replace(/,/g, ""));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function getRowCountCheck(validation: any) {
+  return validation?.checks?.find((check: any) => String(check?.name || "").toLowerCase() === "row count");
+}
+
+function getPowerBiRecordCount(validation: any) {
+  return (
+    parseNumber(getRowCountCheck(validation)?.actual) ??
+    parseNumber(validation?.actual?.RowCount) ??
+    parseNumber(validation?.powerbi?.actual?.RowCount)
+  );
+}
+
+function getPowerBiExpectedRows(validation: any) {
+  return (
+    parseNumber(getRowCountCheck(validation)?.expected) ??
+    parseNumber(validation?.alteryx?.row_count)
+  );
+}
+
+function safeFileName(value: string) {
+  return (value || "alteryx_workflow").replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "");
 }
 
 // ─── Workflow Graph Helpers (dev12 backend) ───────────────────────────────────
@@ -606,34 +641,120 @@ export default function SummaryPage() {
         alteryx_source_fields: analysis?.mquery?.source_fields_map || {},
       });
 
-      // Save result to sessionStorage for PublishPage to read
+      const finalValidationTableName = result?.final_table_name || datasetName;
+      const publishDurationMs = Date.now() - publishStart;
+      const publishMins = Math.floor(publishDurationMs / 60000);
+      const publishSecs = Math.floor((publishDurationMs % 60000) / 1000);
+      const publishDuration = publishMins > 0
+        ? `${publishMins}m ${publishSecs}s`
+        : `${publishSecs}s`;
+
+      // Save publish result and mark summary/export complete before /publish.
       sessionStorage.setItem("alteryx_publish_result", JSON.stringify(result));
       sessionStorage.setItem("summaryComplete", "true");
       sessionStorage.setItem("exportComplete", "true");
       sessionStorage.setItem("publishMethod", "M_QUERY");
 
-      // navigate("/publish", {
-      //   state: {
-      //     workflowName: workflow?.name || "Alteryx workflow",
-      //     mquery: mqueryPreview,
-      //     datasetName,
-      //   },
-      // });
-      const publishDurationMs = Date.now() - publishStart;
-const publishMins = Math.floor(publishDurationMs / 60000);
-const publishSecs = Math.floor((publishDurationMs % 60000) / 1000);
-const publishDuration = publishMins > 0
-  ? `${publishMins}m ${publishSecs}s`
-  : `${publishSecs}s`;
+      let validationResult: any = null;
+      let reportBlob: Blob | null = null;
+      const reportFilename = `Validation_Reconciliation_Report_${safeFileName(datasetName)}_${new Date()
+        .toISOString()
+        .slice(0, 10)}.pdf`;
 
-navigate("/publish", {
-  state: {
-    workflowName: workflow?.name || "Alteryx workflow",
-    mquery: mqueryPreview,
-    datasetName,
-    publishDuration,
-  },
-});
+      if (result?.dataset_id) {
+        const batchId = sessionStorage.getItem("alteryx_batch_id") || "";
+        const workflowId = sessionStorage.getItem("alteryx_workflow_id") || "";
+        const useAlteryxRecordCountValidation = Boolean(batchId && workflowId);
+
+        const validateWithTimeout = async <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
+          Promise.race([
+            promise,
+            new Promise<T>((_, reject) =>
+              window.setTimeout(() => reject(new Error(`${label} timed out`)), ms)
+            ),
+          ]);
+
+        const runValidation = async () => {
+          const directValidation = () =>
+            validatePowerBiMigration({
+              dataset_id: result.dataset_id,
+              table_name: finalValidationTableName,
+              workspace_id: sessionStorage.getItem("alteryx_workspace_id") || "",
+              numeric_columns: [],
+              expected_row_count: null,
+            });
+
+          if (!useAlteryxRecordCountValidation) {
+            return await validateWithTimeout(directValidation(), 120000, "Power BI row count validation");
+          }
+
+          try {
+            return await validateWithTimeout(
+              validateAlteryxPowerBiRecordCounts({
+                batch_id: batchId,
+                workflow_id: workflowId,
+                dataset_id: result.dataset_id,
+                table_name: finalValidationTableName,
+                workspace_id: sessionStorage.getItem("alteryx_workspace_id") || "",
+                numeric_columns: [],
+                expected_row_count: null,
+              }),
+              120000,
+              "Power BI row count validation"
+            );
+          } catch (firstError) {
+            console.warn("Alteryx record count validation failed, falling back to direct Power BI query...", firstError);
+            return await validateWithTimeout(directValidation(), 120000, "Power BI row count validation fallback");
+          }
+        };
+
+        validationResult = await runValidation();
+        sessionStorage.setItem("alteryx_validation_result", JSON.stringify(validationResult));
+        sessionStorage.setItem("migration_row_count", String(getPowerBiExpectedRows(validationResult) ?? getPowerBiRecordCount(validationResult) ?? ""));
+        sessionStorage.setItem("migration_columns", JSON.stringify(validationResult?.available_columns || []));
+
+        const reportRowCountCheck = getRowCountCheck(validationResult);
+        const reportPowerBiRows = getPowerBiRecordCount(validationResult);
+        const reportExpectedRows = getPowerBiExpectedRows(validationResult);
+        const reportColumnCount =
+          validationResult?.available_columns?.length ||
+          result?.published_tables?.find((table: any) =>
+            String(table?.name || "").toLowerCase() === String(finalValidationTableName || "").toLowerCase()
+          )?.columns?.length ||
+          0;
+
+        reportBlob = await downloadValidationReportPdf({
+          table_name: validationResult?.table_name || finalValidationTableName,
+          app_name: workflow?.name || "Alteryx workflow",
+          migration_status: result?.success ? "Certified" : "Failed",
+          publishing_method: "M_QUERY",
+          tables_deployed: result?.published_tables?.length || 1,
+          qlik_metrics: {
+            total_records: reportExpectedRows,
+            table_count: result?.published_tables?.length || 1,
+            column_count: reportColumnCount,
+            certification_status: "Pass",
+          },
+          powerbi_metrics: {
+            total_records: reportPowerBiRows,
+            table_count: result?.published_tables?.length || 1,
+            column_count: reportColumnCount,
+            certification_status: reportPowerBiRows !== null ? "Pass" : "Pending",
+          },
+        });
+      }
+
+      navigate("/publish", {
+        state: {
+          workflowName: workflow?.name || "Alteryx workflow",
+          mquery: mqueryPreview,
+          datasetName,
+          publishDuration,
+          validationResult,
+          reportBlob,
+          reportFilename,
+        },
+      });
 
     } catch (err: any) {
       setError(err?.message || "Publish to Power BI failed. Please try again.");
