@@ -272,7 +272,7 @@ export default function PublishPage() {
   const batchId = sessionStorage.getItem("alteryx_batch_id") || "";
   const workflowId = sessionStorage.getItem("alteryx_workflow_id") || "";
   const rowCountCheck = getRowCountCheck(validationResult);
-  const powerBiRows =
+ 
     getPowerBiRecordCount(validationResult) ??
     asNumber(publishResult?.row_count) ??
     asNumber(publishResult?.total_records) ??
