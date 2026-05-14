@@ -68,6 +68,7 @@
   overflow: visible;
   text-overflow: unset;
   white-space: normal;
+  text-align: justify;
 }
  
 .header-right {

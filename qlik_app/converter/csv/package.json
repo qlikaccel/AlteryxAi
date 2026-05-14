@@ -16,6 +16,7 @@
     "@mui/material": "^5.14.11",
     "@tanstack/react-table": "^8.21.3",
     "axios": "^1.13.4",
+    "chart.js": "^4.5.1",
     "mermaid": "^11.13.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

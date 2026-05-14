@@ -1,6 +1,7 @@
 import "./SummaryPage.css";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Chart as ChartJS, ArcElement, Tooltip, Legend, PieController } from "chart.js";
 import { useLocation, useNavigate } from "react-router-dom";
 import LoadingOverlay from "../components/LoadingOverlay/LoadingOverlay";
 import {
@@ -27,19 +28,11 @@ const DEFAULT_FILE_NAME = sessionStorage.getItem("alteryx_file_name") || "";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type SummaryTab = "sourceTypes" | "summary" | "brd" | "diagram";
 type SourceType = "database" | "scripts";
 type DownloadTarget = "mquery" | "dbt" | "python" | "dataform" | "pythonscripts";
 type PublishTarget = "dbt" | "powerbi" | "python" | "dataformbq" | "dataformgcp";
 
 // ─── Tab Config ───────────────────────────────────────────────────────────────
-
-const TABS: Array<{ id: SummaryTab; label: string; icon: string }> = [
-  { id: "sourceTypes", label: "Source Types", icon: "" },
-  { id: "summary", label: "Summary", icon: "" },
-  { id: "brd", label: "BRD", icon: "" },
-  { id: "diagram", label: "Workflow Diagram", icon: "" },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -211,12 +204,12 @@ function buildWorkflowLayout(nodes: WorkflowGraphNode[], edges: WorkflowGraphEdg
     grouped.get(level)?.push(node);
   });
 
-  const nodeWidth = 156;
-  const nodeHeight = 78;
-  const columnGap = 230;
-  const rowGap = 116;
-  const xOffset = 28;
-  const yOffset = 34;
+  const nodeWidth = 94;
+  const nodeHeight = 40;
+  const columnGap = 158;
+  const rowGap = 80;
+  const xOffset = 18;
+  const yOffset = 20;
   const maxLevel = Math.max(0, ...Array.from(grouped.keys()));
   const maxRows = Math.max(1, ...Array.from(grouped.values()).map((group) => group.length));
   const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
@@ -318,7 +311,7 @@ function WorkflowGraph({
 
         {nodes.map((node, index) => {
           const id = String(node.id || index);
-          const position = positions.get(id) || { x: 24, y: 24 + index * 92, width: 156, height: 78 };
+          const position = positions.get(id) || { x: 24, y: 24 + index * 84, width: 120, height: 56 };
           const family = toolFamily(String(node.plugin || ""));
           return (
             <div
@@ -347,33 +340,80 @@ function WorkflowGraph({
 
 // ─── PieChart Component ───────────────────────────────────────────────────────
 
+ChartJS.register(PieController, ArcElement, Tooltip, Legend);
+
 function PieChart({ slices }: { slices: Array<[string, number]> }) {
+  const chartRef = useRef<HTMLCanvasElement | null>(null);
+  const chartInstanceRef = useRef<ChartJS | null>(null);
   const total = slices.reduce((sum, [, value]) => sum + value, 0) || 1;
-  let cumulative = 0;
-  const colors = ["#ff4d4f", "#fb923c", "#facc15", "#14b8a6", "#6d5dfc", "#db3ea2", "#0ea5e9", "#22c55e"];
-  const gradient = slices
-    .map(([_, value], index) => {
-      const start = (cumulative / total) * 100;
-      cumulative += value;
-      const end = (cumulative / total) * 100;
-      return `${colors[index % colors.length]} ${start}% ${end}%`;
-    })
-    .join(", ");
+  const labels = slices.map(([name]) => name);
+  const dataValues = slices.map(([, value]) => value);
+  const colors = ["#E24B4A", "#EF9F27", "#F0CF65", "#1D9E75", "#7F77DD", "#D4537E", "#378ADD", "#5DCAA5"];
+
+  useEffect(() => {
+    const canvas = chartRef.current;
+    if (!canvas) return;
+
+    if (chartInstanceRef.current) {
+      chartInstanceRef.current.destroy();
+    }
+
+    chartInstanceRef.current = new ChartJS(canvas, {
+      type: "pie",
+      data: {
+        labels,
+        datasets: [
+          {
+            data: dataValues,
+            backgroundColor: colors.slice(0, labels.length),
+            borderColor: "rgba(255,255,255,0.8)",
+            borderWidth: 2,
+            hoverOffset: 14,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        animation: {
+          animateRotate: true,
+          animateScale: true,
+          duration: 1000,
+          easing: "easeInOutQuart",
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx: any) => ` ${ctx.label}: ${ctx.parsed}%`,
+            },
+          },
+        },
+      },
+    });
+
+    return () => {
+      chartInstanceRef.current?.destroy();
+    };
+  }, [JSON.stringify(slices)]);
 
   return (
-    <div className="alteryx-pie-wrap">
-      <div className="alteryx-pie" style={{ background: `conic-gradient(${gradient})` }}>
-        <span>{safePercent(slices[0]?.[1] || 0, total)}%</span>
+    <div className="workflow-distribution-chart">
+      <div className="chart-header">
+        <p className="chart-title">Workflow distribution</p>
       </div>
-      <div className="alteryx-pie-legend">
-        {slices.map(([name, value], index) => (
-          <div key={name}>
-            <i style={{ backgroundColor: colors[index % colors.length] }} />
-            <span>
+      <div className="chart-wrapper">
+        <div className="canvas-container">
+          <canvas ref={chartRef} />
+        </div>
+        <div className="chart-legend">
+          {slices.map(([name, value], index) => (
+            <span key={name} className="chart-legend-item">
+              <i className="dot" style={{ background: colors[index % colors.length] }} />
               {name}: {safePercent(value, total)}%
             </span>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -393,7 +433,6 @@ export default function SummaryPage() {
 
   const [workflow, setWorkflow] = useState<AlteryxWorkflow | null>(readStoredWorkflow());
   const [analysis, setAnalysis] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<SummaryTab>("sourceTypes");
   // const [selectedSource, setSelectedSource] = useState<SourceType>("csv"); // ✅ dev11 UI state
   const [selectedSource, setSelectedSource] = useState<SourceType>("scripts");
   const [showSourceMQuery, setShowSourceMQuery] = useState(false);
@@ -401,7 +440,6 @@ export default function SummaryPage() {
   const [fileName] = useState(DEFAULT_FILE_NAME);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [pageLoadTime, setPageLoadTime] = useState<string | null>(null);
   const [brdLoading, setBrdLoading] = useState(false);
   const [dbtPublishing, setDbtPublishing] = useState(false);
   const [dataformPublishing, setDataformPublishing] = useState(false);
@@ -419,6 +457,10 @@ export default function SummaryPage() {
   const [selectedDownloadTarget, setSelectedDownloadTarget] = useState<DownloadTarget>("mquery");
   const [selectedPublishTarget, setSelectedPublishTarget] = useState<PublishTarget>("dbt");
   const sourceMQueryPanelRef = useRef<HTMLElement | null>(null);
+  const summarySectionRef = useRef<HTMLElement | null>(null);
+  const brdSectionRef = useRef<HTMLElement | null>(null);
+  const diagramSectionRef = useRef<HTMLElement | null>(null);
+  const sourceTypesSectionRef = useRef<HTMLElement | null>(null);
 
   // ─── Data fetch (dev12 backend logic) ──────────────────────────────────────
 
@@ -454,8 +496,7 @@ export default function SummaryPage() {
         },
       });
       sessionStorage.removeItem("migration_mquery");
-      const elapsed = stopTimer?.("/summary");
-      setPageLoadTime(elapsed ?? null);
+      stopTimer?.("/summary");
       setLoading(false);
       setError("");
       return;
@@ -502,8 +543,7 @@ export default function SummaryPage() {
       })
       .catch((err: any) => setError(err?.message || "Failed to load workflow analysis"))
       .finally(() => {
-        const elapsed = stopTimer?.("/summary");
-        setPageLoadTime(elapsed ?? null);
+        stopTimer?.("/summary");
         setLoading(false);
       });
   }, [batchId, fileName, isCloudApiWorkflow, navigate, sharePointUrl, stopTimer, workflowId]);
@@ -537,7 +577,6 @@ export default function SummaryPage() {
   const mqueryPreview = analysis?.mquery?.combined_mquery || sessionStorage.getItem("migration_mquery") || "";
   const datasetName = analysis?.mquery?.dataset_name || workflow?.name || "AlteryxDataset";
   const sourceDetails = workflow?.dataSources || [];
-  const outputTargets = workflow?.outputTargets || [];
   const macroDependencies = workflow?.macroDependencies || [];
   const hasMacroDependencies = macroDependencies.length > 0;
   const macroTypes = Array.from(
@@ -571,7 +610,6 @@ export default function SummaryPage() {
   };
 
   const openSourceMQuery = () => {
-    setActiveTab("sourceTypes");
     setSelectedSource("scripts");
     setShowSourceMQuery(true);
   };
@@ -1189,7 +1227,7 @@ export default function SummaryPage() {
 
     nodes.forEach((node, index) => {
       const id = String(node.id || index);
-      const position = positions.get(id) || { x: 24, y: 24 + index * 92, width: 156, height: 78 };
+      const position = positions.get(id) || { x: 14, y: 14 + index * 54, width: 60, height: 16 };
       const family = toolFamily(String(node.plugin || ""));
       const colors = iconColors(family);
 
@@ -1342,6 +1380,7 @@ export default function SummaryPage() {
     <div className="summary-wrapper alteryx-summary-page">
 
       {/* ── Header ── */}
+      { /*
       <div className="alteryx-summary-top">
         <h1>{workflow.name}</h1>
         <div className="summary-tab-bar alteryx-tab-bar">
@@ -1349,7 +1388,7 @@ export default function SummaryPage() {
             <button
               key={tab.id}
               className={`tab-button ${activeTab === tab.id ? "active" : ""}`}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => scrollToSection(tab.id)}
             >
               <span>{tab.icon}</span>
               {tab.label}
@@ -1360,6 +1399,7 @@ export default function SummaryPage() {
           Analysis Time: {pageLoadTime || "00m : 00s : 00ms"}
         </div>
       </div>
+      */ }
 
       {/* ── Source config (dev12: only shown when NOT on sourceTypes tab) ──
       {!isCloudApiWorkflow && activeTab !== "sourceTypes" && (
@@ -1381,11 +1421,98 @@ export default function SummaryPage() {
         </div>
       )} */}
 
+      <div className="workflow-name-heading">
+        <h1>{workflow.name}</h1>
+      </div>
+
+      <div className="alteryx-executive-grid">
+        <section className="summary-report" ref={summarySectionRef}>
+          <div className="workflow-distribution-header">
+            {/* <h2>Workflow Distribution</h2> */}
+          </div>
+          <PieChart slices={pieSlices} />
+          <div className="alteryx-exec-copy">
+            <h2>Executive Summary</h2>
+            <ul>
+              {(
+                analysis?.summary?.bullets || [
+                  "Workflow metadata loaded. Upload the exported workflow package to generate a full executive summary.",
+                ]
+              ).map((item: string) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        <section className="assessment-panel alteryx-brd-panel" ref={brdSectionRef}>
+          <h2>BRD</h2>
+          {isCloudApiWorkflow ? (
+            <>
+              <p>
+                BRD generation needs the workflow package XML. The Cloud workflow list
+                API returned only metadata for this workflow, so the accelerator cannot
+                produce tool mapping, M Query, or validation criteria yet.
+              </p>
+              <div className="cloud-next-step">
+                <strong>Use Bulk Upload for BRD</strong>
+                <span>
+                  Upload the .yxmd/.yxzp file for this workflow, then this tab
+                  will generate the full workflow-specific BRD.
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>
+                The BRD is generated for this selected Alteryx workflow. It includes source inventory, conversion scope, tool
+                mapping, workflow diagram, generated M Query, acceptance criteria, and
+                validation/reconciliation requirements.
+              </p>
+              <button
+                className="primary-summary-action"
+                onClick={downloadBrd}
+                disabled={brdLoading}
+              >
+                {brdLoading ? "Generating BRD..." : "Download BRD"}
+              </button>
+            </>
+          )}
+        </section>
+      </div>
+
+      <section className="assessment-panel alteryx-diagram-panel" ref={diagramSectionRef}>
+        <div className="diagram-section-header">
+          <div>
+            <h2>Workflow Diagram</h2>
+            <p>
+              Accelerator shows the Alteryx workflow graph containing multiple relational tables and join keys, so reviewers can validate transformation lineage before publishing.
+            </p>
+          </div>
+          <button
+            className="diagram-download-btn"
+            onClick={downloadWorkflowDiagram}
+            title="Download workflow diagram as PNG"
+          >
+            Export Diagram
+          </button>
+        </div>
+
+        <WorkflowGraph workflow={workflow} sourceDetails={sourceDetails} />
+
+        <div className="workflow-legend">
+          <span><i className="legend-input" /> Source</span>
+          <span><i className="legend-transform" /> Transform</span>
+          <span><i className="legend-join" /> Join / Union</span>
+          <span><i className="legend-output" /> Output</span>
+        </div>
+      </section>
+
       {/* ══════════════════════════════════════════════════════
           TAB: Source Types
       ══════════════════════════════════════════════════════ */}
-      {activeTab === "sourceTypes" && (
-        isCloudApiWorkflow ? (
+      <section className="source-types-section" ref={sourceTypesSectionRef}>
+        {isCloudApiWorkflow ? (
           <section className="assessment-panel cloud-workflow-panel">
             <h2>Cloud Workflow Metadata</h2>
             <p>
@@ -1586,14 +1713,89 @@ export default function SummaryPage() {
                   </pre>
                 </div>
 
+                <section className="source-environment-banner">
+                  <div className="source-environment-banner-content">
+                    <h3>Publish to Environment</h3>
+                  </div>
+                  <div className="source-environment-banner-options">
+                    {[
+                      { id: "dbt" as PublishTarget, label: "DBT to BigQuery" },
+                      { id: "powerbi" as PublishTarget, label: "MQuery to Power BI" },
+                      { id: "python" as PublishTarget, label: "Python to BigQuery" },
+                      { id: "dataformbq" as PublishTarget, label: "Dataform to BigQuery" },
+                      { id: "dataformgcp" as PublishTarget, label: "Dataform to GCP Repo" },
+                    ].map((option) => (
+                      <label
+                        key={option.id}
+                        className={`source-publish-option ${selectedPublishTarget === option.id ? "selected" : ""}`}
+                      >
+                        <span className="source-option-line">
+                          <input
+                            type="radio"
+                            name="source-publish-banner-option"
+                            checked={selectedPublishTarget === option.id}
+                            onChange={() => setSelectedPublishTarget(option.id)}
+                          />
+                          <span>{option.label}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    className="source-box-action-button source-publish-banner-submit"
+                    type="button"
+                    onClick={runSelectedPublish}
+                    disabled={selectedPublishDisabled}
+                  >
+                    Publish
+                  </button>
+                </section>
+
+                <section className="source-environment-banner">
+                  <div className="source-environment-banner-content">
+                    <h3>Download</h3>
+                  </div>
+                  <div className="source-environment-banner-options">
+                    {[
+                      { id: "mquery" as DownloadTarget, label: "MQuery" },
+                      { id: "dbt" as DownloadTarget, label: "DBT" },
+                      { id: "dataform" as DownloadTarget, label: "Dataform Project" },
+                      { id: "pythonscripts" as DownloadTarget, label: "Python Scripts" },
+                    ].map((option) => (
+                      <label
+                        key={option.id}
+                        className={`source-publish-option ${selectedDownloadTarget === option.id ? "selected" : ""}`}
+                      >
+                        <span className="source-option-line">
+                          <input
+                            type="radio"
+                            name="source-download-option"
+                            checked={selectedDownloadTarget === option.id}
+                            onChange={() => setSelectedDownloadTarget(option.id)}
+                          />
+                          <span>{option.label}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    className="source-box-action-button source-publish-banner-submit"
+                    type="button"
+                    onClick={runSelectedDownload}
+                    disabled={selectedDownloadDisabled}
+                  >
+                    Download
+                  </button>
+                </section>
+
                 <div className="source-environment-boxes">
                   <section className="source-environment-box" aria-labelledby="source-download-title">
                     <h3 id="source-download-title">Download</h3>
                     <div className="source-option-list">
                       {[
-                        { id: "mquery" as DownloadTarget, label: "mQuery" },
+                        { id: "mquery" as DownloadTarget, label: "MQuery" },
                         { id: "dbt" as DownloadTarget, label: "DBT" },
-                        { id: "python" as DownloadTarget, label: "Python Query" },
+                        // { id: "python" as DownloadTarget, label: "Python Query" },
                         { id: "dataform" as DownloadTarget, label: "Dataform Project" },
                         { id: "pythonscripts" as DownloadTarget, label: "Python Scripts" },
                       ].map((option) => {
@@ -1685,247 +1887,9 @@ export default function SummaryPage() {
               </section>
             )}
           </>
-        )
-      )}
+        )}
+      </section>
 
-      {/* ══════════════════════════════════════════════════════
-          TAB: Summary
-      ══════════════════════════════════════════════════════ */}
-      {activeTab === "summary" && (
-        <section className="summary-report alteryx-executive-grid">
-          <PieChart slices={pieSlices} />
-          <div className="alteryx-exec-copy">
-            <h2>Executive Summary</h2>
-            <ul>
-              {(
-                analysis?.summary?.bullets || [
-                  "Workflow metadata loaded. Upload the exported workflow package to generate a full executive summary.",
-                ]
-              ).map((item: string) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-          {/* <div className={`macro-validation-panel ${hasMacroDependencies ? (macroReady ? "ready" : "missing") : "empty"}`}>
-            <div className="macro-validation-header">
-              <span>Macro Dependency Check</span>
-              <strong>
-                {hasMacroDependencies
-                  ? `${macroValidation.uploaded || 0}/${macroValidation.referenced || macroDependencies.length} uploaded`
-                  : "No macros"}
-              </strong>
-            </div>
-            <p>
-              {hasMacroDependencies
-                ? macroValidation.message || "Macro references were detected in this workflow."
-                : "This workflow does not reference external .yxmc macro files."}
-            </p>
-            {hasMacroDependencies && (
-              <>
-                <div className="macro-type-tags">
-                  {macroTypes.map((type) => (
-                    <em key={type}>{type}</em>
-                  ))}
-                </div>
-                <table className="macro-validation-table">
-                  <thead>
-                    <tr>
-                      <th>Macro</th>
-                      <th>Type</th>
-                      <th>Control</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {macroDependencies.map((macro: any) => (
-                      <tr key={`${macro.toolId}-${macro.path}`}>
-                        <td>{macro.name || macro.path}</td>
-                        <td>{macro.macroType || "Macro"}</td>
-                        <td>{macro.controlParameter || macro.iterationLimit || "-"}</td>
-                        <td>
-                          <span className={`macro-status ${macro.uploaded ? "ready" : "missing"}`}>
-                            {macro.uploaded ? "Uploaded" : "Missing"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
-          </div> */}
-          {outputTargets.length > 0 && (
-            <div className="macro-complexity-panel">
-              <div className="macro-validation-header">
-                <span>Detected Alteryx Outputs</span>
-                <strong>{outputTargets.length} output file{outputTargets.length === 1 ? "" : "s"}</strong>
-              </div>
-              <table className="macro-validation-table">
-                <thead>
-                  <tr>
-                    <th>Output</th>
-                    <th>Type</th>
-                    <th>Tool</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {outputTargets.map((output: any, index: number) => (
-                    <tr key={`${output.toolId || index}-${output.path || output.name}`}>
-                      <td>{output.name || output.path}</td>
-                      <td>{output.type || "output"}</td>
-                      <td>{output.toolId ? `Tool ${output.toolId}` : output.tool || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {/* <div className="metric-grid alteryx-metrics">
-            <div className="metric-card"><span>Total Tools</span>    <strong>{assessment.totalTools}</strong></div>
-            <div className="metric-card"><span>Supported Tools</span><strong>{assessment.supportedTools}</strong></div>
-            <div className="metric-card"><span>Needs Review</span>   <strong>{assessment.unsupportedTools}</strong></div>
-            <div className="metric-card"><span>Automation Fit</span> <strong>{assessment.automationScore}%</strong></div>
-          </div>
-          <div className={`hybrid-route-panel ${generationMethod === "llm" ? "llm" : "rules"}`}>
-            <span>Query Generation Path</span>
-            <strong>{generationLabel}</strong>
-            <p>{generationReason}</p>
-            <small>
-              {generationMethod === "llm"
-                ? `LLM status: ${generationStatus}`
-                : "Rule engine used for M Query generation"}
-            </small>
-            {generationIndicators.length > 0 && (
-              <div className="hybrid-route-tags">
-                {generationIndicators.slice(0, 4).map((item: string) => (
-                  <em key={item}>{item}</em>
-                ))}
-              </div>
-            )}
-          </div>
-          {conversionSteps.length > 0 && (
-            <div className="conversion-steps-panel">
-              <h3>Conversion Steps</h3>
-              <table className="conversion-steps-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Alteryx Tool</th>
-                    <th>M Query Step</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {conversionSteps.map((step: any, index: number) => (
-                    <tr key={index}>
-                      <td>{index + 1}</td>
-                      <td>{step.alteryx_tool || step.tool || step.source || "—"}</td>
-                      <td>{step.mquery_step || step.step || step.description || "—"}</td>
-                      <td>
-                        <span className={`step-status ${step.status === "needs_review" || step.supported === false ? "review" : "supported"}`}>
-                          {step.status || (step.supported === false ? "Needs Review" : "Converted")}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )} */}
-        </section>
-      )}
-
-      {/* ══════════════════════════════════════════════════════
-          TAB: BRD
-      ══════════════════════════════════════════════════════ */}
-      {activeTab === "brd" && (
-        <section className="assessment-panel alteryx-brd-panel">
-          <h2>BRD</h2>
-          {isCloudApiWorkflow ? (
-            <>
-              <p>
-                BRD generation needs the workflow package XML. The Cloud workflow list
-                API returned only metadata for this workflow, so the accelerator cannot
-                produce tool mapping, M Query, or validation criteria yet.
-              </p>
-              <div className="cloud-next-step">
-                <strong>Use Bulk Upload for BRD</strong>
-                <span>
-                  Upload the .yxmd/.yxzp file for this workflow, then this tab
-                  will generate the full workflow-specific BRD.
-                </span>
-              </div>
-            </>
-          ) : (
-            <>
-              <p>
-                The BRD is generated for this selected Alteryx workflow. It includes source inventory, conversion scope, tool
-                mapping, workflow diagram, generated M Query, acceptance criteria, and
-                validation/reconciliation requirements.
-              </p>
-              <button
-                className="primary-summary-action"
-                onClick={downloadBrd}
-                disabled={brdLoading}
-              >
-                {brdLoading ? "Generating BRD..." : "Download BRD"}
-              </button>
-            </>
-          )}
-        </section>
-      )}
-
-      {/* ══════════════════════════════════════════════════════
-          TAB: ER Diagram  ← dev12 WorkflowGraph integrated
-      ══════════════════════════════════════════════════════ */}
-      {activeTab === "diagram" && (
-        <section className="assessment-panel alteryx-diagram-panel">
-          <div className="diagram-section-header">
-            <div>
-              <h2>Workflow Diagram</h2>
-              <p>
-                Accelerator shows the Alteryx workflow graph containing multiple relational tables and join keys, so reviewers can validate transformation lineage before publishing.
-              </p>
-            </div>
-            <button
-              className="diagram-download-btn"
-              onClick={downloadWorkflowDiagram}
-              title="Download workflow diagram as PNG"
-            >
-              Download as PNG
-            </button>
-          </div>
-
-          {/* ✅ dev12 WorkflowGraph replaces dev11's <pre> tag */}
-          <WorkflowGraph workflow={workflow} sourceDetails={sourceDetails} />
-
-          {/* ✅ dev12 legend */}
-          <div className="workflow-legend">
-            <span><i className="legend-input" /> Source</span>
-            <span><i className="legend-transform" /> Transform</span>
-            <span><i className="legend-join" /> Join / Union</span>
-            <span><i className="legend-output" /> Output</span>
-          </div>
-
-          {/* ✅ dev12 pill class */}
-          {/* <div className="pill-list workflow-detail-pills">
-            {sourceDetails.length > 0 &&
-              sourceDetails.slice(0, 12).map((source: any, index: number) => (
-                <span key={`source-${index}`}>
-                  {source.fileName || source.path || source.connection || source.type || "Data source"}
-                </span>
-              ))}
-            {sourceDetails.length === 0 &&
-              (workflow.workflowEdges || []).slice(0, 12).map((edge: any, index: number) => (
-                <span key={`${edge.from}-${edge.to}-${index}`}>
-                  Tool {edge.from} to Tool {edge.to}
-                </span>
-              ))}
-          </div> */}
-        </section>
-      )}
-
-      {/* ── Footer actions (dev12 backend) ── */}
       <div className="summary-actions">
         {/* <button onClick={() => navigate("/apps")}>Back to workflows</button> */}
         {!isCloudApiWorkflow && (
