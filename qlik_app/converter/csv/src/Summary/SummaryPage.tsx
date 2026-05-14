@@ -455,6 +455,7 @@ export default function SummaryPage() {
   });
   const [mqueryCopied, setMqueryCopied] = useState(false);
   const [selectedDownloadTarget, setSelectedDownloadTarget] = useState<DownloadTarget>("mquery");
+  const [selectedDownloadBannerTarget, setSelectedDownloadBannerTarget] = useState<DownloadTarget>("mquery");
   const [selectedPublishTarget, setSelectedPublishTarget] = useState<PublishTarget>("dbt");
   const sourceMQueryPanelRef = useRef<HTMLElement | null>(null);
   const summarySectionRef = useRef<HTMLElement | null>(null);
@@ -1026,7 +1027,6 @@ export default function SummaryPage() {
   const publishDataformToGCPRepo = publishDataformToRepository;
 
   const runDownloadTarget = (target: DownloadTarget) => {
-    setSelectedDownloadTarget(target);
     if (target === "mquery") {
       downloadMQuery();
       return;
@@ -1051,6 +1051,10 @@ export default function SummaryPage() {
 
   const runSelectedDownload = () => {
     runDownloadTarget(selectedDownloadTarget);
+  };
+
+  const runSelectedDownloadBanner = () => {
+    runDownloadTarget(selectedDownloadBannerTarget);
   };
 
   const runPublishTarget = (target: PublishTarget) => {
@@ -1089,6 +1093,17 @@ export default function SummaryPage() {
         : selectedDownloadTarget === "dataform"
           ? !batchId || !workflowId
           : selectedDownloadTarget === "pythonscripts"
+            ? !batchId || !workflowId
+            : false;
+
+  const selectedDownloadBannerDisabled =
+    selectedDownloadBannerTarget === "mquery"
+      ? !mqueryPreview
+      : selectedDownloadBannerTarget === "dbt"
+        ? !batchId || !workflowId
+        : selectedDownloadBannerTarget === "dataform"
+          ? !batchId || !workflowId
+          : selectedDownloadBannerTarget === "pythonscripts"
             ? !batchId || !workflowId
             : false;
 
@@ -1764,14 +1779,14 @@ export default function SummaryPage() {
                     ].map((option) => (
                       <label
                         key={option.id}
-                        className={`source-publish-option ${selectedDownloadTarget === option.id ? "selected" : ""}`}
+                        className={`source-publish-option ${selectedDownloadBannerTarget === option.id ? "selected" : ""}`}
                       >
                         <span className="source-option-line">
                           <input
                             type="radio"
-                            name="source-download-option"
-                            checked={selectedDownloadTarget === option.id}
-                            onChange={() => setSelectedDownloadTarget(option.id)}
+                            name="source-download-banner-option"
+                            checked={selectedDownloadBannerTarget === option.id}
+                            onChange={() => setSelectedDownloadBannerTarget(option.id)}
                           />
                           <span>{option.label}</span>
                         </span>
@@ -1781,8 +1796,8 @@ export default function SummaryPage() {
                   <button
                     className="source-box-action-button source-publish-banner-submit"
                     type="button"
-                    onClick={runSelectedDownload}
-                    disabled={selectedDownloadDisabled}
+                    onClick={runSelectedDownloadBanner}
+                    disabled={selectedDownloadBannerDisabled}
                   >
                     Download
                   </button>
