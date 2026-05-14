@@ -114,6 +114,14 @@ def _dbt_source_identifier(source: dict[str, Any], index: int) -> str:
     return _shorten_identifier(cleaned or _dbt_source_name(source, index), 120)
 
 
+def _normalize_schema_description_text(value: str) -> str:
+    text = str(value or "")
+    text = text.replace(chr(34), "")
+    text = text.replace(chr(92), "/")
+    text = re.sub(r"(?i)\b[a-z]:(?=(?:[/\\]|\s|$))", "", text)
+    return text
+
+
 def _is_warehouse_landed_source(source: dict[str, Any]) -> bool:
     label = " ".join(
         str(source.get(key) or "")
@@ -875,10 +883,15 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         source_model_names.append(source_name)
         description = str(source.get("path") or source.get("type") or "")
         identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
+        raw_description_text = (
+            f"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. "
+            f"Original path: {description}"
+        )
+        normalized_description = _normalize_schema_description_text(raw_description_text)
         source_rows.append(
             f"      - name: {source_name}\n"
             f"{identifier_line}"
-            f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '').replace(chr(92), '/')}\""
+            f"        description: \"{normalized_description}\""
         )
         staging_files[f"models/staging/stg_{source_name}.sql"] = (
             "{{ config(materialized='view') }}\n\n"
@@ -951,15 +964,15 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         + "\n\nmodels:\n"
         + "\n".join(
             [
-                f"  - name: stg_{name}\n    description: \"Staging view for landed source {name}.\""
+                f"  - name: stg_{name}\n    description: \"Staging view for landed source {_normalize_schema_description_text(name)}.\""
                 for name in source_model_names
             ]
         )
         + "".join(
-            f"\n  - name: {_output_model_name(output, index)}\n    description: \"Output model for Alteryx target {str(output.get('name') or output.get('path') or index).replace(chr(34), '')}.\""
+            f"\n  - name: {_output_model_name(output, index)}\n    description: \"Output model for Alteryx target {_normalize_schema_description_text(str(output.get('name') or output.get('path') or index))}.\""
             for index, output in enumerate(output_targets, start=1)
         )
-        + f"\n  - name: {project_name}\n    description: \"Final scaffold model for {workflow.get('name', 'Alteryx workflow')}.\"\n"
+        + f"\n  - name: {project_name}\n    description: \"Final scaffold model for {_normalize_schema_description_text(workflow.get('name', 'Alteryx workflow'))}.\"\n"
     )
 
     files = {
