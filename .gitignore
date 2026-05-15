@@ -44,3 +44,4 @@ qlik_app/qlik/qlik-fastapi-backend/.env
 *.env
 .powerbi_token_cache.json
 .env.example
+qlik_app/qlik/qlik-fastapi-backend/_alteryx_upload_batches/
