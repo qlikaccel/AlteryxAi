@@ -173,26 +173,6 @@ def _dbt_identifier(value: str, fallback: str = "alteryx_model", max_length: int
     return _shorten_identifier(cleaned or fallback, max_length)
 
 
-def _safe_yaml_description(text: str) -> str:
-    """Return a YAML-safe single-quoted scalar for use in schema.yml description fields.
-
-    Double-quoted YAML scalars interpret backslash escape sequences (e.g. ``\\M`` →
-    unknown escape error).  Windows file paths written verbatim into a double-quoted
-    YAML value therefore break ``dbt parse`` on Linux.  This helper:
-
-    1. Converts every backslash to a forward slash (path-normalisation).
-    2. Strips double-quotes so they cannot prematurely close the scalar.
-    3. Wraps the result in *single* quotes.  Single-quoted YAML scalars treat every
-       character literally – no escape processing at all – so forward slashes,
-       colons, and any other path characters are perfectly safe.
-    4. Escapes any single-quote that appears *inside* the text by doubling it
-       (the only escaping rule in YAML single-quoted scalars).
-    """
-    sanitised = text.replace("\\", "/").replace('"', "")
-    sanitised = sanitised.replace("'", "''")  # escape inner single-quotes
-    return f"'{sanitised}'"
-
-
 def _dbt_source_name(source: dict[str, Any], index: int) -> str:
     name = str(source.get("name") or source.get("path") or f"source_{index}")
     name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet)$", "", name, flags=re.IGNORECASE)
@@ -1097,17 +1077,10 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         source_model_names.append(source_name)
         description = str(source.get("path") or source.get("type") or "")
         identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
-        # Build a YAML-safe description. Windows paths contain backslashes which
-        # are interpreted as YAML escape sequences inside double-quoted scalars,
-        # causing ``dbt parse`` to fail with "found unknown escape character" on
-        # Linux/cloud deployments.  _safe_yaml_description() normalises slashes
-        # and wraps the value in single quotes (no escape processing in YAML).
-        source_display_name = str(source.get("name") or source_name)
-        desc_text = f"Landed source for {source_display_name}. Original path: {description}"
         source_rows.append(
             f"      - name: {source_name}\n"
             f"{identifier_line}"
-            f"        description: {_safe_yaml_description(desc_text)}"
+            f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '').replace(chr(92), '/')}\""
         )
         staging_files[f"models/staging/stg_{source_name}.sql"] = (
             "{{ config(materialized='view') }}\n\n"
@@ -1184,15 +1157,15 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         + "\n\nmodels:\n"
         + "\n".join(
             [
-                f"  - name: stg_{name}\n    description: 'Staging view for landed source {name}.'"
+                f"  - name: stg_{name}\n    description: \"Staging view for landed source {name}.\""
                 for name in source_model_names
             ]
         )
         + "".join(
-            f"\n  - name: {_output_model_name(output, index)}\n    description: {_safe_yaml_description('Output model for Alteryx target ' + str(output.get('name') or output.get('path') or index) + '.')}"
+            f"\n  - name: {_output_model_name(output, index)}\n    description: \"Output model for Alteryx target {str(output.get('name') or output.get('path') or index).replace(chr(34), '')}.\""
             for index, output in enumerate(output_targets, start=1)
         )
-        + f"\n  - name: {project_name}\n    description: {_safe_yaml_description('Final scaffold model for ' + str(workflow.get('name', 'Alteryx workflow')) + '.')}\n"
+        + f"\n  - name: {project_name}\n    description: \"Final scaffold model for {workflow.get('name', 'Alteryx workflow')}.\"\n"
     )
 
     files = {
