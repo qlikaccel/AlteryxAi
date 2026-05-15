@@ -518,12 +518,142 @@ def _literal_or_identifier_sql(expr: str) -> str:
     return value
 
 
-def _formula_to_sql(expression: str) -> str | None:
+def _formula_to_sql(expression: str) -> str | None:  # noqa: C901 – intentionally long dispatch
     expr = str(expression or "").strip()
     if not expr:
         return None
     if re.match(r"^IIF\s*\(", expr, flags=re.IGNORECASE):
         return _convert_iif_to_sql(expr)
+
+    # ------------------------------------------------------------------
+    # Alteryx → BigQuery function translations
+    # These functions do not exist in BigQuery under the same names and
+    # must be transpiled before the SQL is sent to the warehouse.
+    # ------------------------------------------------------------------
+
+    # ToNumber / ToDecimal / ToFloat  →  SAFE_CAST(… AS FLOAT64)
+    tonumber_m = re.match(r"To(?:Number|Decimal|Float)\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if tonumber_m:
+        inner = _formula_to_sql(tonumber_m.group(1)) or _literal_or_identifier_sql(tonumber_m.group(1))
+        return f"safe_cast({inner} as float64)"
+
+    # ToInteger / ToInt  →  SAFE_CAST(… AS INT64)
+    toint_m = re.match(r"To(?:Integer|Int)\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if toint_m:
+        inner = _formula_to_sql(toint_m.group(1)) or _literal_or_identifier_sql(toint_m.group(1))
+        return f"safe_cast({inner} as int64)"
+
+    # ToString  →  CAST(… AS STRING)
+    tostring_m = re.match(r"ToString\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if tostring_m:
+        inner = _formula_to_sql(tostring_m.group(1)) or _literal_or_identifier_sql(tostring_m.group(1))
+        return f"cast({inner} as string)"
+
+    # IsNull  →  (… IS NULL)
+    isnull_m = re.match(r"IsNull\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if isnull_m:
+        inner = _formula_to_sql(isnull_m.group(1)) or _literal_or_identifier_sql(isnull_m.group(1))
+        return f"({inner} is null)"
+
+    # IsEmpty  →  (… IS NULL OR CAST(… AS STRING) = '')
+    isempty_m = re.match(r"IsEmpty\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if isempty_m:
+        inner = _formula_to_sql(isempty_m.group(1)) or _literal_or_identifier_sql(isempty_m.group(1))
+        return f"({inner} is null or cast({inner} as string) = '')"
+
+    # Null()  →  NULL
+    if re.match(r"^Null\s*\(\s*\)$", expr, flags=re.IGNORECASE):
+        return "null"
+
+    # Length / StringLength  →  char_length(CAST(… AS STRING))
+    length_m = re.match(r"(?:String)?Length\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if length_m:
+        inner = _formula_to_sql(length_m.group(1)) or _literal_or_identifier_sql(length_m.group(1))
+        return f"char_length(cast({inner} as string))"
+
+    # Left(str, n)  →  SUBSTR(CAST(… AS STRING), 1, n)
+    left_m = re.match(r"Left\s*\((.+),\s*(\d+)\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if left_m:
+        inner = _formula_to_sql(left_m.group(1)) or _literal_or_identifier_sql(left_m.group(1))
+        return f"substr(cast({inner} as string), 1, {left_m.group(2)})"
+
+    # Right(str, n)  →  SUBSTR(CAST(… AS STRING), -n)
+    right_m = re.match(r"Right\s*\((.+),\s*(\d+)\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if right_m:
+        inner = _formula_to_sql(right_m.group(1)) or _literal_or_identifier_sql(right_m.group(1))
+        return f"substr(cast({inner} as string), -{right_m.group(2)})"
+
+    # Mid(str, start[, length])  →  SUBSTR(…, start[, length])
+    mid_m = re.match(r"Mid\s*\((.+),\s*(\d+)(?:,\s*(\d+))?\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if mid_m:
+        inner = _formula_to_sql(mid_m.group(1)) or _literal_or_identifier_sql(mid_m.group(1))
+        if mid_m.group(3):
+            return f"substr(cast({inner} as string), {mid_m.group(2)}, {mid_m.group(3)})"
+        return f"substr(cast({inner} as string), {mid_m.group(2)})"
+
+    # Replace(str, find, replace_with)  →  REPLACE(CAST(… AS STRING), find, replace_with)
+    replace_m = re.match(r"Replace\s*\((.+),\s*('[^']*'|\"[^\"]*\"),\s*('[^']*'|\"[^\"]*\")\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if replace_m:
+        inner = _formula_to_sql(replace_m.group(1)) or _literal_or_identifier_sql(replace_m.group(1))
+        find = replace_m.group(2).replace('"', "'")
+        repl = replace_m.group(3).replace('"', "'")
+        return f"replace(cast({inner} as string), {find}, {repl})"
+
+    # Abs  →  ABS
+    abs_m = re.match(r"Abs\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if abs_m:
+        inner = _formula_to_sql(abs_m.group(1)) or _literal_or_identifier_sql(abs_m.group(1))
+        return f"abs({inner})"
+
+    # Round(val, decimals)  →  ROUND(val, decimals)
+    round_m = re.match(r"Round\s*\((.+),\s*(\d+)\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if round_m:
+        inner = _formula_to_sql(round_m.group(1)) or _literal_or_identifier_sql(round_m.group(1))
+        return f"round(safe_cast({inner} as numeric), {round_m.group(2)})"
+
+    # Ceil / Ceiling  →  CEIL
+    ceil_m = re.match(r"Ceil(?:ing)?\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if ceil_m:
+        inner = _formula_to_sql(ceil_m.group(1)) or _literal_or_identifier_sql(ceil_m.group(1))
+        return f"ceil(safe_cast({inner} as numeric))"
+
+    # Floor  →  FLOOR
+    floor_m = re.match(r"Floor\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if floor_m:
+        inner = _formula_to_sql(floor_m.group(1)) or _literal_or_identifier_sql(floor_m.group(1))
+        return f"floor(safe_cast({inner} as numeric))"
+
+    # DateTimeNow()  →  CURRENT_TIMESTAMP()
+    if re.match(r"^DateTimeNow\s*\(\s*\)$", expr, flags=re.IGNORECASE):
+        return "current_timestamp()"
+
+    # DateTimeToday()  →  CURRENT_DATE()
+    if re.match(r"^DateTimeToday\s*\(\s*\)$", expr, flags=re.IGNORECASE):
+        return "current_date()"
+
+    # DateTimeDiff(end, start, unit)  →  DATE_DIFF / TIMESTAMP_DIFF
+    dtdiff_m = re.match(r"DateTimeDiff\s*\((.+),\s*(.+),\s*['\"](\w+)['\"]\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if dtdiff_m:
+        end_expr = _formula_to_sql(dtdiff_m.group(1)) or _literal_or_identifier_sql(dtdiff_m.group(1))
+        start_expr = _formula_to_sql(dtdiff_m.group(2)) or _literal_or_identifier_sql(dtdiff_m.group(2))
+        unit = dtdiff_m.group(3).upper()
+        bq_unit_map = {"SECONDS": "SECOND", "MINUTES": "MINUTE", "HOURS": "HOUR", "DAYS": "DAY", "MONTHS": "MONTH", "YEARS": "YEAR"}
+        bq_unit = bq_unit_map.get(unit, unit)
+        if bq_unit in ("SECOND", "MINUTE", "HOUR"):
+            return f"timestamp_diff(safe_cast({end_expr} as timestamp), safe_cast({start_expr} as timestamp), {bq_unit})"
+        return f"date_diff(safe_cast({end_expr} as date), safe_cast({start_expr} as date), {bq_unit})"
+
+    # Concat / + string concatenation  →  CONCAT(…)
+    concat_m = re.match(r"Concat\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if concat_m:
+        parts = _split_top_level_args(concat_m.group(1))
+        translated = [_formula_to_sql(p) or _literal_or_identifier_sql(p) for p in parts]
+        return f"concat({', '.join(translated)})"
+
+    # ------------------------------------------------------------------
+    # End of Alteryx function translations
+    # ------------------------------------------------------------------
+
     contains_match = re.match(r"Contains\s*\((.+),\s*['\"]([^'\"]+)['\"]\)", expr, flags=re.IGNORECASE | re.DOTALL)
     if contains_match:
         haystack = _formula_to_sql(contains_match.group(1)) or _literal_or_identifier_sql(contains_match.group(1))
