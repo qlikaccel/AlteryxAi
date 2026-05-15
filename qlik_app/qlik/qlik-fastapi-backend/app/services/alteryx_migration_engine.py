@@ -462,6 +462,44 @@ def _sql_agg(action: str, field: str) -> str:
     return f"sum({numeric_expr})"
 
 
+def _match_func_call(expr: str, name_pattern: str) -> tuple[str, list[str]] | None:
+    """Match a complete function call that spans the *entire* expression.
+
+    Returns (matched_name, [arg1, arg2, ...]) or None.
+
+    Using greedy ``.+`` regexes to capture function arguments is fragile:
+    ``ToNumber([A]) - ToNumber([B])`` makes the greedy group consume
+    ``[A]) - ToNumber([B]`` as one argument, producing broken SQL like
+    ``safe_cast(safe_cast(`A` as numeric)) - ToNumber(... as float64)``.
+
+    This helper uses a parenthesis-depth counter so it only matches when the
+    function call is the *whole* expression (nothing follows the closing paren).
+    Compound expressions are intentionally left unmatched so the arithmetic
+    fallback path handles them correctly.
+    """
+    m = re.match(r"^(" + name_pattern + r")\s*\(", expr, flags=re.IGNORECASE)
+    if not m:
+        return None
+    start = m.end()  # index just after the opening '('
+    depth = 1
+    i = start
+    while i < len(expr) and depth > 0:
+        if expr[i] == "(":
+            depth += 1
+        elif expr[i] == ")":
+            depth -= 1
+        i += 1
+    if depth != 0:
+        return None  # unbalanced parens
+    remainder = expr[i:].strip()
+    if remainder:
+        return None  # compound expression — don't consume it here
+    inner = expr[start : i - 1].strip()
+    if not inner:
+        return None  # empty arg list — avoid producing safe_cast( as …)
+    return (m.group(1), _split_top_level_args(inner))
+
+
 def _split_top_level_args(value: str) -> list[str]:
     args: list[str] = []
     current: list[str] = []
@@ -527,101 +565,19 @@ def _formula_to_sql(expression: str) -> str | None:  # noqa: C901 – intentiona
 
     # ------------------------------------------------------------------
     # Alteryx → BigQuery function translations
-    # These functions do not exist in BigQuery under the same names and
-    # must be transpiled before the SQL is sent to the warehouse.
+    #
+    # IMPORTANT: all single-argument functions use _match_func_call() which
+    # uses a parenthesis-depth counter and only matches when the function call
+    # spans the *entire* expression.  Compound expressions such as
+    # ``ToNumber([A]) - ToNumber([B])`` are intentionally left unmatched here
+    # so the arithmetic rewrite path below handles them correctly.
+    # Greedy ``.+`` regexes must NOT be used for argument extraction — they
+    # consume operators and adjacent calls producing broken SQL.
     # ------------------------------------------------------------------
 
-    # ToNumber / ToDecimal / ToFloat  →  SAFE_CAST(… AS FLOAT64)
-    tonumber_m = re.match(r"To(?:Number|Decimal|Float)\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if tonumber_m:
-        inner = _formula_to_sql(tonumber_m.group(1)) or _literal_or_identifier_sql(tonumber_m.group(1))
-        return f"safe_cast({inner} as float64)"
-
-    # ToInteger / ToInt  →  SAFE_CAST(… AS INT64)
-    toint_m = re.match(r"To(?:Integer|Int)\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if toint_m:
-        inner = _formula_to_sql(toint_m.group(1)) or _literal_or_identifier_sql(toint_m.group(1))
-        return f"safe_cast({inner} as int64)"
-
-    # ToString  →  CAST(… AS STRING)
-    tostring_m = re.match(r"ToString\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if tostring_m:
-        inner = _formula_to_sql(tostring_m.group(1)) or _literal_or_identifier_sql(tostring_m.group(1))
-        return f"cast({inner} as string)"
-
-    # IsNull  →  (… IS NULL)
-    isnull_m = re.match(r"IsNull\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if isnull_m:
-        inner = _formula_to_sql(isnull_m.group(1)) or _literal_or_identifier_sql(isnull_m.group(1))
-        return f"({inner} is null)"
-
-    # IsEmpty  →  (… IS NULL OR CAST(… AS STRING) = '')
-    isempty_m = re.match(r"IsEmpty\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if isempty_m:
-        inner = _formula_to_sql(isempty_m.group(1)) or _literal_or_identifier_sql(isempty_m.group(1))
-        return f"({inner} is null or cast({inner} as string) = '')"
-
-    # Null()  →  NULL
+    # Null()  →  NULL  (zero-arg, check before other patterns)
     if re.match(r"^Null\s*\(\s*\)$", expr, flags=re.IGNORECASE):
         return "null"
-
-    # Length / StringLength  →  char_length(CAST(… AS STRING))
-    length_m = re.match(r"(?:String)?Length\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if length_m:
-        inner = _formula_to_sql(length_m.group(1)) or _literal_or_identifier_sql(length_m.group(1))
-        return f"char_length(cast({inner} as string))"
-
-    # Left(str, n)  →  SUBSTR(CAST(… AS STRING), 1, n)
-    left_m = re.match(r"Left\s*\((.+),\s*(\d+)\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if left_m:
-        inner = _formula_to_sql(left_m.group(1)) or _literal_or_identifier_sql(left_m.group(1))
-        return f"substr(cast({inner} as string), 1, {left_m.group(2)})"
-
-    # Right(str, n)  →  SUBSTR(CAST(… AS STRING), -n)
-    right_m = re.match(r"Right\s*\((.+),\s*(\d+)\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if right_m:
-        inner = _formula_to_sql(right_m.group(1)) or _literal_or_identifier_sql(right_m.group(1))
-        return f"substr(cast({inner} as string), -{right_m.group(2)})"
-
-    # Mid(str, start[, length])  →  SUBSTR(…, start[, length])
-    mid_m = re.match(r"Mid\s*\((.+),\s*(\d+)(?:,\s*(\d+))?\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if mid_m:
-        inner = _formula_to_sql(mid_m.group(1)) or _literal_or_identifier_sql(mid_m.group(1))
-        if mid_m.group(3):
-            return f"substr(cast({inner} as string), {mid_m.group(2)}, {mid_m.group(3)})"
-        return f"substr(cast({inner} as string), {mid_m.group(2)})"
-
-    # Replace(str, find, replace_with)  →  REPLACE(CAST(… AS STRING), find, replace_with)
-    replace_m = re.match(r"Replace\s*\((.+),\s*('[^']*'|\"[^\"]*\"),\s*('[^']*'|\"[^\"]*\")\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if replace_m:
-        inner = _formula_to_sql(replace_m.group(1)) or _literal_or_identifier_sql(replace_m.group(1))
-        find = replace_m.group(2).replace('"', "'")
-        repl = replace_m.group(3).replace('"', "'")
-        return f"replace(cast({inner} as string), {find}, {repl})"
-
-    # Abs  →  ABS
-    abs_m = re.match(r"Abs\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if abs_m:
-        inner = _formula_to_sql(abs_m.group(1)) or _literal_or_identifier_sql(abs_m.group(1))
-        return f"abs({inner})"
-
-    # Round(val, decimals)  →  ROUND(val, decimals)
-    round_m = re.match(r"Round\s*\((.+),\s*(\d+)\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if round_m:
-        inner = _formula_to_sql(round_m.group(1)) or _literal_or_identifier_sql(round_m.group(1))
-        return f"round(safe_cast({inner} as numeric), {round_m.group(2)})"
-
-    # Ceil / Ceiling  →  CEIL
-    ceil_m = re.match(r"Ceil(?:ing)?\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if ceil_m:
-        inner = _formula_to_sql(ceil_m.group(1)) or _literal_or_identifier_sql(ceil_m.group(1))
-        return f"ceil(safe_cast({inner} as numeric))"
-
-    # Floor  →  FLOOR
-    floor_m = re.match(r"Floor\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if floor_m:
-        inner = _formula_to_sql(floor_m.group(1)) or _literal_or_identifier_sql(floor_m.group(1))
-        return f"floor(safe_cast({inner} as numeric))"
 
     # DateTimeNow()  →  CURRENT_TIMESTAMP()
     if re.match(r"^DateTimeNow\s*\(\s*\)$", expr, flags=re.IGNORECASE):
@@ -631,24 +587,112 @@ def _formula_to_sql(expression: str) -> str | None:  # noqa: C901 – intentiona
     if re.match(r"^DateTimeToday\s*\(\s*\)$", expr, flags=re.IGNORECASE):
         return "current_date()"
 
+    # ToNumber / ToDecimal / ToFloat  →  SAFE_CAST(… AS FLOAT64)
+    fc = _match_func_call(expr, r"To(?:Number|Decimal|Float)")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"safe_cast({inner} as float64)"
+
+    # ToInteger / ToInt  →  SAFE_CAST(… AS INT64)
+    fc = _match_func_call(expr, r"To(?:Integer|Int)")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"safe_cast({inner} as int64)"
+
+    # ToString  →  CAST(… AS STRING)
+    fc = _match_func_call(expr, r"ToString")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"cast({inner} as string)"
+
+    # IsNull  →  (… IS NULL)
+    fc = _match_func_call(expr, r"IsNull")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"({inner} is null)"
+
+    # IsEmpty  →  (… IS NULL OR CAST(… AS STRING) = '')
+    fc = _match_func_call(expr, r"IsEmpty")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"({inner} is null or cast({inner} as string) = '')"
+
+    # Length / StringLength  →  char_length(CAST(… AS STRING))
+    fc = _match_func_call(expr, r"(?:String)?Length")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"char_length(cast({inner} as string))"
+
+    # Abs  →  ABS
+    fc = _match_func_call(expr, r"Abs")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"abs({inner})"
+
+    # Ceil / Ceiling  →  CEIL
+    fc = _match_func_call(expr, r"Ceil(?:ing)?")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"ceil(safe_cast({inner} as numeric))"
+
+    # Floor  →  FLOOR
+    fc = _match_func_call(expr, r"Floor")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"floor(safe_cast({inner} as numeric))"
+
+    # Left(str, n)  →  SUBSTR(CAST(… AS STRING), 1, n)
+    fc = _match_func_call(expr, r"Left")
+    if fc and len(fc[1]) == 2:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"substr(cast({inner} as string), 1, {fc[1][1].strip()})"
+
+    # Right(str, n)  →  SUBSTR(CAST(… AS STRING), -n)
+    fc = _match_func_call(expr, r"Right")
+    if fc and len(fc[1]) == 2:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"substr(cast({inner} as string), -{fc[1][1].strip()})"
+
+    # Mid(str, start[, length])  →  SUBSTR(…, start[, length])
+    fc = _match_func_call(expr, r"Mid")
+    if fc and len(fc[1]) in (2, 3):
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        if len(fc[1]) == 3:
+            return f"substr(cast({inner} as string), {fc[1][1].strip()}, {fc[1][2].strip()})"
+        return f"substr(cast({inner} as string), {fc[1][1].strip()})"
+
+    # Round(val, decimals)  →  ROUND(val, decimals)
+    fc = _match_func_call(expr, r"Round")
+    if fc and len(fc[1]) == 2:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"round(safe_cast({inner} as numeric), {fc[1][1].strip()})"
+
+    # Replace(str, find, repl)  →  REPLACE(CAST(… AS STRING), find, repl)
+    fc = _match_func_call(expr, r"Replace")
+    if fc and len(fc[1]) == 3:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        find = fc[1][1].strip().replace('"', "'")
+        repl = fc[1][2].strip().replace('"', "'")
+        return f"replace(cast({inner} as string), {find}, {repl})"
+
+    # Concat(…)  →  CONCAT(…)
+    fc = _match_func_call(expr, r"Concat")
+    if fc:
+        translated = [_formula_to_sql(p) or _literal_or_identifier_sql(p) for p in fc[1]]
+        return f"concat({', '.join(translated)})"
+
     # DateTimeDiff(end, start, unit)  →  DATE_DIFF / TIMESTAMP_DIFF
-    dtdiff_m = re.match(r"DateTimeDiff\s*\((.+),\s*(.+),\s*['\"](\w+)['\"]\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if dtdiff_m:
-        end_expr = _formula_to_sql(dtdiff_m.group(1)) or _literal_or_identifier_sql(dtdiff_m.group(1))
-        start_expr = _formula_to_sql(dtdiff_m.group(2)) or _literal_or_identifier_sql(dtdiff_m.group(2))
-        unit = dtdiff_m.group(3).upper()
-        bq_unit_map = {"SECONDS": "SECOND", "MINUTES": "MINUTE", "HOURS": "HOUR", "DAYS": "DAY", "MONTHS": "MONTH", "YEARS": "YEAR"}
+    fc = _match_func_call(expr, r"DateTimeDiff")
+    if fc and len(fc[1]) == 3:
+        end_expr = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        start_expr = _formula_to_sql(fc[1][1]) or _literal_or_identifier_sql(fc[1][1])
+        unit = fc[1][2].strip().strip("'\"").upper()
+        bq_unit_map = {"SECONDS": "SECOND", "MINUTES": "MINUTE", "HOURS": "HOUR",
+                       "DAYS": "DAY", "MONTHS": "MONTH", "YEARS": "YEAR"}
         bq_unit = bq_unit_map.get(unit, unit)
         if bq_unit in ("SECOND", "MINUTE", "HOUR"):
             return f"timestamp_diff(safe_cast({end_expr} as timestamp), safe_cast({start_expr} as timestamp), {bq_unit})"
         return f"date_diff(safe_cast({end_expr} as date), safe_cast({start_expr} as date), {bq_unit})"
-
-    # Concat / + string concatenation  →  CONCAT(…)
-    concat_m = re.match(r"Concat\s*\((.+)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if concat_m:
-        parts = _split_top_level_args(concat_m.group(1))
-        translated = [_formula_to_sql(p) or _literal_or_identifier_sql(p) for p in parts]
-        return f"concat({', '.join(translated)})"
 
     # ------------------------------------------------------------------
     # End of Alteryx function translations
@@ -697,6 +741,50 @@ def _formula_to_sql(expression: str) -> str | None:  # noqa: C901 – intentiona
             f"safe_divide(safe_cast({_sql_identifier(div_match.group(1))} as numeric), "
             f"nullif(safe_cast({_sql_identifier(div_match.group(2))} as numeric), 0))"
         )
+    # ------------------------------------------------------------------
+    # Compound-expression function rewrite
+    # Must run BEFORE the arithmetic [col] rewrite below.
+    # Handles expressions like ``ToNumber([A]) - ToNumber([B])`` where
+    # _match_func_call() above correctly declined (compound expression).
+    # We tokenise on operators at depth-0 and recursively translate each token.
+    # ------------------------------------------------------------------
+    _ALTERYX_FUNC_NAMES = re.compile(
+        r"\b(To(?:Number|Decimal|Float|Integer|Int)|ToString|IsNull|IsEmpty|"
+        r"(?:String)?Length|Left|Right|Mid|Replace|Abs|Round|Ceil(?:ing)?|Floor|"
+        r"Concat|DateTimeDiff|DateTimeNow|DateTimeToday|DateTimeYear|DateTimeMonth|"
+        r"LowerCase|Uppercase|Trim(?:Left|Right)?|Contains|IIF|Null)\s*\(",
+        re.IGNORECASE,
+    )
+    if _ALTERYX_FUNC_NAMES.search(expr):
+        tokens: list[str] = []
+        ops: list[str] = []
+        current: list[str] = []
+        depth = 0
+        for ch in expr:
+            if ch == "(":
+                depth += 1
+                current.append(ch)
+            elif ch == ")":
+                depth -= 1
+                current.append(ch)
+            elif ch in "+-*/" and depth == 0:
+                tokens.append("".join(current).strip())
+                ops.append(ch)
+                current = []
+            else:
+                current.append(ch)
+        tokens.append("".join(current).strip())
+        if len(tokens) > 1:
+            translated_tokens = [
+                _formula_to_sql(t) or _literal_or_identifier_sql(t)
+                for t in tokens
+            ]
+            result_parts: list[str] = [translated_tokens[0]]
+            for op, tok in zip(ops, translated_tokens[1:]):
+                result_parts.append(f" {op} {tok}")
+            return "".join(result_parts)
+    # ------------------------------------------------------------------
+
     arithmetic = re.sub(r"\[([^\]]+)\]", lambda m: f"safe_cast({_sql_identifier(m.group(1))} as numeric)", expr)
     if arithmetic != expr and re.search(r"[+\-*/]", arithmetic):
         return arithmetic.replace("NULL()", "null")
