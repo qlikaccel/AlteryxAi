@@ -10,6 +10,69 @@ import {
 } from "../api/alteryxApi";
 import type { AlteryxWorkflow } from "../api/alteryxApi";
 
+const compactWorkflowForStorage = (workflow: AlteryxWorkflow): AlteryxWorkflow => {
+  const source: any = workflow || {};
+  return {
+    id: source.id,
+    name: source.name,
+    lastModifiedDate: source.lastModifiedDate,
+    runCount: source.runCount,
+    credentialType: source.credentialType,
+    workerTag: source.workerTag,
+    sourceFile: source.sourceFile,
+    packageFile: source.packageFile,
+    fileType: source.fileType,
+    toolCount: source.toolCount,
+    connectionCount: source.connectionCount,
+    convertibility: source.convertibility,
+    complexity: source.complexity,
+    supportedToolCount: source.supportedToolCount,
+    unsupportedToolCount: source.unsupportedToolCount,
+    toolTypes: source.toolTypes,
+    unsupportedTools: source.unsupportedTools,
+    recommendations: source.recommendations,
+    dataSources: (source.dataSources || []).map((item: any) => ({
+      name: item?.name,
+      fileName: item?.fileName,
+      path: item?.path,
+      connection: item?.connection,
+      siteUrl: item?.siteUrl,
+      type: item?.type,
+      sourceType: item?.sourceType,
+    })),
+    outputTargets: (source.outputTargets || []).map((item: any) => ({
+      name: item?.name,
+      fileName: item?.fileName,
+      path: item?.path,
+      type: item?.type,
+      targetType: item?.targetType,
+      toolId: item?.toolId,
+      tool: item?.tool,
+      plugin: item?.plugin,
+    })),
+    isMacroDefinition: source.isMacroDefinition,
+    macroDependencies: (source.macroDependencies || []).map((item: any) => ({
+      macroName: item?.macroName,
+      macroType: item?.macroType,
+      path: item?.path,
+      status: item?.status,
+      resolved: item?.resolved,
+    })),
+    macroValidation: source.macroValidation,
+  } as AlteryxWorkflow;
+};
+
+const storeSelectedWorkflow = (workflow: AlteryxWorkflow) => {
+  try {
+    sessionStorage.setItem("alteryx_selected_workflow", JSON.stringify(compactWorkflowForStorage(workflow)));
+  } catch {
+    sessionStorage.setItem(
+      "alteryx_selected_workflow",
+      JSON.stringify({ id: workflow.id, name: workflow.name } as AlteryxWorkflow)
+    );
+  }
+};
+
 export default function AppsPage() {
   const platform = sessionStorage.getItem("platform") || "alteryx_upload";
   const [workflows, setWorkflows] = useState<AlteryxWorkflow[]>([]);
@@ -67,7 +130,7 @@ export default function AppsPage() {
     sessionStorage.setItem("appName", workflow.name);
     sessionStorage.setItem("alteryx_workflow_id", workflow.id);
     sessionStorage.setItem("alteryx_workflow_name", workflow.name);
-    sessionStorage.setItem("alteryx_selected_workflow", JSON.stringify(workflow));
+    storeSelectedWorkflow(workflow);
 
     if (platform !== "alteryx_upload") {
       setLoading(true);
@@ -88,7 +151,7 @@ export default function AppsPage() {
         sessionStorage.setItem("alteryx_batch_summary", JSON.stringify(materialized.summary || {}));
         sessionStorage.setItem("alteryx_workflow_id", parsedWorkflow.id);
         sessionStorage.setItem("alteryx_workflow_name", parsedWorkflow.name || workflow.name);
-        sessionStorage.setItem("alteryx_selected_workflow", JSON.stringify(parsedWorkflow));
+        storeSelectedWorkflow(parsedWorkflow);
         sessionStorage.setItem("alteryx_cloud_source_workflow_id", workflow.id);
         sessionStorage.setItem("alteryx_cloud_artifact_name", materialized.artifact_name || "");
         startTimer?.("/summary");

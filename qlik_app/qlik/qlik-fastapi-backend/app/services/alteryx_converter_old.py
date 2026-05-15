@@ -384,12 +384,10 @@ def _post_llm_chat(settings: dict[str, str], messages: list[dict[str, str]], max
 
 def _call_llm_mapping_model(workflow: dict[str, Any], conversion_steps: list[dict[str, Any]]) -> tuple[list[str], dict[str, Any]]:
     if requests is None:
-        logger.info("LLM-assisted Alteryx mapping skipped: requests package is unavailable.")
         return [], {"llm_used": False, "llm_status": "requests_unavailable", "llm_model": ""}
 
     provider_chain = _llm_provider_chain()
     if not provider_chain:
-        logger.info("LLM-assisted Alteryx mapping skipped: no configured LLM provider/token found.")
         return [], {"llm_used": False, "llm_status": "not_configured", "llm_model": ""}
 
     compact_steps = [
@@ -410,18 +408,12 @@ def _call_llm_mapping_model(workflow: dict[str, Any], conversion_steps: list[dic
     )
     cache_key = f"{workflow.get('id') or workflow.get('name')}|{workflow.get('toolCount')}|{workflow.get('connectionCount')}|{len(conversion_steps)}"
     if cache_key in _LLM_MAPPING_CACHE:
-        logger.info("Using cached LLM-assisted Alteryx mapping result for workflow: %s", workflow.get("name"))
         return _LLM_MAPPING_CACHE[cache_key]
 
     failures: list[str] = []
-    logger.info(
-        "LLM-assisted Alteryx mapping provider chain: %s",
-        " -> ".join(_provider_label(item) for item in provider_chain),
-    )
     for llm in provider_chain:
         model = llm.get("model", "")
         try:
-            logger.info("Calling LLM-assisted Alteryx mapping provider: %s", _provider_label(llm))
             content = _post_llm_chat(
                 llm,
                 messages=[
@@ -438,7 +430,6 @@ def _call_llm_mapping_model(workflow: dict[str, Any], conversion_steps: list[dic
             ][:5]
             result = (bullets, {"llm_used": True, "llm_status": "completed", "llm_model": model, "llm_provider": llm.get("provider", "")})
             _LLM_MAPPING_CACHE[cache_key] = result
-            logger.info("LLM-assisted Alteryx mapping completed: %s", _provider_label(llm))
             return result
         except Exception as exc:
             failure = f"{_provider_label(llm)} failed: {exc}"
@@ -497,12 +488,10 @@ def _call_llm_expression_converter(
 ) -> tuple[str, dict[str, Any]]:
     """Convert one Alteryx expression to a Power Query row expression with strict fallback behavior."""
     if requests is None:
-        logger.info("LLM expression conversion skipped for node %s: requests package is unavailable.", node.get("id"))
         return "", {"status": "requests_unavailable"}
 
     provider_chain = _llm_provider_chain()
     if not provider_chain:
-        logger.info("LLM expression conversion skipped for node %s: no configured LLM provider/token found.", node.get("id"))
         return "", {"status": "not_configured"}
 
     cache_key = "|".join([
@@ -512,7 +501,6 @@ def _call_llm_expression_converter(
         str(expression),
     ])
     if cache_key in _LLM_EXPRESSION_CACHE:
-        logger.info("Using cached LLM expression conversion result for node %s.", node.get("id"))
         return _LLM_EXPRESSION_CACHE[cache_key]
 
     prompt = {
@@ -537,15 +525,9 @@ def _call_llm_expression_converter(
     }
 
     failures: list[str] = []
-    logger.info(
-        "LLM expression conversion provider chain for node %s: %s",
-        node.get("id"),
-        " -> ".join(_provider_label(item) for item in provider_chain),
-    )
     for llm in provider_chain:
         model = llm.get("model", "")
         try:
-            logger.info("Calling LLM expression provider for node %s: %s", node.get("id"), _provider_label(llm))
             content = _post_llm_chat(
                 llm,
                 messages=[
@@ -570,7 +552,6 @@ def _call_llm_expression_converter(
                 "warnings": payload.get("warnings") if isinstance(payload.get("warnings"), list) else [],
             })
             _LLM_EXPRESSION_CACHE[cache_key] = result
-            logger.info("LLM expression conversion completed for node %s: %s", node.get("id"), _provider_label(llm))
             return result
         except Exception as exc:
             failure = f"{_provider_label(llm)} failed: {exc}"

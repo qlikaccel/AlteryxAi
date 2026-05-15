@@ -36,6 +36,15 @@ const formatBatchExecutionValue = (batch: any) => {
   return `${expectedBatches.toLocaleString()} batch run${expectedBatches === 1 ? "" : "s"}`;
 };
 
+const formatSeconds = (value: unknown) => {
+  const seconds = asNumber(value);
+  if (seconds === null) return "";
+  const rounded = Math.max(0, Math.round(seconds));
+  const mins = Math.floor(rounded / 60);
+  const secs = rounded % 60;
+  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+};
+
 const parseBigQueryModel = (model: string) => {
   const parts = String(model || "").split(".");
   return {
@@ -56,6 +65,17 @@ const bigQueryTableUrl = (model: string) => {
     d: parsed.dataset,
     t: parsed.table,
     page: "table",
+  });
+  return `https://console.cloud.google.com/bigquery?${params.toString()}`;
+};
+
+const bigQueryDatasetUrl = (project: string, dataset: string) => {
+  if (!project || !dataset) return "https://console.cloud.google.com/bigquery";
+  const params = new URLSearchParams({
+    project,
+    p: project,
+    d: dataset,
+    page: "dataset",
   });
   return `https://console.cloud.google.com/bigquery?${params.toString()}`;
 };
@@ -114,14 +134,16 @@ export default function PublishPage() {
   const workspaceName = sessionStorage.getItem("alteryx_workspace_name") || "Power BI workspace";
   const workspaceId = sessionStorage.getItem("alteryx_workspace_id") || "";
   const publishDuration = (location.state as any)?.publishDuration || "";
+  const routeAnalysisDuration = (location.state as any)?.analysisDuration || "";
   const publishMode =
     (location.state as any)?.publishMode ||
     sessionStorage.getItem("publishMethod") ||
     "M_QUERY";
   const isDbtBigQueryPublish = publishMode === "DBT_BIGQUERY";
   const isDataformBigQueryPublish = publishMode === "DATAFORM_BIGQUERY";
+  const isPythonBigQueryPublish = publishMode === "PYTHON_BIGQUERY";
   const isDataformRepoPublish = publishMode === "DATAFORM_REPO";
-  const isBigQueryPublish = isDbtBigQueryPublish || isDataformBigQueryPublish;
+  const isBigQueryPublish = isDbtBigQueryPublish || isDataformBigQueryPublish || isPythonBigQueryPublish;
 
   const conversionSteps = useMemo(() => {
     const raw = sessionStorage.getItem("alteryx_conversion_steps");
@@ -164,6 +186,15 @@ export default function PublishPage() {
         return null;
       }
     }
+    if (isPythonBigQueryPublish) {
+      const raw = sessionStorage.getItem("alteryx_python_bigquery_publish_result");
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
     const raw = sessionStorage.getItem("alteryx_publish_result");
     if (!raw) return null;
     try {
@@ -172,6 +203,13 @@ export default function PublishPage() {
       return null;
     }
   });
+  const analysisDuration =
+    routeAnalysisDuration ||
+    formatSeconds(
+      publishResult?.analysis_duration_seconds ??
+        publishResult?.timings?.analysis_seconds ??
+        publishResult?.timings?.setup_seconds
+    );
   const bigQueryFinalModel =
     publishResult?.final_model ||
     (
@@ -181,6 +219,9 @@ export default function PublishPage() {
     );
   const bigQueryTarget = parseBigQueryModel(bigQueryFinalModel);
   const macroComplexity = publishResult?.macro_complexity || {};
+  const standardMacroNames = Array.isArray(macroComplexity?.standard?.macro_names)
+    ? macroComplexity.standard.macro_names.filter(Boolean)
+    : [];
   const totalToolsUsed =
     asNumber(publishResult?.tool_count) ??
     asNumber(macroComplexity?.tool_count) ??
@@ -188,6 +229,7 @@ export default function PublishPage() {
   const validationTableName = publishResult?.dataset_name || datasetName;
   const finalValidationTableName = publishResult?.final_table_name || validationTableName;
   const publishedTables = publishResult?.published_tables || [];
+  const hasMultiplePublishedTables = isBigQueryPublish && publishedTables.length > 1;
   const deployedTables = publishedTables.length || (publishResult?.tables_deployed ?? 1);
 
   const [validationResult, setValidationResult] = useState<any>(() => {
@@ -219,9 +261,10 @@ export default function PublishPage() {
   // BigQuery-specific data extraction (from dev52)
   const bigQueryMetadata = publishResult?.bigquery_metadata || {};
   const bigQueryRowCount = isBigQueryPublish
-    ? asNumber(publishResult?.row_count) ??
-      asNumber(publishResult?.total_rows) ??
+    ? asNumber(publishResult?.total_records) ??
       asNumber(publishResult?.record_count) ??
+      asNumber(publishResult?.total_rows) ??
+      asNumber(publishResult?.row_count) ??
       asNumber(bigQueryMetadata?.row_count) ??
       asNumber(bigQueryMetadata?.total_rows) ??
       asNumber(bigQueryMetadata?.record_count) ??
@@ -239,8 +282,8 @@ export default function PublishPage() {
     : null;
 
   const bigQueryRecordCount = isBigQueryPublish
-    ? asNumber(publishResult?.record_count) ??
-      asNumber(publishResult?.total_records) ??
+    ? asNumber(publishResult?.total_records) ??
+      asNumber(publishResult?.record_count) ??
       asNumber(bigQueryMetadata?.record_count) ??
       asNumber(bigQueryMetadata?.total_records) ??
       bigQueryRowCount
@@ -255,8 +298,50 @@ export default function PublishPage() {
       return null;
     }
   });
+  const publishMacroDependencies = Array.isArray(workflow?.macroDependencies) ? workflow.macroDependencies : [];
+  const publishMacroTypes = Array.from(
+    new Set([
+      ...(Array.isArray(macroComplexity?.types) ? macroComplexity.types : []),
+      ...(macroComplexity?.standard ? ["Standard"] : []),
+      ...(macroComplexity?.batch ? ["Batch"] : []),
+      ...(macroComplexity?.iterative ? ["Iterative"] : []),
+      ...publishMacroDependencies.map((item: any) => item?.macroType).filter(Boolean),
+    ])
+  );
+  const publishBatchMacro = publishMacroDependencies.find(
+    (item: any) => String(item?.macroType || "").toLowerCase() === "batch"
+  );
+  const publishIterativeMacro = publishMacroDependencies.find(
+    (item: any) => String(item?.macroType || "").toLowerCase() === "iterative"
+  );
+  const publishStandardMacro = publishMacroDependencies.find((item: any) => {
+    const type = String(item?.macroType || "").toLowerCase();
+    return type === "standard" || type === "macro" || !type;
+  });
+  const hasPublishMacroComplexity = Boolean(
+    macroComplexity?.has_macros ||
+      macroComplexity?.standard ||
+      macroComplexity?.batch ||
+      macroComplexity?.iterative ||
+      publishMacroDependencies.length
+  );
 
   const outputTargets = workflow?.outputTargets || [];
+  const outputToolLabel = (output: any) => {
+    const rawTool = String(output?.tool || output?.plugin || "").split(".").filter(Boolean).slice(-1)[0];
+    if (output?.toolId && rawTool) return `Tool ${output.toolId} - ${rawTool}`;
+    if (output?.toolId) return `Tool ${output.toolId}`;
+    return rawTool || "-";
+  };
+  const publishedTableForOutput = (output: any, index: number) => {
+    if (!Array.isArray(publishedTables) || !publishedTables.length) return null;
+    const outputName = tableMatchKey(output?.name || output?.path);
+    return (
+      publishedTables.find((table: any) => tableMatchKey(table?.table || table?.name || table?.final_model) === outputName) ||
+      publishedTables[index] ||
+      null
+    );
+  };
 
   const bigQueryAlteryxRecordCountRequestedRef = useRef(false);
   const powerBiWorkspaceUrl =
@@ -264,10 +349,16 @@ export default function PublishPage() {
     sessionStorage.getItem("alteryx_powerbi_workspace_url") ||
     (workspaceId ? `https://app.powerbi.com/groups/${workspaceId}` : "https://app.powerbi.com");
   const gcpUrl = bigQueryTableUrl(bigQueryFinalModel);
+  const gcpDatasetUrl = bigQueryDatasetUrl(
+    bigQueryTarget.project || publishResult?.project_id || "",
+    bigQueryTarget.dataset || publishResult?.target_dataset || ""
+  );
   const publishUrl = isDataformRepoPublish
     ? publishResult?.workspace_url || "https://console.cloud.google.com/bigquery/dataform"
     : isBigQueryPublish
-    ? gcpUrl
+    ? hasMultiplePublishedTables
+      ? gcpDatasetUrl
+      : gcpUrl
     : powerBiWorkspaceUrl;
   const batchId = sessionStorage.getItem("alteryx_batch_id") || "";
   const workflowId = sessionStorage.getItem("alteryx_workflow_id") || "";
@@ -291,6 +382,8 @@ export default function PublishPage() {
       asNumber(publishResult?.alteryx_row_count) ??
       asNumber(rowCountCheck?.expected) ??
       asNumber(validationResult?.alteryx?.row_count) ??
+      asNumber(publishResult?.total_records) ??
+      asNumber(publishResult?.record_count) ??
       asNumber(publishResult?.row_count) ??
       expectedRows ??
       null
@@ -387,7 +480,11 @@ export default function PublishPage() {
 
   // BigQuery metadata fetch useEffect (from dev52)
   useEffect(() => {
-    if (!isBigQueryPublish || !bigQueryFinalModel || bigQueryRowCount !== null || bigQueryColumnCount !== null) {
+    if (
+      !isBigQueryPublish ||
+      !bigQueryFinalModel ||
+      (bigQueryRowCount !== null && bigQueryColumnCount !== null)
+    ) {
       return;
     }
 
@@ -608,7 +705,7 @@ export default function PublishPage() {
             {/* <h1>Publish to Power BI / Fabric</h1> */}
           </div>
           <p style={{ margin: 0, fontSize: "1.22rem", fontWeight: 700, color: "#080e17" }}>
-            {workflowName} - Published
+            {workflowName} - {hasMultiplePublishedTables ? "Outputs Published" : "Published"}
           </p>
         </div>
         <div className="publish-top-actions">
@@ -644,8 +741,19 @@ export default function PublishPage() {
             </strong>
           </div>
           <div className="target-row">
-            <span>{isDataformRepoPublish ? "Workspace" : isBigQueryPublish ? "Final BigQuery model" : "Dataset name"}</span>
-            <input value={isDataformRepoPublish ? publishResult?.workspace || "Not available" : isBigQueryPublish ? bigQueryFinalModel : datasetName} readOnly />
+            <span>{isDataformRepoPublish ? "Workspace" : isBigQueryPublish ? hasMultiplePublishedTables ? "Published BigQuery outputs" : "Final BigQuery model" : "Dataset name"}</span>
+            <input
+              value={
+                isDataformRepoPublish
+                  ? publishResult?.workspace || "Not available"
+                  : isBigQueryPublish
+                    ? hasMultiplePublishedTables
+                      ? `${publishedTables.length} output tables in ${bigQueryTarget.project || publishResult?.project_id}.${bigQueryTarget.dataset || publishResult?.target_dataset}`
+                      : bigQueryFinalModel
+                    : datasetName
+              }
+              readOnly
+            />
           </div>
           <div className="target-row">
             <span>{isDataformRepoPublish ? "GCP Dataform URL" : isBigQueryPublish ? "GCP BigQuery URL" : "Power BI publish URL"}</span>
@@ -670,16 +778,31 @@ export default function PublishPage() {
                   <th>Output</th>
                   <th>Type</th>
                   <th>Tool</th>
+                  {isBigQueryPublish && <th>BigQuery table</th>}
                 </tr>
               </thead>
               <tbody>
-                {outputTargets.map((output: any, index: number) => (
-                  <tr key={`${output.toolId || index}-${output.path || output.name}`}>
-                    <td>{output.name || output.path}</td>
-                    <td>{output.type || "output"}</td>
-                    <td>{output.toolId ? `Tool ${output.toolId}` : output.tool || "-"}</td>
-                  </tr>
-                ))}
+                {outputTargets.map((output: any, index: number) => {
+                  const publishedTable = publishedTableForOutput(output, index);
+                  return (
+                    <tr key={`${output.toolId || index}-${output.path || output.name}`}>
+                      <td>{output.name || output.path}</td>
+                      <td>{output.type || "output"}</td>
+                      <td>{outputToolLabel(output)}</td>
+                      {isBigQueryPublish && (
+                        <td>
+                          {publishedTable?.final_model ? (
+                            <a href={bigQueryTableUrl(publishedTable.final_model)} target="_blank" rel="noreferrer">
+                              {publishedTable.table || publishedTable.final_model}
+                            </a>
+                          ) : (
+                            "Not available"
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </section>
@@ -702,6 +825,11 @@ export default function PublishPage() {
               {publishDuration && (
                 <span className="publish-meta-badge publish-meta-badge-duration">
                   Publish Duration: {publishDuration}
+                </span>
+              )}
+              {analysisDuration && (
+                <span className="publish-meta-badge publish-meta-badge-duration">
+                  Analysis Time: {analysisDuration}
                 </span>
               )}
             </div>
@@ -772,11 +900,26 @@ export default function PublishPage() {
                     <strong>{bigQueryTarget.dataset || publishResult?.target_dataset || "Not available"}</strong>
                   </div>
                   <div className="info-row">
-                    <span>Final model</span>
-                    <strong>{bigQueryFinalModel}</strong>
+                    <span>{hasMultiplePublishedTables ? "Published outputs" : "Final model"}</span>
+                    <strong>
+                      {hasMultiplePublishedTables
+                        ? `${publishedTables.length} tables in ${bigQueryTarget.dataset || publishResult?.target_dataset || "dataset"}`
+                        : bigQueryFinalModel}
+                    </strong>
                   </div>
+                  {hasMultiplePublishedTables && (
+                    <div className="info-row">
+                      <span>Output tables</span>
+                      <strong>
+                        {publishedTables
+                          .map((table: any) => table.table || String(table.final_model || "").split(".").pop())
+                          .filter(Boolean)
+                          .join(", ")}
+                      </strong>
+                    </div>
+                  )}
                   <div className="info-row">
-                    <span>{isDataformBigQueryPublish ? "Dataform commands" : "dbt commands"}</span>
+                    <span>{isDataformBigQueryPublish ? "Dataform commands" : isPythonBigQueryPublish ? "Python pipeline" : "dbt commands"}</span>
                     <strong>{publishResult?.commands?.filter((command: any) => command.success).length || 0}/{publishResult?.commands?.length || 0} succeeded</strong>
                   </div>
                 </div>
@@ -804,32 +947,41 @@ export default function PublishPage() {
               </table>
             )}
           </div>
-          {isBigQueryPublish && macroComplexity?.has_macros && (
+          {isBigQueryPublish && hasPublishMacroComplexity && (
             <div className="publish-macro-complexity">
-              <h3>Macro complexity details</h3>
+              <div className="macro-validation-header">
+                <span>Macro Complexity</span>
+                <strong>{publishMacroTypes.join(" + ") || "Macro"}</strong>
+              </div>
               <div className="publish-macro-grid">
-                {macroComplexity.batch && (
+                {(macroComplexity.standard || publishStandardMacro) && (
                   <div>
-                    <span>Batch macro complexity</span>
-                    <strong>{formatBatchExecutionValue(macroComplexity.batch)}</strong>
+                    <span>Standard Macro Complexity</span>
+                    <strong>{macroComplexity.standard?.macro_count || 1} macro{Number(macroComplexity.standard?.macro_count || 1) === 1 ? "" : "s"}</strong>
                     <p>
-                      Control parameter: {macroComplexity.batch.control_parameter || "Parameter"}.
-                      Control rows are the records in the control input table that drive batch runs.
+                      {standardMacroNames.length
+                        ? `Reusable transformation block(s): ${standardMacroNames.join(", ")}.`
+                        : macroComplexity.standard?.note || "Standard macros execute once as reusable transformation blocks within the parent workflow."}
                     </p>
                   </div>
                 )}
-                {macroComplexity.iterative && (
+                {(macroComplexity.batch || publishBatchMacro) && (
                   <div>
-                    <span>Iterative macro complexity</span>
-                    <strong>{macroComplexity.iterative.iteration_limit || "100"} max</strong>
-                    <p>Stop: {macroComplexity.iterative.stop_condition || "No new records"}</p>
+                    <span>Batch Macro Complexity</span>
+                    <strong>{macroComplexity.batch ? formatBatchExecutionValue(macroComplexity.batch) : "Control table rows"}</strong>
+                    <p>
+                      Control parameter: {macroComplexity.batch?.control_parameter || publishBatchMacro?.controlParameter || "Parameter"}.
+                      Control rows drive one parameterized execution per batch run.
+                    </p>
                   </div>
                 )}
-                <div>
-                  <span>Final model</span>
-                  <strong>{publishResult?.success ? "Complete" : "Failed"}</strong>
-                  <p>{bigQueryFinalModel}</p>
-                </div>
+                {(macroComplexity.iterative || publishIterativeMacro) && (
+                  <div>
+                    <span>Iterative Macro Complexity</span>
+                    <strong>{macroComplexity.iterative?.iteration_limit || publishIterativeMacro?.iterationLimit || "100"} max</strong>
+                    <p>Stop: {macroComplexity.iterative?.stop_condition || publishIterativeMacro?.stopCondition || "No new records"}</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -857,7 +1009,7 @@ export default function PublishPage() {
           <h2>Alteryx Tool Mapping</h2>
           <p>
             Tool conversion mapping from Alteryx workflow to{" "}
-            {isDataformRepoPublish ? "GCP Dataform repository" : isDataformBigQueryPublish ? "Dataform / BigQuery" : isDbtBigQueryPublish ? "dbt / BigQuery" : "Power Query"}
+            {isDataformRepoPublish ? "GCP Dataform repository" : isDataformBigQueryPublish ? "Dataform / BigQuery" : isPythonBigQueryPublish ? "Python / BigQuery" : isDbtBigQueryPublish ? "dbt / BigQuery" : "Power Query"}
           </p>
           <div className="mapping-table-wrap">
             <table className="tool-mapping-table">

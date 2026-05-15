@@ -25,7 +25,11 @@ get_primary_source(workflow, sharepoint_url, file_name)     -> dict
 import html
 import hashlib
 import json
+import logging
+import os
+from pprint import pformat
 import re
+import requests
 from typing import Any
 from urllib.parse import urlparse
 
@@ -33,10 +37,75 @@ from app.services.alteryx_converter import (
     ALTERYX_TOOL_MAPPINGS,
     convert_workflow_to_m,
 )
+from app.services.alteryx_transform_plan import build_transform_plan, transform_operations
 
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SHAREPOINT_FILE_URL = "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx"
 DEFAULT_SHAREPOINT_FILE_NAME = "sales_data_1M.csv"
+
+
+def _doc_hf_token() -> str:
+    return (
+        os.getenv("ALTERYX_DOC_HF_API_KEY")
+        or os.getenv("HF_TOKEN")
+        or os.getenv("HUGGINGFACE_API_KEY")
+        or os.getenv("HF_API_TOKEN")
+        or ""
+    ).strip()
+
+
+def _call_documentation_hf(prompt: str, system_prompt: str, max_tokens: int = 600) -> str:
+    token = _doc_hf_token()
+    if not token:
+        logger.info("Alteryx documentation LLM skipped: HF token not configured.")
+        return ""
+
+    url = os.getenv("ALTERYX_DOC_HF_URL") or os.getenv("HF_URL") or "https://router.huggingface.co/v1/chat/completions"
+    models = [
+        os.getenv("ALTERYX_DOC_HF_MODEL") or os.getenv("HF_MODEL") or "meta-llama/Llama-3.1-8B-Instruct",
+        os.getenv("ALTERYX_DOC_HF_FALLBACK_MODEL") or os.getenv("HF_MODEL_FALLBACK") or "mistralai/Mistral-7B-Instruct-v0.3",
+    ]
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    for model in [item for index, item in enumerate(models) if item and item not in models[:index]]:
+        try:
+            logger.info("Calling Hugging Face documentation LLM for Alteryx summary/BRD: model=%s", model)
+            response = requests.post(
+                url,
+                headers=headers,
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "max_tokens": max_tokens,
+                    "temperature": 0.2,
+                },
+                timeout=45,
+            )
+            response.raise_for_status()
+            data = response.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if content:
+                logger.info("Hugging Face documentation LLM completed for Alteryx summary/BRD: model=%s", model)
+                return content
+            logger.warning("Hugging Face documentation LLM returned empty content for Alteryx summary/BRD: model=%s", model)
+        except Exception as exc:
+            logger.warning("Hugging Face documentation LLM failed for Alteryx summary/BRD: model=%s error=%s", model, exc)
+            continue
+    logger.warning("Hugging Face documentation LLM unavailable for Alteryx summary/BRD; using deterministic fallback.")
+    return ""
+
+
+def _extract_bullets(text: str, limit: int = 8) -> list[str]:
+    bullets = []
+    for line in str(text or "").splitlines():
+        cleaned = re.sub(r"^[\s*\-\d.)]+", "", line).strip()
+        if cleaned:
+            bullets.append(cleaned)
+    return bullets[:limit]
 
 
 def _safe_name(value: str, fallback: str = "AlteryxWorkflow") -> str:
@@ -82,7 +151,11 @@ def get_primary_source(workflow: dict[str, Any], sharepoint_url: str = "", file_
 
 def generate_m_query(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:
     source = get_primary_source(workflow, sharepoint_url, file_name)
-    return convert_workflow_to_m(workflow, source, sharepoint_url, file_name)
+    transform_plan = build_transform_plan(workflow)
+    result = convert_workflow_to_m(workflow, source, sharepoint_url, file_name)
+    result["transform_plan"] = transform_plan
+    result["transformation_coverage"] = transform_plan.get("coverage") or {}
+    return result
 
 
 def _shorten_identifier(value: str, max_length: int = 63) -> str:
@@ -369,8 +442,91 @@ def _sql_agg(action: str, field: str) -> str:
     return f"sum({numeric_expr})"
 
 
+def _split_top_level_args(value: str) -> list[str]:
+    args: list[str] = []
+    current: list[str] = []
+    depth = 0
+    quote: str | None = None
+    for char in value:
+        if quote:
+            current.append(char)
+            if char == quote:
+                quote = None
+            continue
+        if char in {'"', "'"}:
+            quote = char
+            current.append(char)
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth = max(depth - 1, 0)
+        if char == "," and depth == 0:
+            args.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    if current:
+        args.append("".join(current).strip())
+    return args
+
+
+def _convert_iif_to_sql(expr: str) -> str:
+    expr = expr.strip()
+    match = re.match(r"^IIF\s*\((.*)\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return expr
+    args = _split_top_level_args(match.group(1))
+    if len(args) != 3:
+        return expr
+    condition = _alteryx_filter_to_sql(args[0])
+    true_expr = _formula_to_sql(args[1]) or _literal_or_identifier_sql(args[1])
+    false_expr = _formula_to_sql(args[2]) or _literal_or_identifier_sql(args[2])
+    return f"(case when {condition} then {true_expr} else {false_expr} end)"
+
+
+def _literal_or_identifier_sql(expr: str) -> str:
+    value = str(expr or "").strip()
+    if re.fullmatch(r"NULL\(\)|NULL|null", value, flags=re.IGNORECASE):
+        return "null"
+    if re.fullmatch(r'"[^"]*"|\'[^\']*\'', value):
+        return "'" + value[1:-1].replace("'", "\\'") + "'"
+    if re.fullmatch(r"-?\d+(\.\d+)?", value):
+        return value
+    value = re.sub(r"\[([^\]]+)\]", lambda m: _sql_identifier(m.group(1)), value)
+    value = value.replace("NULL()", "null")
+    return value
+
+
 def _formula_to_sql(expression: str) -> str | None:
     expr = str(expression or "").strip()
+    if not expr:
+        return None
+    if re.match(r"^IIF\s*\(", expr, flags=re.IGNORECASE):
+        return _convert_iif_to_sql(expr)
+    contains_match = re.match(r"Contains\s*\((.+),\s*['\"]([^'\"]+)['\"]\)", expr, flags=re.IGNORECASE | re.DOTALL)
+    if contains_match:
+        haystack = _formula_to_sql(contains_match.group(1)) or _literal_or_identifier_sql(contains_match.group(1))
+        needle = contains_match.group(2).replace("'", "\\'")
+        return f"regexp_contains(cast({haystack} as string), r'(?i){needle}')"
+    lower_match = re.match(r"LowerCase\s*\((.+)\)", expr, flags=re.IGNORECASE | re.DOTALL)
+    if lower_match:
+        inner = _formula_to_sql(lower_match.group(1)) or _literal_or_identifier_sql(lower_match.group(1))
+        return f"lower(cast({inner} as string))"
+    upper_match = re.match(r"Uppercase\s*\((.+)\)", expr, flags=re.IGNORECASE | re.DOTALL)
+    if upper_match:
+        inner = _formula_to_sql(upper_match.group(1)) or _literal_or_identifier_sql(upper_match.group(1))
+        return f"upper(cast({inner} as string))"
+    trim_match = re.match(r"Trim(?:Left|Right)?\s*\((.+)\)", expr, flags=re.IGNORECASE | re.DOTALL)
+    if trim_match:
+        inner = _formula_to_sql(trim_match.group(1)) or _literal_or_identifier_sql(trim_match.group(1))
+        return f"trim(cast({inner} as string))"
+    dt_year = re.match(r"DateTimeYear\s*\(\s*\[([^\]]+)\]\s*\)", expr, flags=re.IGNORECASE)
+    if dt_year:
+        return f"extract(year from safe_cast({_sql_identifier(dt_year.group(1))} as date))"
+    dt_month = re.match(r"DateTimeMonth\s*\(\s*\[([^\]]+)\]\s*\)", expr, flags=re.IGNORECASE)
+    if dt_month:
+        return f"extract(month from safe_cast({_sql_identifier(dt_month.group(1))} as date))"
     match = re.match(
         r"if\s+\[([^\]]+)\]\s*=\s*0\s+then\s+null\s+else\s+\[([^\]]+)\]\s*/\s*\[([^\]]+)\]",
         expr,
@@ -391,7 +547,10 @@ def _formula_to_sql(expression: str) -> str | None:
             f"safe_divide(safe_cast({_sql_identifier(div_match.group(1))} as numeric), "
             f"nullif(safe_cast({_sql_identifier(div_match.group(2))} as numeric), 0))"
         )
-    return None
+    arithmetic = re.sub(r"\[([^\]]+)\]", lambda m: f"safe_cast({_sql_identifier(m.group(1))} as numeric)", expr)
+    if arithmetic != expr and re.search(r"[+\-*/]", arithmetic):
+        return arithmetic.replace("NULL()", "null")
+    return _literal_or_identifier_sql(expr)
 
 
 def _ensure_bool_expression(sql: str) -> str:
@@ -419,7 +578,24 @@ def _ensure_bool_expression(sql: str) -> str:
 
 
 def _compile_sql_transform_model(workflow: dict[str, Any], upstream_ref: str, macro_notes: str = "") -> str | None:
-    steps = _python_transform_steps(workflow)
+    transform_plan = build_transform_plan(workflow)
+    steps = [
+        step for step in transform_operations(transform_plan)
+        if step.get("tool") in {
+            "select",
+            "filter",
+            "summarize",
+            "formula",
+            "multi_field_formula",
+            "multi_row_formula",
+            "unique",
+            "sort",
+            "sample",
+            "join",
+            "join_multiple",
+            "union",
+        }
+    ]
     if not steps:
         return None
 
@@ -430,6 +606,7 @@ def _compile_sql_transform_model(workflow: dict[str, Any], upstream_ref: str, ma
     ]
     current = "source_data"
     formula_fields: list[dict[str, str]] = []
+    comments: list[str] = []
 
     for index, step in enumerate(steps, start=1):
         tool = step.get("tool")
@@ -479,11 +656,35 @@ def _compile_sql_transform_model(workflow: dict[str, Any], upstream_ref: str, ma
                     + "\n)"
                 )
                 current = cte
-        elif tool == "formula":
+        elif tool in {"formula", "multi_field_formula", "multi_row_formula"}:
             formula_fields.extend(config.get("formulas") or [])
+        elif tool == "unique":
+            ctes.append(f"{cte} as (\n    select distinct *\n    from {current}\n)")
+            current = cte
+        elif tool == "sort":
+            sort_fields = config.get("sortFields") or config.get("fields") or []
+            order_parts = []
+            for item in sort_fields if isinstance(sort_fields, list) else [sort_fields]:
+                if isinstance(item, dict):
+                    field = str(item.get("field") or item.get("name") or "")
+                    order = str(item.get("order") or item.get("direction") or "asc").lower()
+                else:
+                    field = str(item or "")
+                    order = "asc"
+                if field:
+                    order_parts.append(f"{_sql_identifier(field)} {'desc' if order in {'desc', 'descending', '-1'} else 'asc'}")
+            if order_parts:
+                ctes.append(f"{cte} as (\n    select *\n    from {current}\n    order by {', '.join(order_parts)}\n)")
+                current = cte
+        elif tool == "sample":
+            count = str(config.get("count") or config.get("n") or config.get("sampleSize") or "")
+            if count.isdigit():
+                ctes.append(f"{cte} as (\n    select *\n    from {current}\n    limit {int(count)}\n)")
+                current = cte
+        elif tool in {"join", "join_multiple", "union"}:
+            comments.append(f"-- {tool} node {step.get('tool_id')} is represented in the shared plan; multi-stream SQL rendering requires branch-specific source binding.")
 
     final_select = ["    *"]
-    comments: list[str] = []
     for formula in formula_fields:
         field = str(formula.get("field") or formula.get("name") or "")
         formula_sql = _formula_to_sql(str(formula.get("expression") or ""))
@@ -496,7 +697,7 @@ def _compile_sql_transform_model(workflow: dict[str, Any], upstream_ref: str, ma
     return (
         "{{ config(materialized='table') }}\n\n"
         "-- Phase 2 SQL transformation generated from supported Alteryx tools.\n"
-        "-- Supported in this compiler slice: Select, Filter, Summarize, Formula.\n"
+        "-- Generated from the shared Alteryx transformation plan.\n"
         f"{notes}"
         + ("\n".join(comments) + "\n" if comments else "")
         + "with "
@@ -848,6 +1049,7 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
     Power Query/SharePoint extraction semantics into dbt models.
     """
     project_name = _single_macro_project_name(workflow)
+    transform_plan = build_transform_plan(workflow)
     tool_count = int(workflow.get("toolCount") or len(workflow.get("workflowNodes") or []) or 0)
     connection_count = int(workflow.get("connectionCount") or len(workflow.get("workflowEdges") or []) or 0)
     all_sources = workflow.get("dataSources") or []
@@ -935,11 +1137,15 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         )
     output_targets = workflow.get("outputTargets") or []
     salary_pattern = _detect_salary_equalizer_iterative(workflow)
-    output_model_files = (
-        _salary_equalizer_models(project_name, first_stage, output_targets, salary_pattern)
-        if output_targets and salary_pattern
-        else _generic_output_models(project_name, upstream_ref, output_targets)
-    )
+    transformed_model_name = f"int_{project_name}_transformed"
+    final_model_path = f"models/{project_name}.sql"
+    transformed_model_files: dict[str, str] = {}
+    if output_targets and not salary_pattern:
+        transformed_model_files[f"models/intermediate/{transformed_model_name}.sql"] = final_model
+        output_model_files = _generic_output_models(project_name, transformed_model_name, output_targets)
+    else:
+        transformed_model_files[final_model_path] = final_model
+        output_model_files = _salary_equalizer_models(project_name, first_stage, output_targets, salary_pattern) if output_targets and salary_pattern else {}
 
     schema_yml = (
         "version: 2\n\n"
@@ -981,7 +1187,6 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
             "      +materialized: view\n"
         ),
         "models/schema.yml": schema_yml,
-        f"models/{project_name}.sql": final_model,
         "macros/README.md": (
             "# Macro Remediation Notes\n\n"
             "Alteryx macros are represented as review notes in this dbt scaffold. "
@@ -1001,6 +1206,7 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
             "This artifact is intended for complex workflow migration planning and warehouse-side transformation. "
             "It is not a direct Alteryx runtime replacement yet.\n"
         ),
+        **transformed_model_files,
         **macro_artifact_files,
         **output_model_files,
         **_validation_artifacts(project_name, first_stage),
@@ -1021,6 +1227,8 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         "iterative_pattern": salary_pattern or {},
         "macro_complexity": _macro_complexity_summary(workflow, sources, project_name),
         "macro_plan": macro_plan,
+        "transform_plan": transform_plan,
+        "transformation_coverage": transform_plan.get("coverage") or {},
     }
 
 
@@ -1034,6 +1242,7 @@ def _sql_to_sqlx(sql: str) -> str:
 
 def generate_dataform_project(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:
     dbt_project = generate_dbt_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    transform_plan = dbt_project.get("transform_plan") or build_transform_plan(workflow)
     final_table_name = str(dbt_project.get("project_name") or "alteryx")
     project_name = _dbt_identifier(f"{final_table_name}_dataform", "alteryx_dataform")
     source_project = "YOUR_GCP_PROJECT_ID"
@@ -1087,6 +1296,8 @@ def generate_dataform_project(workflow: dict[str, Any], sharepoint_url: str = ""
         "output_count": dbt_project.get("output_count", 0),
         "output_targets": dbt_project.get("output_targets", []),
         "macro_plan": dbt_project.get("macro_plan", {}),
+        "transform_plan": transform_plan,
+        "transformation_coverage": transform_plan.get("coverage") or {},
     }
 
 
@@ -1110,31 +1321,23 @@ def _python_tool_steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _python_transform_steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
-    steps: list[dict[str, Any]] = []
-    for node in workflow.get("workflowNodes") or []:
-        plugin = str(node.get("plugin") or "")
-        lowered = plugin.lower()
-        config = node.get("config") or {}
-        if "select" in lowered and config.get("selectedFields"):
-            steps.append({"tool": "select", "tool_id": node.get("id"), "config": config})
-        elif "filter" in lowered and "summarize" not in lowered and config.get("filterExpression"):
-            steps.append({"tool": "filter", "tool_id": node.get("id"), "config": config})
-        elif "summarize" in lowered and (config.get("groupBy") or config.get("aggregations")):
-            steps.append({"tool": "summarize", "tool_id": node.get("id"), "config": config})
-        elif "formula" in lowered and config.get("formulas"):
-            steps.append({"tool": "formula", "tool_id": node.get("id"), "config": config})
-    return steps
+    plan = build_transform_plan(workflow)
+    return transform_operations(plan)
 
 
 def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:
     project_name = _python_identifier(workflow.get("name") or "alteryx_python_pipeline", "alteryx_python_pipeline")
-    sources = [source for source in (workflow.get("dataSources") or []) if _is_warehouse_landed_source(source)]
+    transform_plan = build_transform_plan(workflow)
+    if sharepoint_url or file_name:
+        sources = [_source_from_override(sharepoint_url, file_name)]
+    else:
+        sources = [source for source in (workflow.get("dataSources") or []) if _is_warehouse_landed_source(source)]
     outputs = workflow.get("outputTargets") or []
     output_specs = outputs or [{"name": project_name, "path": f"output/{project_name}.csv", "type": "csv"}]
     macro_plan = generate_macro_conversion_plan(workflow)
     python_steps = _python_tool_steps(workflow)
     transform_steps = _python_transform_steps(workflow)
-    source_list = json.dumps(
+    source_list = pformat(
         [
             {
                 "toolId": str(source.get("toolId") or ""),
@@ -1144,9 +1347,9 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
             }
             for source in sources
         ],
-        indent=4,
+        width=120,
     )
-    output_list = json.dumps(
+    output_list = pformat(
         [
             {
                 "toolId": str(output.get("toolId") or ""),
@@ -1156,17 +1359,18 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
             }
             for output in output_specs
         ],
-        indent=4,
+        width=120,
     )
-    python_steps_json = json.dumps(
+    python_steps_json = pformat(
         [
             {"id": step["id"], "plugin": step["plugin"], "code": step["code"]}
             for step in python_steps
         ],
-        indent=4,
+        width=120,
     )
-    transform_steps_json = json.dumps(transform_steps, indent=4)
-    workflow_nodes_json = json.dumps(
+    transform_steps_json = pformat(transform_steps, width=120)
+    transform_plan_json = pformat(transform_plan, width=120)
+    workflow_nodes_json = pformat(
         [
             {
                 "id": str(node.get("id") or ""),
@@ -1175,9 +1379,9 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
             }
             for node in (workflow.get("workflowNodes") or [])
         ],
-        indent=4,
+        width=120,
     )
-    workflow_edges_json = json.dumps(workflow.get("workflowEdges") or [], indent=4)
+    workflow_edges_json = pformat(workflow.get("workflowEdges") or [], width=120)
     pipeline_py = (
         '"""Generated Alteryx migration Python pipeline.\n\n'
         "This script is intended for Cloud Run, Airflow/Composer, or local execution.\n"
@@ -1189,6 +1393,7 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "import os\n"
         "from pathlib import Path\n"
         "from typing import Any\n\n"
+        "from urllib.parse import quote\n\n"
         "try:\n"
         "    from dotenv import load_dotenv\n"
         "except Exception:\n"
@@ -1198,6 +1403,7 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "except Exception:  # google-cloud-bigquery is optional for local CSV-only tests\n"
         "    bigquery = None\n"
         "import pandas as pd\n\n"
+        "import requests\n\n"
         "try:\n"
         "    from alteryx_python_steps import apply_python_tool_steps\n"
         "except Exception:\n"
@@ -1207,6 +1413,7 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         f"SOURCES = {source_list}\n"
         f"OUTPUTS = {output_list}\n\n"
         f"TRANSFORM_STEPS = {transform_steps_json}\n\n"
+        f"TRANSFORM_PLAN = {transform_plan_json}\n\n"
         f"WORKFLOW_NODES = {workflow_nodes_json}\n"
         f"WORKFLOW_EDGES = {workflow_edges_json}\n\n"
         "if load_dotenv is not None:\n"
@@ -1220,11 +1427,36 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "        raise RuntimeError('google-cloud-bigquery is required to read BigQuery sources.')\n"
         "    client = bigquery.Client(project=env('GCP_PROJECT_ID') or None)\n"
         "    return client.query(f'SELECT * FROM `{table_id}`').to_dataframe()\n\n"
+        "def read_http_csv(source: dict) -> pd.DataFrame:\n"
+        "    url = str(source.get('path') or source.get('url') or '')\n"
+        "    if not url:\n"
+        "        raise FileNotFoundError(f'No URL supplied for source: {source}')\n"
+        "    headers = {}\n"
+        "    token = env('SHAREPOINT_BEARER_TOKEN') or env('MS_GRAPH_ACCESS_TOKEN')\n"
+        "    if token:\n"
+        "        headers['Authorization'] = f'Bearer {token}'\n"
+        "    try:\n"
+        "        response = requests.get(url, headers=headers, timeout=int(env('SOURCE_HTTP_TIMEOUT_SECONDS', '120') or '120'))\n"
+        "        response.raise_for_status()\n"
+        "        from io import BytesIO\n"
+        "        return pd.read_csv(BytesIO(response.content))\n"
+        "    except Exception as exc:\n"
+        "        site = source.get('siteUrl') or ''\n"
+        "        name = source.get('name') or ''\n"
+        "        if site and name:\n"
+        "            raise RuntimeError(\n"
+        "                f'Could not read SharePoint CSV {name!r} from {url!r}. '\n"
+        "                'For Python execution, provide a direct download URL, package the CSV in the .yxzp, '\n"
+        "                'or land the file in BigQuery and set the source path to project.dataset.table.'\n"
+        "            ) from exc\n"
+        "        raise\n\n"
         "def read_source(source: dict) -> pd.DataFrame:\n"
         "    path = source.get('path') or source.get('name')\n"
         "    if not path:\n"
         "        return pd.DataFrame()\n"
         "    source_type = str(source.get('type') or '').lower()\n"
+        "    if str(path).lower().startswith(('http://', 'https://')):\n"
+        "        return read_http_csv(source)\n"
         "    if source_type in {'bigquery', 'bq'} or str(path).count('.') >= 2 and not str(path).lower().endswith('.csv'):\n"
         "        return read_bigquery_table(str(path))\n"
         "    source_path = Path(path)\n"
@@ -1325,6 +1557,94 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "    expr = re.sub(r'\\bAND\\b', 'and', expr, flags=re.IGNORECASE)\n"
         "    expr = re.sub(r'\\bOR\\b', 'or', expr, flags=re.IGNORECASE)\n"
         "    return frame.eval(expr, engine='python')\n\n"
+        "def _split_top_level_args(value: str) -> list[str]:\n"
+        "    args: list[str] = []\n"
+        "    current: list[str] = []\n"
+        "    depth = 0\n"
+        "    quote = ''\n"
+        "    for char in str(value):\n"
+        "        if quote:\n"
+        "            current.append(char)\n"
+        "            if char == quote:\n"
+        "                quote = ''\n"
+        "            continue\n"
+        "        if char in ('\\\"', \"'\"):\n"
+        "            quote = char\n"
+        "            current.append(char)\n"
+        "            continue\n"
+        "        if char == '(':\n"
+        "            depth += 1\n"
+        "        elif char == ')':\n"
+        "            depth = max(depth - 1, 0)\n"
+        "        if char == ',' and depth == 0:\n"
+        "            args.append(''.join(current).strip())\n"
+        "            current = []\n"
+        "        else:\n"
+        "            current.append(char)\n"
+        "    if current:\n"
+        "        args.append(''.join(current).strip())\n"
+        "    return args\n\n"
+        "def _series_literal(frame: pd.DataFrame, value: Any) -> pd.Series:\n"
+        "    return pd.Series(value, index=frame.index)\n\n"
+        "def _eval_formula_value(frame: pd.DataFrame, expression: str) -> Any:\n"
+        "    import re\n"
+        "    expr = str(expression or '').strip()\n"
+        "    if re.fullmatch(r'NULL\\(\\)|NULL|null', expr, flags=re.IGNORECASE):\n"
+        "        return _series_literal(frame, pd.NA)\n"
+        "    if re.fullmatch(r'\\\"[^\\\"]*\\\"|\\'[^\\']*\\'', expr):\n"
+        "        return _series_literal(frame, expr[1:-1])\n"
+        "    if re.fullmatch(r'-?\\d+(\\.\\d+)?', expr):\n"
+        "        return _series_literal(frame, float(expr) if '.' in expr else int(expr))\n"
+        "    if expr.upper().startswith('IIF(') and expr.endswith(')'):\n"
+        "        args = _split_top_level_args(expr[4:-1])\n"
+        "        if len(args) == 3:\n"
+        "            condition = _eval_alteryx_expression(frame, args[0]).astype(bool)\n"
+        "            true_value = _eval_formula_value(frame, args[1])\n"
+        "            false_value = _eval_formula_value(frame, args[2])\n"
+        "            if not isinstance(true_value, pd.Series):\n"
+        "                true_value = _series_literal(frame, true_value)\n"
+        "            if not isinstance(false_value, pd.Series):\n"
+        "                false_value = _series_literal(frame, false_value)\n"
+        "            return false_value.where(~condition, true_value)\n"
+        "    contains = re.match(r'Contains\\s*\\((.+),\\s*[\\\"\\']([^\\\"\\']+)[\\\"\\']\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
+        "    if contains:\n"
+        "        haystack = _eval_formula_value(frame, contains.group(1))\n"
+        "        if not isinstance(haystack, pd.Series):\n"
+        "            haystack = _series_literal(frame, haystack)\n"
+        "        return haystack.astype('string').str.contains(contains.group(2), case=False, na=False, regex=False)\n"
+        "    lower = re.match(r'LowerCase\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
+        "    if lower:\n"
+        "        value = _eval_formula_value(frame, lower.group(1))\n"
+        "        return value.astype('string').str.lower() if isinstance(value, pd.Series) else str(value).lower()\n"
+        "    upper = re.match(r'Uppercase\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
+        "    if upper:\n"
+        "        value = _eval_formula_value(frame, upper.group(1))\n"
+        "        return value.astype('string').str.upper() if isinstance(value, pd.Series) else str(value).upper()\n"
+        "    trim = re.match(r'Trim(?:Left|Right)?\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
+        "    if trim:\n"
+        "        value = _eval_formula_value(frame, trim.group(1))\n"
+        "        return value.astype('string').str.strip() if isinstance(value, pd.Series) else str(value).strip()\n"
+        "    year = re.match(r'DateTimeYear\\s*\\(\\s*\\[([^\\]]+)\\]\\s*\\)', expr, flags=re.IGNORECASE)\n"
+        "    if year:\n"
+        "        col = _resolve_column(frame, year.group(1))\n"
+        "        return pd.to_datetime(frame[col], errors='coerce').dt.year if col else _series_literal(frame, pd.NA)\n"
+        "    month = re.match(r'DateTimeMonth\\s*\\(\\s*\\[([^\\]]+)\\]\\s*\\)', expr, flags=re.IGNORECASE)\n"
+        "    if month:\n"
+        "        col = _resolve_column(frame, month.group(1))\n"
+        "        return pd.to_datetime(frame[col], errors='coerce').dt.month if col else _series_literal(frame, pd.NA)\n"
+        "    diff = re.match(r'DateTimeDiff\\s*\\(\\s*DateTimeNow\\(\\)\\s*,\\s*\\[([^\\]]+)\\]\\s*,\\s*[\\\"\\']days[\\\"\\']\\s*\\)', expr, flags=re.IGNORECASE)\n"
+        "    if diff:\n"
+        "        col = _resolve_column(frame, diff.group(1))\n"
+        "        return (pd.Timestamp.now() - pd.to_datetime(frame[col], errors='coerce')).dt.days if col else _series_literal(frame, pd.NA)\n"
+        "    tostring = re.match(r'ToString\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
+        "    if tostring:\n"
+        "        value = _eval_formula_value(frame, tostring.group(1))\n"
+        "        return value.astype('string') if isinstance(value, pd.Series) else str(value)\n"
+        "    ceil = re.match(r'CEIL\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
+        "    if ceil:\n"
+        "        value = _eval_formula_value(frame, ceil.group(1))\n"
+        "        return pd.to_numeric(value, errors='coerce').apply(__import__('math').ceil) if isinstance(value, pd.Series) else __import__('math').ceil(float(value))\n"
+        "    return _eval_alteryx_expression(frame, expr)\n\n"
         "def _apply_formula(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:\n"
         "    result = frame.copy()\n"
         "    for formula in config.get('formulas') or []:\n"
@@ -1333,6 +1653,11 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "        if not field or not expression:\n"
         "            continue\n"
         "        lowered = expression.lower().strip()\n"
+        "        try:\n"
+        "            result[field] = _eval_formula_value(result, expression)\n"
+        "            continue\n"
+        "        except Exception:\n"
+        "            pass\n"
         "        # Common Alteryx pattern: if [Denominator] = 0 then null else [Numerator] / [Denominator]\n"
         "        match = __import__('re').match(r'if\\s+\\[([^\\]]+)\\]\\s*=\\s*0\\s+then\\s+null\\s+else\\s+\\[([^\\]]+)\\]\\s*/\\s*\\[([^\\]]+)\\]', lowered, flags=__import__('re').I)\n"
         "        if match:\n"
@@ -1610,7 +1935,7 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "    client = bigquery.Client(project=project)\n"
         "    job_config = bigquery.LoadJobConfig(write_disposition=env('BQ_WRITE_DISPOSITION', 'WRITE_TRUNCATE'), autodetect=True)\n"
         "    for name, frame in outputs.items():\n"
-        "        table_name = Path(str(name)).stem.lower().replace('-', '_') or PROJECT_NAME\n"
+        "        table_name = __import__('re').sub(r'[^A-Za-z0-9_]+', '_', Path(str(name)).stem).strip('_').lower() or PROJECT_NAME\n"
         "        table_id = f'{project}.{dataset}.{table_name}'\n"
         "        client.load_table_from_dataframe(frame, table_id, job_config=job_config).result()\n"
         "        print(f'Published {len(frame):,} rows to {table_id}')\n\n"
@@ -1720,9 +2045,13 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "files": files,
         "file_count": len(files),
         "source_count": len(sources),
+        "sources": sources,
+        "source_assets": workflow.get("packageAssets") or [],
         "output_count": len(output_specs),
         "output_targets": outputs,
         "macro_plan": macro_plan,
+        "transform_plan": transform_plan,
+        "transformation_coverage": transform_plan.get("coverage") or {},
     }
 
 
@@ -1751,9 +2080,88 @@ def generate_executive_summary(workflow: dict[str, Any]) -> dict[str, Any]:
         "Power BI should fetch business data directly from governed sources such as SharePoint, databases, Excel, or APIs.",
         "Validation should compare source row counts, target refresh status, schema coverage, and unsupported-tool remediation closure.",
     ]
+    model = "deterministic_fallback"
+    provider = "deterministic"
+    llm_status = "fallback"
+
+    if (os.getenv("ALTERYX_DOC_LLM_PROVIDER") or "huggingface").strip().lower() in {"huggingface", "hf"}:
+        node_context = [
+            {
+                "id": node.get("id"),
+                "tool": str(node.get("plugin") or "").split(".")[-1],
+                "annotation": str(node.get("annotation") or "")[:240],
+                "configuration": str(node.get("configurationText") or "")[:360],
+            }
+            for node in (workflow.get("workflowNodes") or [])[:40]
+        ]
+        source_context = [
+            {
+                "name": item.get("name"),
+                "type": item.get("type"),
+                "path": item.get("path"),
+            }
+            for item in (workflow.get("dataSources") or [])[:12]
+        ]
+        output_context = [
+            {
+                "name": item.get("name"),
+                "type": item.get("type"),
+                "path": item.get("path"),
+                "tool": item.get("tool"),
+            }
+            for item in (workflow.get("outputTargets") or [])[:12]
+        ]
+        macro_context = [
+            {
+                "name": item.get("name"),
+                "macroType": item.get("macroType"),
+                "path": item.get("path"),
+                "status": item.get("status"),
+            }
+            for item in (workflow.get("macroDependencies") or [])[:12]
+        ]
+        try:
+            transform_context = build_transform_plan(workflow).get("operations", [])[:20]
+        except Exception:
+            transform_context = []
+        llm_prompt = (
+            "Create an executive summary for business and technology leadership. "
+            "Focus on the business logic and intended outcome of the Alteryx workflow, not on raw inventory counts. "
+            "Infer the workflow purpose from input sources, tool sequence, formulas/filters/joins/summarizations/macros, and output names. "
+            "Use cautious language such as 'appears to' or 'is likely intended to' when the business meaning is inferred. "
+            "Return exactly 7 concise bullets. Do not use markdown tables. Avoid saying only how many tools or connections exist.\n\n"
+            f"Workflow name: {name}\n"
+            f"Migration complexity: {complexity}; convertibility: {fit}; automation score: {automation_score}%\n"
+            f"Data sources: {json.dumps(source_context, default=str)}\n"
+            f"Output datasets/files: {json.dumps(output_context, default=str)}\n"
+            f"Macro dependencies: {json.dumps(macro_context, default=str)}\n"
+            f"Transformation operations inferred by accelerator: {json.dumps(transform_context, default=str)[:4000]}\n"
+            f"Representative workflow nodes/configuration: {json.dumps(node_context, default=str)[:5000]}\n\n"
+            "Each bullet should explain one of: business objective, input-to-output logic, key transformation rules, exception/segmentation logic, "
+            "macro-driven processing behavior, target-state recommendation, validation/control considerations."
+        )
+        llm_text = _call_documentation_hf(
+            llm_prompt,
+            "You are a senior business process analyst and analytics migration advisor. Explain what the workflow does for the business, using technical metadata only as evidence.",
+            max_tokens=500,
+        )
+        llm_bullets = _extract_bullets(llm_text, limit=7)
+        if len(llm_bullets) >= 4:
+            bullets = llm_bullets
+            model = os.getenv("ALTERYX_DOC_HF_MODEL") or os.getenv("HF_MODEL") or "meta-llama/Llama-3.1-8B-Instruct"
+            provider = "huggingface"
+            llm_status = "completed"
+        else:
+            logger.info(
+                "Alteryx documentation LLM did not return enough summary bullets; using deterministic fallback. returned=%s",
+                len(llm_bullets),
+            )
+
     return {
         "bullets": bullets,
-        "model": "llama_mistral_ready_deterministic_fallback",
+        "model": model,
+        "provider": provider,
+        "llm_status": llm_status,
         "success": True,
         "automation_score": automation_score,
         "source_types": source_labels,
@@ -2020,6 +2428,7 @@ def generate_gcp_python_project(
     requirements = (
         "pandas>=2.2.0\n"
         "requests>=2.31.0\n"
+        "python-dotenv>=1.0.0\n"
         "google-cloud-bigquery>=3.0.0\n"
         "google-cloud-storage>=2.0.0\n"
         "pyarrow>=14.0.0\n"

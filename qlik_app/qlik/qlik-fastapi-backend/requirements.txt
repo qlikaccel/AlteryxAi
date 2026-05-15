@@ -42,6 +42,7 @@ beautifulsoup4>=4.12.0
  
 # Google Cloud
 google-cloud-bigquery>=3.0.0
+pyarrow>=14.0.0
  
 # dbt with BigQuery support
 # Use version ranges to allow pip to find compatible dependencies

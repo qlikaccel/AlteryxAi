@@ -429,6 +429,37 @@
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
+function apiErrorMessage(detail: any, fallback: string): string {
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  if (typeof detail.message === "string") {
+    const coverage = detail.coverage;
+    const blockedItems = Array.isArray(detail.blocked_items) ? detail.blocked_items : [];
+    const blockedSummary = blockedItems
+      .slice(0, 8)
+      .map((item: any) => {
+        const label = item.name || item.tool || item.id || "unknown";
+        const node = item.node_id ? ` node ${item.node_id}` : "";
+        const reason = item.reason ? `: ${item.reason}` : "";
+        return `- ${label}${node} (${item.status || "blocked"})${reason}`;
+      })
+      .join("\n");
+    const coverageSummary = coverage?.status
+      ? `\nCoverage: ${coverage.status} (${coverage.score ?? "n/a"}%).`
+      : "";
+    const hiddenCount =
+      typeof detail.blocked_item_count === "number" && detail.blocked_item_count > blockedItems.slice(0, 8).length
+        ? `\n...and ${detail.blocked_item_count - blockedItems.slice(0, 8).length} more.`
+        : "";
+    return `${detail.message}${coverageSummary}${blockedSummary ? `\nBlocked items:\n${blockedSummary}` : ""}${hiddenCount}`;
+  }
+  try {
+    return JSON.stringify(detail);
+  } catch {
+    return fallback;
+  }
+}
+
 export interface AlteryxWorkflow {
   id: string;
   name: string;
@@ -601,7 +632,7 @@ export async function publishAlteryxDbtToBigQuery(
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new Error(data.detail || `Failed to publish dbt project to BigQuery (${res.status})`);
+    throw new Error(apiErrorMessage(data.detail, `Failed to publish dbt project to BigQuery (${res.status})`));
   }
 
   return data;
@@ -621,7 +652,7 @@ export async function publishAlteryxDataformToBigQuery(
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new Error(data.detail || `Failed to publish Dataform project to BigQuery (${res.status})`);
+    throw new Error(apiErrorMessage(data.detail, `Failed to publish Dataform project to BigQuery (${res.status})`));
   }
 
   return data;
@@ -641,7 +672,27 @@ export async function publishAlteryxDataformToRepository(
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new Error(data.detail || `Failed to publish Dataform project to repository (${res.status})`);
+    throw new Error(apiErrorMessage(data.detail, `Failed to publish Dataform project to repository (${res.status})`));
+  }
+
+  return data;
+}
+
+export async function publishAlteryxPythonToBigQuery(
+  batchId: string,
+  workflowId: string,
+  sharePointUrl = "",
+  fileName = ""
+): Promise<any> {
+  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const res = await fetch(
+    `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/python/publish-bigquery?${params.toString()}`,
+    { method: "POST" }
+  );
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(apiErrorMessage(data.detail, `Failed to publish Python pipeline to BigQuery (${res.status})`));
   }
 
   return data;
@@ -673,6 +724,8 @@ export async function publishAlteryxMQuery(payload: {
   sharepoint_url?: string;
   access_token?: string;
   alteryx_source_fields?: Record<string, Array<{ name: string; type?: string }>>;
+  transformation_coverage?: Record<string, any>;
+  transform_plan?: Record<string, any>;
 }): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/migration/publish-mquery`, {
     method: "POST",
@@ -686,12 +739,14 @@ export async function publishAlteryxMQuery(payload: {
       qlik_fields_map: {},
       app_id: "",
       alteryx_source_fields: payload.alteryx_source_fields || {},
+      transformation_coverage: payload.transformation_coverage || {},
+      transform_plan: payload.transform_plan || {},
     }),
   });
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new Error(data.detail || `Power BI publish failed (${res.status})`);
+    throw new Error(apiErrorMessage(data.detail, `Power BI publish failed (${res.status})`));
   }
 
   return {
@@ -919,28 +974,13 @@ export async function downloadBigQueryValidationReportPdf(payload: {
   dbt_metrics?: Record<string, any>;
   bigquery_metrics?: Record<string, any>;
 }): Promise<Blob> {
-  const res = await fetch(`${BASE_URL}/report/bigquery-validation-pdf`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+  return downloadValidationReportPdf({
+    table_name: payload.final_model || payload.dataset_id || "BigQuery model",
+    app_name: payload.app_name,
+    migration_status: payload.migration_status,
+    publishing_method: "BIGQUERY",
+    tables_deployed: payload.tables_deployed,
+    qlik_metrics: payload.dbt_metrics || {},
+    powerbi_metrics: payload.bigquery_metrics || {},
   });
-
-  if (res.status === 404 || res.status === 405) {
-    return downloadValidationReportPdf({
-      table_name: payload.final_model || payload.dataset_id || "BigQuery model",
-      app_name: payload.app_name,
-      migration_status: payload.migration_status,
-      publishing_method: "BIGQUERY",
-      tables_deployed: payload.tables_deployed,
-      qlik_metrics: payload.dbt_metrics || {},
-      powerbi_metrics: payload.bigquery_metrics || {},
-    });
-  }
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.detail || `Failed to generate BigQuery PDF report (${res.status})`);
-  }
-
-  return res.blob();
 }

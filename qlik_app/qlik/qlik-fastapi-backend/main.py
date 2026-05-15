@@ -92,6 +92,7 @@ from app.services.relationship_service import (
     normalize_table_rows,
     resolve_relationships_unified,
 )
+from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata
 from app.services.brd_generator import (
     BRD_PROMPT_VERSION,
     build_brd_prompt,
@@ -227,6 +228,25 @@ def health():
         "script_parser":  SCRIPT_PARSER_AVAILABLE,
         "publisher":      PUBLISHER_AVAILABLE,
     }
+
+
+@app.get("/api/bigquery/table-metadata")
+def get_bigquery_table_metadata(model: str = Query(...)):
+    parts = [part for part in str(model or "").split(".") if part]
+    if len(parts) != 3:
+        raise HTTPException(status_code=422, detail="Model must be in project.dataset.table format.")
+    project_id, dataset, table = parts
+    metadata = fetch_bigquery_table_metadata(
+        project_id=project_id,
+        dataset=dataset,
+        table=table,
+        location=os.getenv("GCP_BIGQUERY_LOCATION", "US"),
+        env=os.environ.copy(),
+    )
+    if metadata.get("error"):
+        raise HTTPException(status_code=404, detail=metadata.get("message") or metadata.get("error"))
+    return metadata
+
 
 # ==================== M QUERY DOWNLOAD ====================
 

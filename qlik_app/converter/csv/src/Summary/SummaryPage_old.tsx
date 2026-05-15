@@ -633,18 +633,6 @@ export default function SummaryPage() {
   // const conversionSteps = analysis?.mquery?.conversion_steps || [];
   const generation = analysis?.mquery || {};
   const generationMethod = generation.generation_method || "rule_based";
-  const humanizeStatus = (value: any) =>
-    String(value || "not_required")
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (char) => char.toUpperCase());
-  const generationStatus = generation.llm_status || sessionStorage.getItem("migration_llm_status") || "not_required";
-  const generationProvider = generation.llm_provider || "";
-  const generationModel = generation.llm_model || "";
-  const generationStatusText =
-    generationProvider || generationModel
-      ? `${humanizeStatus(generationStatus)}${generationProvider ? ` (${generationProvider}${generationModel ? `: ${generationModel}` : ""})` : ""}`
-      : humanizeStatus(generationStatus);
-  const generationComplexity = workflow?.complexity || generation.complexity || "Medium";
   // const generationLabel = generation.generation_label || "Rule-based mapping";
   // const generationReason = generation.routing_reason || "Low-complexity workflow with supported deterministic tool mappings.";
   // const generationIndicators = generation.complexity_indicators || [];
@@ -1484,41 +1472,20 @@ export default function SummaryPage() {
   );
 }
 
-  // if (dbtPublishing || dataformPublishing || dataformRepoPublishing) {
-  //   return (
-  //     <LoadingOverlay
-  //       isVisible={dbtPublishing || dataformPublishing || dataformRepoPublishing}
-  //       message={
-  //         dataformRepoPublishing
-  //           ? "Publishing Dataform project to GCP repository..."
-  //           : dataformPublishing
-  //             ? "Publishing Dataform project to BigQuery..."
-  //             : "Publishing dbt models to BigQuery..."
-  //       }
-  //     />
-  //   );
-  // }
-
-
-
-  if (dbtPublishing || dataformPublishing || dataformRepoPublishing || pythonPublishing) {
+  if (dbtPublishing || dataformPublishing || dataformRepoPublishing) {
     return (
       <LoadingOverlay
-        isVisible={dbtPublishing || dataformPublishing || dataformRepoPublishing || pythonPublishing}
+        isVisible={dbtPublishing || dataformPublishing || dataformRepoPublishing}
         message={
           dataformRepoPublishing
             ? "Publishing Dataform project to GCP repository..."
             : dataformPublishing
               ? "Publishing Dataform project to BigQuery..."
-              : pythonPublishing
-                ? "Publishing Python pipeline to BigQuery..."
-                : "Publishing dbt models to BigQuery..."
+              : "Publishing dbt models to BigQuery..."
         }
       />
     );
   }
-
-
 
   if (error) {
     return (
@@ -1791,10 +1758,10 @@ export default function SummaryPage() {
                     Generated Power Query uses the configured data source <strong>{fileName}</strong>.
                     The same mapper can emit connector stubs for CSV, Excel, database, and API inputs detected in Alteryx.
                   </p> */}
-                    <div className={`source-generation-badge ${generationMethod === "llm" || generation.llm_used ? "llm" : "rules"}`}>
+                    <div className={`source-generation-badge ${generationMethod === "llm" ? "llm" : "rules"}`}>
                       <span>LLM-ASSISTED MAPPING</span>
-                      <strong>{generationComplexity} workflow complexity.</strong>
-                      <em>LLM status: {generationStatusText}</em>
+                      <strong>Medium workflow complexity.</strong>
+                      <em>LLM status: expression_fallback_failed_fallback</em>
                     </div>
                     {dbtPublishResult && (
                       <div className={`dbt-publish-result ${dbtPublishResult.success ? "success" : "failed"}`}>

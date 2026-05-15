@@ -10,6 +10,7 @@ import zipfile
 from io import BytesIO
 import requests
 import re
+import time
 from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Header, Query, Response, UploadFile
 from fastapi.responses import HTMLResponse
@@ -47,6 +48,8 @@ from app.services.alteryx_migration_engine import (
 from app.services.alteryx_dbt_publisher import publish_dbt_project_to_bigquery
 from app.services.alteryx_dataform_publisher import publish_dataform_project_to_bigquery
 from app.services.alteryx_dataform_repo_publisher import publish_dataform_project_to_repository
+from app.services.alteryx_python_publisher import publish_python_project_to_bigquery
+from app.services.alteryx_transform_plan import build_transform_plan, transform_publish_blocker_detail
 
 router = APIRouter(prefix="/api/alteryx", tags=["Alteryx"])
 logger = logging.getLogger(__name__)
@@ -106,6 +109,76 @@ class AlteryxRecordCountValidationRequest(BaseModel):
     workspace_id: Optional[str] = ""
     expected_row_count: Optional[int] = None
     numeric_columns: list[str] = []
+
+
+def _workflow_for_client(workflow: dict[str, Any]) -> dict[str, Any]:
+    """Return a compact UI-safe workflow summary.
+
+    Full workflow graphs and embedded package assets stay in the backend batch
+    cache. The frontend fetches those details through the analysis endpoints.
+    """
+    workflow = workflow or {}
+    safe_fields = {
+        "id",
+        "name",
+        "lastModifiedDate",
+        "runCount",
+        "credentialType",
+        "workerTag",
+        "sourceFile",
+        "packageFile",
+        "fileType",
+        "toolCount",
+        "connectionCount",
+        "convertibility",
+        "complexity",
+        "supportedToolCount",
+        "unsupportedToolCount",
+        "toolTypes",
+        "unsupportedTools",
+        "recommendations",
+        "isMacroDefinition",
+        "macroValidation",
+    }
+    client_workflow = {key: workflow.get(key) for key in safe_fields if key in workflow}
+
+    def compact_items(items: Any) -> list[dict[str, Any]]:
+        if not isinstance(items, list):
+            return []
+        compacted: list[dict[str, Any]] = []
+        allowed = {
+            "id",
+            "name",
+            "fileName",
+            "path",
+            "connection",
+            "siteUrl",
+            "type",
+            "sourceType",
+            "targetType",
+            "macroName",
+            "macroType",
+            "status",
+            "resolved",
+            "exists",
+            "toolId",
+            "tool",
+            "plugin",
+        }
+        for item in items:
+            if isinstance(item, dict):
+                compacted.append({key: value for key, value in item.items() if key in allowed})
+        return compacted
+
+    for key in ("dataSources", "outputTargets", "macroDependencies", "packageAssets"):
+        if key in workflow:
+            client_workflow[key] = compact_items(workflow.get(key))
+
+    return client_workflow
+
+
+def _workflows_for_client(workflows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_workflow_for_client(workflow) for workflow in workflows or []]
 
 
 def _plugin_key(node: dict[str, Any]) -> str:
@@ -880,7 +953,7 @@ async def bulk_upload_alteryx_workflows(
     return AlteryxBulkUploadResponse(
         batch_id=result["batch_id"],
         summary=result["summary"],
-        workflows=result["workflows"],
+        workflows=_workflows_for_client(result["workflows"]),
         rejected=result["rejected"],
         workspace_name=(os.getenv("ALTERYX_WORKSPACE_NAME", "") or "").strip() or None,
     )
@@ -927,8 +1000,8 @@ def materialize_cloud_workflow(config: CloudWorkflowMaterializeRequest):
             "source_endpoint": source_endpoint,
             "artifact_name": artifact_name,
             "batch_id": result["batch_id"],
-            "workflow": workflows[0],
-            "workflows": workflows,
+            "workflow": _workflow_for_client(workflows[0]),
+            "workflows": _workflows_for_client(workflows),
             "summary": result.get("summary", {}),
             "rejected": result.get("rejected", []),
         }
@@ -971,8 +1044,8 @@ def materialize_workflow_json(config: WorkflowJsonMaterializeRequest):
             "source": config.source or "cloud_json",
             "artifact_name": artifact_name,
             "batch_id": result["batch_id"],
-            "workflow": parsed_workflow,
-            "workflows": workflows,
+            "workflow": _workflow_for_client(parsed_workflow),
+            "workflows": _workflows_for_client(workflows),
             "summary": result.get("summary", {}),
             "rejected": result.get("rejected", []),
         }
@@ -1001,7 +1074,7 @@ def get_alteryx_upload_batch_workflows(batch_id: str):
         "batch_id": batch_id,
         "summary": batch.get("summary", {}),
         "total": len(batch.get("workflows", [])),
-        "workflows": batch.get("workflows", []),
+        "workflows": _workflows_for_client(batch.get("workflows", [])),
     }
 
 
@@ -1010,7 +1083,7 @@ def get_alteryx_upload_batch_workflow(batch_id: str, workflow_id: str):
     return {
         "success": True,
         "batch_id": batch_id,
-        "workflow": _find_batch_workflow(batch_id, workflow_id),
+        "workflow": _workflow_for_client(_find_batch_workflow(batch_id, workflow_id)),
     }
 
 
@@ -1042,6 +1115,12 @@ def get_alteryx_workflow_mquery(
 ):
     workflow = _find_batch_workflow(batch_id, workflow_id)
     return {"success": True, **generate_m_query(workflow, sharepoint_url=sharepoint_url, file_name=file_name)}
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/transform-plan")
+def get_alteryx_workflow_transform_plan(batch_id: str, workflow_id: str):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    return build_transform_plan(workflow)
 
 
 @router.get("/batches/{batch_id}/workflows/{workflow_id}/dbt")
@@ -1093,6 +1172,27 @@ def _zip_project(project: dict[str, Any], default_root: str, filename_suffix: st
     )
 
 
+def _allow_partial_transform_publish() -> bool:
+    return str(os.getenv("ALLOW_PARTIAL_TRANSFORM_PUBLISH", "")).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _enforce_transform_parity_gate() -> bool:
+    return str(os.getenv("ENFORCE_TRANSFORM_PARITY_GATE", "")).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _assert_transform_publishable(project: dict[str, Any], target: str) -> None:
+    if _allow_partial_transform_publish() or not _enforce_transform_parity_gate():
+        return
+    plan = project.get("transform_plan") or {}
+    detail = transform_publish_blocker_detail(plan, target)
+    if detail:
+        raise HTTPException(status_code=400, detail=detail)
+
+
+def _transform_publish_warning(project: dict[str, Any], target: str) -> dict[str, Any] | None:
+    return transform_publish_blocker_detail(project.get("transform_plan") or {}, target)
+
+
 @router.get("/batches/{batch_id}/workflows/{workflow_id}/dataform")
 def get_alteryx_workflow_dataform_project(
     batch_id: str,
@@ -1130,8 +1230,13 @@ def publish_alteryx_workflow_dataform_to_bigquery(
             detail="Select the parent .yxmd workflow for Publish Dataform to BigQuery.",
         )
     project = generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    _assert_transform_publishable(project, "Dataform to BigQuery")
     try:
-        return publish_dataform_project_to_bigquery(project)
+        result = publish_dataform_project_to_bigquery(project)
+        result["transformation_coverage"] = project.get("transformation_coverage") or {}
+        result["transform_plan"] = project.get("transform_plan") or {}
+        result["transform_publish_warning"] = _transform_publish_warning(project, "Dataform to BigQuery")
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -1155,8 +1260,13 @@ def publish_alteryx_workflow_dataform_to_repository(
             detail="Select the parent .yxmd workflow for Publish Dataform to GCP Repo.",
         )
     project = generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    _assert_transform_publishable(project, "Dataform repository")
     try:
-        return publish_dataform_project_to_repository(project)
+        result = publish_dataform_project_to_repository(project)
+        result["transformation_coverage"] = project.get("transformation_coverage") or {}
+        result["transform_plan"] = project.get("transform_plan") or {}
+        result["transform_publish_warning"] = _transform_publish_warning(project, "Dataform repository")
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -1189,6 +1299,41 @@ def download_alteryx_workflow_python_project(
     return _zip_project(project, "alteryx_python_project", "python_project")
 
 
+@router.post("/batches/{batch_id}/workflows/{workflow_id}/python/publish-bigquery")
+def publish_alteryx_workflow_python_to_bigquery(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    if workflow.get("isMacroDefinition"):
+        raise HTTPException(
+            status_code=400,
+            detail="Select the parent .yxmd workflow for Publish Python to BigQuery.",
+        )
+    analysis_started = time.time()
+    project = generate_python_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    analysis_duration = round(time.time() - analysis_started, 2)
+    _assert_transform_publishable(project, "Python to BigQuery")
+    try:
+        result = publish_python_project_to_bigquery(project)
+        result["transformation_coverage"] = project.get("transformation_coverage") or {}
+        result["transform_plan"] = project.get("transform_plan") or {}
+        result["transform_publish_warning"] = _transform_publish_warning(project, "Python to BigQuery")
+        result["analysis_duration_seconds"] = analysis_duration
+        timings = result.setdefault("timings", {})
+        timings["analysis_seconds"] = analysis_duration
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to publish generated Python pipeline to BigQuery")
+        raise HTTPException(status_code=500, detail=f"Failed to publish Python pipeline to BigQuery: {exc}") from exc
+
+
 @router.post("/batches/{batch_id}/workflows/{workflow_id}/dbt/publish-bigquery")
 def publish_alteryx_workflow_dbt_to_bigquery(
     batch_id: str,
@@ -1206,8 +1351,12 @@ def publish_alteryx_workflow_dbt_to_bigquery(
             ),
         )
     project = generate_dbt_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    _assert_transform_publishable(project, "dbt to BigQuery")
     try:
         result = publish_dbt_project_to_bigquery(project)
+        result["transformation_coverage"] = project.get("transformation_coverage") or {}
+        result["transform_plan"] = project.get("transform_plan") or {}
+        result["transform_publish_warning"] = _transform_publish_warning(project, "dbt to BigQuery")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:

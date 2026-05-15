@@ -540,6 +540,25 @@ def _extract_missing_bigquery_tables(result: dict[str, Any]) -> list[str]:
     return sorted(set(missing))
  
  
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = _env(name)
+    if value == "":
+        return default
+    return value.lower() in {"1", "true", "yes", "y"}
+
+
+def _format_dbt_failure(result: dict[str, Any]) -> str:
+    stdout = str(result.get("stdout") or "").strip()
+    stderr = str(result.get("stderr") or "").strip()
+    details = []
+    if stderr:
+        details.append(f"stderr:\n{stderr[-4000:]}")
+    if stdout:
+        details.append(f"stdout:\n{stdout[-4000:]}")
+    suffix = "\n\n" + "\n\n".join(details) if details else ""
+    return f"Publish to BigQuery failed while running: {result['command']}{suffix}"
+
+
 def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     project_id = _required_env("GCP_PROJECT_ID")
     target_dataset = _required_env("GCP_BIGQUERY_DATASET")
@@ -584,18 +603,20 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
         _write_profiles(profiles_dir, project_name, project_id, target_dataset, location, auth_method, threads, keyfile)
  
         dataset_status = _create_bigquery_dataset(project_id, target_dataset, location, run_env)
-        commands = [
-            [dbt_executable, "debug", "--profiles-dir", str(profiles_dir)],
+        commands = []
+        if _env_flag("DBT_RUN_DEBUG", False):
+            commands.append([dbt_executable, "debug", "--profiles-dir", str(profiles_dir)])
+        commands.extend([
             [dbt_executable, "parse", "--profiles-dir", str(profiles_dir)],
             [dbt_executable, "run", "--profiles-dir", str(profiles_dir)],
-        ]
+        ])
         command_results = []
         for command in commands:
             result = _run_dbt_command(command, project_dir, run_env, timeout_seconds)
             command_results.append(result)
             if not result["success"]:
                 missing_tables = _extract_missing_bigquery_tables(result)
-                message = f"Publish to BigQuery failed while running: {result['command']}"
+                message = _format_dbt_failure(result)
                 if missing_tables:
                     message = (
                         "Publish to BigQuery connected successfully, but required source table(s) "

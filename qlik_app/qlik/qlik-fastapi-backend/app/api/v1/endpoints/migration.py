@@ -37,6 +37,7 @@ from app.services.relationship_service import (
     normalize_table_rows,
     resolve_relationships_unified,
 )
+from app.services.alteryx_transform_plan import transform_publish_blocker_detail
 
 # ─────────────────────────────────────────────────────────────────────────────
 # QLIK SYSTEM TABLE FILTER
@@ -1093,6 +1094,33 @@ class PublishMQueryRequest(_BaseModel):
     # These entries must be applied by exact table name so each raw CSV table
     # keeps its own schema.
     alteryx_source_fields: dict = {}
+    # Alteryx flow can pass canonical transformation coverage. When present,
+    # Power BI publish follows the same parity gate as dbt/Dataform/Python.
+    transformation_coverage: dict = {}
+    transform_plan: dict = {}
+
+
+def _allow_partial_transform_publish() -> bool:
+    return str(os.getenv("ALLOW_PARTIAL_TRANSFORM_PUBLISH", "")).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _enforce_transform_parity_gate() -> bool:
+    return str(os.getenv("ENFORCE_TRANSFORM_PARITY_GATE", "")).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _mquery_transform_plan_from_request(request: PublishMQueryRequest) -> dict:
+    plan = request.transform_plan or {}
+    if request.transformation_coverage and not plan.get("coverage"):
+        plan = {**plan, "coverage": request.transformation_coverage}
+    return plan
+
+
+def _assert_mquery_transform_publishable(request: PublishMQueryRequest) -> None:
+    if _allow_partial_transform_publish() or not _enforce_transform_parity_gate():
+        return
+    detail = transform_publish_blocker_detail(_mquery_transform_plan_from_request(request), "Power BI")
+    if detail:
+        raise HTTPException(status_code=400, detail=detail)
 
 @router.post("/publish-mquery")
 async def publish_mquery_endpoint(request: PublishMQueryRequest):
@@ -1113,6 +1141,8 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
     data_source_path = request.data_source_path or request.sharepoint_url or "[DataSourcePath]"
 
     logger.info("[publish_mquery] Dataset: %s", dataset_name)
+
+    _assert_mquery_transform_publishable(request)
 
     workspace_id = os.getenv("POWERBI_WORKSPACE_ID", "")
     if not workspace_id:
@@ -1475,6 +1505,9 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
             "workspace_url":      result.get("workspace_url", ""),
             "dataset_url":        result.get("dataset_url", ""),
             "qlik_fields_map_used": len(qlik_fields_map),
+            "transformation_coverage": request.transformation_coverage or {},
+            "transform_plan":      request.transform_plan or {},
+            "transform_publish_warning": transform_publish_blocker_detail(_mquery_transform_plan_from_request(request), "Power BI"),
             "message":            result.get("message", f"Published {dataset_name} to Power BI"),
         }
 

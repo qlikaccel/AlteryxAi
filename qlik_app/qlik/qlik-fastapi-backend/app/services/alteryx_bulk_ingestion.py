@@ -1,4 +1,5 @@
 import hashlib
+import base64
 import json
 import os
 import time
@@ -13,6 +14,7 @@ import re
 SUPPORTED_WORKFLOW_EXTENSIONS = {".yxmd", ".yxmc", ".yxwz"}
 SUPPORTED_JSON_WORKFLOW_EXTENSIONS = {".json"}
 SUPPORTED_ARCHIVE_EXTENSIONS = {".yxzp", ".zip"}
+SUPPORTED_SOURCE_ASSET_EXTENSIONS = {".csv", ".txt", ".xlsx", ".xls", ".parquet", ".json"}
 UPLOAD_CACHE_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "_alteryx_upload_batches")
 )
@@ -41,6 +43,7 @@ class WorkflowInventoryItem:
     macroDependencies: list[dict[str, Any]] = field(default_factory=list)
     macroValidation: dict[str, Any] = field(default_factory=dict)
     outputTargets: list[dict[str, Any]] = field(default_factory=list)
+    packageAssets: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _ensure_cache_dir() -> None:
@@ -422,8 +425,10 @@ def _extract_node_config(node: ET.Element, plugin: str) -> dict[str, Any]:
     if "summarize" in lowered:
         group_by: list[str] = []
         aggregations: list[dict[str, str]] = []
-        for field in config.findall(".//SummarizeField"):
-            name = field.attrib.get("field") or ""
+        summarize_fields = list(config.findall(".//SummarizeField"))
+        summarize_fields.extend(config.findall(".//SummarizeFields/Field"))
+        for field in summarize_fields:
+            name = field.attrib.get("field") or field.attrib.get("name") or ""
             action = field.attrib.get("action") or ""
             rename = field.attrib.get("rename") or name
             if not name:
@@ -445,8 +450,71 @@ def _extract_node_config(node: ET.Element, plugin: str) -> dict[str, Any]:
             field_type = formula.attrib.get("type") or formula.attrib.get("size") or "Double"
             if field and expression:
                 formulas.append({"field": field, "expression": expression, "type": field_type})
+        for expression_node in config.findall(".//Expression"):
+            field = expression_node.attrib.get("field") or expression_node.attrib.get("name") or ""
+            expression = expression_node.attrib.get("expression") or (expression_node.text or "")
+            field_type = expression_node.attrib.get("type") or expression_node.attrib.get("size") or "Double"
+            if field and expression.strip():
+                formulas.append({"field": field, "expression": expression.strip(), "type": field_type})
         if formulas:
             parsed["formulas"] = formulas
+
+    if "join" in lowered and "joinmultiple" not in lowered:
+        left_fields = [
+            field.attrib.get("field") or field.attrib.get("name") or ""
+            for field in config.findall(".//JoinInfo[@side='Left']/Field")
+        ]
+        right_fields = [
+            field.attrib.get("field") or field.attrib.get("name") or ""
+            for field in config.findall(".//JoinInfo[@side='Right']/Field")
+        ]
+        join_fields = []
+        for left, right in zip(left_fields, right_fields):
+            if left and right:
+                join_fields.append({"left": left, "right": right})
+        if join_fields:
+            parsed["joinFields"] = join_fields
+            parsed["joinType"] = _config_text(config, "JoinType") or "inner"
+        select_fields: list[dict[str, Any]] = []
+        for field in config.findall(".//SelectConfiguration//SelectField"):
+            name = field.attrib.get("field") or field.attrib.get("name") or ""
+            if not name or name == "*":
+                continue
+            selected = field.attrib.get("selected", "True").lower() != "false"
+            if selected:
+                select_fields.append({
+                    "name": name,
+                    "rename": field.attrib.get("rename") or name,
+                    "side": field.attrib.get("side") or field.attrib.get("inputNum") or "",
+                    "type": field.attrib.get("type") or "String",
+                })
+        if select_fields:
+            parsed["selectedFields"] = select_fields
+
+    if "joinmultiple" in lowered:
+        join_fields = [
+            field.attrib.get("field") or field.attrib.get("name") or ""
+            for field in config.findall(".//JoinFields/Field")
+            if field.attrib.get("field") or field.attrib.get("name")
+        ]
+        if join_fields:
+            parsed["joinFields"] = sorted(set(join_fields))
+
+    if "sort" in lowered:
+        sort_fields: list[dict[str, str]] = []
+        for field in config.findall(".//Field"):
+            name = field.attrib.get("field") or field.attrib.get("name") or ""
+            if not name:
+                continue
+            order = field.attrib.get("order") or field.attrib.get("direction") or field.attrib.get("sort") or "asc"
+            sort_fields.append({"field": name, "order": order})
+        if sort_fields:
+            parsed["sortFields"] = sort_fields
+
+    if "sample" in lowered:
+        count = _config_text(config, "N") or _config_text(config, "Count") or _config_text(config, "SampleSize")
+        if count:
+            parsed["count"] = count
 
     return parsed
 
@@ -529,6 +597,8 @@ def _extract_sources(node: ET.Element, plugin: str) -> list[dict[str, Any]]:
     lowered_plugin = (plugin or "").lower()
     if "macroinput" in lowered_plugin or "macrooutput" in lowered_plugin:
         return []
+    if "dbfileoutput" in lowered_plugin or "outputdata" in lowered_plugin:
+        return []
 
     blob = _node_text_blob(node)
     candidates: list[str] = []
@@ -542,7 +612,7 @@ def _extract_sources(node: ET.Element, plugin: str) -> list[dict[str, Any]]:
         candidates.extend(match.group(0).strip() for match in re.finditer(pattern, blob, flags=re.IGNORECASE))
 
     # Input tools can store connection strings in attributes without an obvious file extension.
-    if not candidates and any(token in lowered_plugin for token in ("input", "download", "database", "indb")):
+    if not candidates and "textinput" not in lowered_plugin and any(token in lowered_plugin for token in ("input", "download", "database", "indb")):
         short_blob = " ".join(blob.split())[:500]
         if short_blob:
             candidates.append(short_blob)
@@ -654,6 +724,21 @@ def _extract_json_outputs(node: dict[str, Any], plugin: str) -> list[dict[str, A
         "type": _source_type(file_value, plugin),
         "tool": plugin,
     }]
+
+
+def _dedupe_assets(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str, str]] = set()
+    deduped: list[dict[str, Any]] = []
+    for item in items:
+        tool_id = str(item.get("toolId") or "")
+        name = str(item.get("name") or "").strip().lower()
+        path = str(item.get("path") or "").strip().lower()
+        key = (tool_id, name) if tool_id and name else (tool_id, path, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
 
 
 def _extract_edges(root: ET.Element) -> list[dict[str, Any]]:
@@ -860,7 +945,10 @@ def parse_workflow_xml(filename: str, content: bytes, package_file: str | None =
             "configurationText": _node_text_blob(node)[:4000],
             "config": _extract_node_config(node, plugin),
         })
-        data_sources.extend(_extract_sources(node, plugin))
+        node_sources = _extract_sources(node, plugin)
+        for source in node_sources:
+            source.setdefault("toolId", node_id)
+        data_sources.extend(node_sources)
         output_targets.extend(_extract_outputs(node, plugin))
         supported, reason = _classify_tool(plugin)
         workflow_nodes[-1]["supported"] = supported
@@ -873,6 +961,8 @@ def parse_workflow_xml(filename: str, content: bytes, package_file: str | None =
     unique_unsupported = sorted(set(unsupported_tools))
     unsupported_count = len(unsupported_tools)
     tool_count = len(nodes)
+    data_sources = _dedupe_assets(data_sources)
+    output_targets = _dedupe_assets(output_targets)
 
     if tool_count == 0:
         recommendations.append("No Alteryx tool nodes were found; verify the file is a workflow XML file.")
@@ -997,8 +1087,19 @@ def parse_workflow_json(filename: str, content: bytes, package_file: str | None 
     )
 
 
+def _asset_payload(filename: str, content: bytes) -> dict[str, Any]:
+    return {
+        "name": os.path.basename(filename),
+        "path": _normalize_package_path(filename),
+        "size": len(content),
+        "encoding": "base64",
+        "content": base64.b64encode(content).decode("ascii"),
+    }
+
+
 def _extract_from_archive(filename: str, content: bytes) -> list[WorkflowInventoryItem]:
     workflows: list[WorkflowInventoryItem] = []
+    assets: list[dict[str, Any]] = []
     with zipfile.ZipFile(BytesIO(content)) as archive:
         for entry in archive.infolist():
             if entry.is_dir():
@@ -1024,6 +1125,12 @@ def _extract_from_archive(filename: str, content: bytes) -> list[WorkflowInvento
             elif entry_ext in SUPPORTED_ARCHIVE_EXTENSIONS:
                 nested_name = f"{filename}!{entry.filename}"
                 workflows.extend(_extract_from_archive(nested_name, archive.read(entry)))
+            elif entry_ext in SUPPORTED_SOURCE_ASSET_EXTENSIONS:
+                assets.append(_asset_payload(entry.filename, archive.read(entry)))
+    if assets:
+        for workflow in workflows:
+            existing = list(getattr(workflow, "packageAssets", []) or [])
+            workflow.packageAssets = [*existing, *assets]
     return workflows
 
 

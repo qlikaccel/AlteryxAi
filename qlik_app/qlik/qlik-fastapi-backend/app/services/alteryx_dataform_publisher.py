@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata
+
 
 def _env(name: str, default: str = "") -> str:
     return (os.getenv(name) or default).strip()
@@ -57,6 +59,17 @@ def _write_dataform_credentials(project_dir: Path, project_id: str, location: st
     )
 
 
+def _normalize_dataform_project_for_cli(project_dir: Path) -> None:
+    # Dataform CLI 3.x rejects package.json/package-lock.json when
+    # workflow_settings.yaml is present because packages are resolved at runtime.
+    if not (project_dir / "workflow_settings.yaml").exists():
+        return
+    for filename in ("package.json", "package-lock.json"):
+        path = project_dir / filename
+        if path.exists():
+            path.unlink()
+
+
 def _write_service_account_json(work_dir: Path, env: dict[str, str]) -> None:
     service_account_json = _env("GCP_SERVICE_ACCOUNT_JSON")
     if service_account_json:
@@ -91,6 +104,25 @@ def _extract_missing_bigquery_tables(result: dict[str, Any]) -> list[str]:
     return sorted(set(missing))
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = _env(name)
+    if value == "":
+        return default
+    return value.lower() in {"1", "true", "yes", "y"}
+
+
+def _format_dataform_failure(result: dict[str, Any]) -> str:
+    stdout = str(result.get("stdout") or "").strip()
+    stderr = str(result.get("stderr") or "").strip()
+    details = []
+    if stderr:
+        details.append(f"stderr:\n{stderr[-4000:]}")
+    if stdout:
+        details.append(f"stdout:\n{stdout[-4000:]}")
+    suffix = "\n\n" + "\n\n".join(details) if details else ""
+    return f"Publish to BigQuery failed while running: {result['command']}{suffix}"
+
+
 def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     project_id = _required_env("GCP_PROJECT_ID")
     target_dataset = _required_env("GCP_BIGQUERY_DATASET")
@@ -122,19 +154,20 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
         _write_project_files(project_dir, files)
         _patch_workflow_settings(project_dir, project_id, target_dataset, location)
         _patch_declarations(project_dir, project_id, source_dataset)
+        _normalize_dataform_project_for_cli(project_dir)
         _write_dataform_credentials(project_dir, project_id, location)
 
-        commands = [
-            [resolved_dataform_executable, "compile", str(project_dir)],
-            [resolved_dataform_executable, "run", str(project_dir)],
-        ]
+        commands = []
+        if _env_flag("DATAFORM_RUN_COMPILE", True):
+            commands.append([resolved_dataform_executable, "compile", str(project_dir)])
+        commands.append([resolved_dataform_executable, "run", str(project_dir)])
         command_results: list[dict[str, Any]] = []
         for command in commands:
             result = _run_dataform_command(command, project_dir, run_env, timeout_seconds)
             command_results.append(result)
             if not result["success"]:
                 missing_tables = _extract_missing_bigquery_tables(result)
-                message = f"Publish to BigQuery failed while running: {result['command']}"
+                message = _format_dataform_failure(result)
                 if missing_tables:
                     message = (
                         "Dataform connected successfully, but required source table(s) "
@@ -157,6 +190,14 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
                     "message": message,
                 }
 
+        bigquery_metadata = fetch_bigquery_table_metadata(
+            project_id,
+            target_dataset,
+            final_table_name,
+            location,
+            run_env,
+        )
+
     return {
         "success": True,
         "status": "published",
@@ -168,6 +209,14 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
         "final_table_name": final_table_name,
         "final_model": final_model,
         "commands": command_results,
+        "bigquery_metadata": bigquery_metadata,
+        "row_count": bigquery_metadata.get("row_count"),
+        "total_rows": bigquery_metadata.get("total_rows"),
+        "record_count": bigquery_metadata.get("record_count"),
+        "total_records": bigquery_metadata.get("total_records"),
+        "column_count": bigquery_metadata.get("column_count"),
+        "total_columns": bigquery_metadata.get("total_columns"),
+        "available_columns": bigquery_metadata.get("available_columns") or [],
         "output_targets": project.get("output_targets", []),
         "output_count": project.get("output_count", 0),
         "message": "Dataform project published to BigQuery successfully.",
