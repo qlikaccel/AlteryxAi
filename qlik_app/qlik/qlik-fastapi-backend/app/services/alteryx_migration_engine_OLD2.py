@@ -173,6 +173,26 @@ def _dbt_identifier(value: str, fallback: str = "alteryx_model", max_length: int
     return _shorten_identifier(cleaned or fallback, max_length)
 
 
+def _safe_yaml_description(text: str) -> str:
+    """Return a YAML-safe single-quoted scalar for use in schema.yml description fields.
+
+    Double-quoted YAML scalars interpret backslash escape sequences (e.g. ``\\M`` →
+    unknown escape error).  Windows file paths written verbatim into a double-quoted
+    YAML value therefore break ``dbt parse`` on Linux.  This helper:
+
+    1. Converts every backslash to a forward slash (path-normalisation).
+    2. Strips double-quotes so they cannot prematurely close the scalar.
+    3. Wraps the result in *single* quotes.  Single-quoted YAML scalars treat every
+       character literally – no escape processing at all – so forward slashes,
+       colons, and any other path characters are perfectly safe.
+    4. Escapes any single-quote that appears *inside* the text by doubling it
+       (the only escaping rule in YAML single-quoted scalars).
+    """
+    sanitised = text.replace("\\", "/").replace('"', "")
+    sanitised = sanitised.replace("'", "''")  # escape inner single-quotes
+    return f"'{sanitised}'"
+
+
 def _dbt_source_name(source: dict[str, Any], index: int) -> str:
     name = str(source.get("name") or source.get("path") or f"source_{index}")
     name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet)$", "", name, flags=re.IGNORECASE)
@@ -442,6 +462,44 @@ def _sql_agg(action: str, field: str) -> str:
     return f"sum({numeric_expr})"
 
 
+def _match_func_call(expr: str, name_pattern: str) -> tuple[str, list[str]] | None:
+    """Match a complete function call that spans the *entire* expression.
+
+    Returns (matched_name, [arg1, arg2, ...]) or None.
+
+    Using greedy ``.+`` regexes to capture function arguments is fragile:
+    ``ToNumber([A]) - ToNumber([B])`` makes the greedy group consume
+    ``[A]) - ToNumber([B]`` as one argument, producing broken SQL like
+    ``safe_cast(safe_cast(`A` as numeric)) - ToNumber(... as float64)``.
+
+    This helper uses a parenthesis-depth counter so it only matches when the
+    function call is the *whole* expression (nothing follows the closing paren).
+    Compound expressions are intentionally left unmatched so the arithmetic
+    fallback path handles them correctly.
+    """
+    m = re.match(r"^(" + name_pattern + r")\s*\(", expr, flags=re.IGNORECASE)
+    if not m:
+        return None
+    start = m.end()  # index just after the opening '('
+    depth = 1
+    i = start
+    while i < len(expr) and depth > 0:
+        if expr[i] == "(":
+            depth += 1
+        elif expr[i] == ")":
+            depth -= 1
+        i += 1
+    if depth != 0:
+        return None  # unbalanced parens
+    remainder = expr[i:].strip()
+    if remainder:
+        return None  # compound expression — don't consume it here
+    inner = expr[start : i - 1].strip()
+    if not inner:
+        return None  # empty arg list — avoid producing safe_cast( as …)
+    return (m.group(1), _split_top_level_args(inner))
+
+
 def _split_top_level_args(value: str) -> list[str]:
     args: list[str] = []
     current: list[str] = []
@@ -498,12 +556,148 @@ def _literal_or_identifier_sql(expr: str) -> str:
     return value
 
 
-def _formula_to_sql(expression: str) -> str | None:
+def _formula_to_sql(expression: str) -> str | None:  # noqa: C901 – intentionally long dispatch
     expr = str(expression or "").strip()
     if not expr:
         return None
     if re.match(r"^IIF\s*\(", expr, flags=re.IGNORECASE):
         return _convert_iif_to_sql(expr)
+
+    # ------------------------------------------------------------------
+    # Alteryx → BigQuery function translations
+    #
+    # IMPORTANT: all single-argument functions use _match_func_call() which
+    # uses a parenthesis-depth counter and only matches when the function call
+    # spans the *entire* expression.  Compound expressions such as
+    # ``ToNumber([A]) - ToNumber([B])`` are intentionally left unmatched here
+    # so the arithmetic rewrite path below handles them correctly.
+    # Greedy ``.+`` regexes must NOT be used for argument extraction — they
+    # consume operators and adjacent calls producing broken SQL.
+    # ------------------------------------------------------------------
+
+    # Null()  →  NULL  (zero-arg, check before other patterns)
+    if re.match(r"^Null\s*\(\s*\)$", expr, flags=re.IGNORECASE):
+        return "null"
+
+    # DateTimeNow()  →  CURRENT_TIMESTAMP()
+    if re.match(r"^DateTimeNow\s*\(\s*\)$", expr, flags=re.IGNORECASE):
+        return "current_timestamp()"
+
+    # DateTimeToday()  →  CURRENT_DATE()
+    if re.match(r"^DateTimeToday\s*\(\s*\)$", expr, flags=re.IGNORECASE):
+        return "current_date()"
+
+    # ToNumber / ToDecimal / ToFloat  →  SAFE_CAST(… AS FLOAT64)
+    fc = _match_func_call(expr, r"To(?:Number|Decimal|Float)")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"safe_cast({inner} as float64)"
+
+    # ToInteger / ToInt  →  SAFE_CAST(… AS INT64)
+    fc = _match_func_call(expr, r"To(?:Integer|Int)")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"safe_cast({inner} as int64)"
+
+    # ToString  →  CAST(… AS STRING)
+    fc = _match_func_call(expr, r"ToString")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"cast({inner} as string)"
+
+    # IsNull  →  (… IS NULL)
+    fc = _match_func_call(expr, r"IsNull")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"({inner} is null)"
+
+    # IsEmpty  →  (… IS NULL OR CAST(… AS STRING) = '')
+    fc = _match_func_call(expr, r"IsEmpty")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"({inner} is null or cast({inner} as string) = '')"
+
+    # Length / StringLength  →  char_length(CAST(… AS STRING))
+    fc = _match_func_call(expr, r"(?:String)?Length")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"char_length(cast({inner} as string))"
+
+    # Abs  →  ABS
+    fc = _match_func_call(expr, r"Abs")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"abs({inner})"
+
+    # Ceil / Ceiling  →  CEIL
+    fc = _match_func_call(expr, r"Ceil(?:ing)?")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"ceil(safe_cast({inner} as numeric))"
+
+    # Floor  →  FLOOR
+    fc = _match_func_call(expr, r"Floor")
+    if fc:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"floor(safe_cast({inner} as numeric))"
+
+    # Left(str, n)  →  SUBSTR(CAST(… AS STRING), 1, n)
+    fc = _match_func_call(expr, r"Left")
+    if fc and len(fc[1]) == 2:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"substr(cast({inner} as string), 1, {fc[1][1].strip()})"
+
+    # Right(str, n)  →  SUBSTR(CAST(… AS STRING), -n)
+    fc = _match_func_call(expr, r"Right")
+    if fc and len(fc[1]) == 2:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"substr(cast({inner} as string), -{fc[1][1].strip()})"
+
+    # Mid(str, start[, length])  →  SUBSTR(…, start[, length])
+    fc = _match_func_call(expr, r"Mid")
+    if fc and len(fc[1]) in (2, 3):
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        if len(fc[1]) == 3:
+            return f"substr(cast({inner} as string), {fc[1][1].strip()}, {fc[1][2].strip()})"
+        return f"substr(cast({inner} as string), {fc[1][1].strip()})"
+
+    # Round(val, decimals)  →  ROUND(val, decimals)
+    fc = _match_func_call(expr, r"Round")
+    if fc and len(fc[1]) == 2:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        return f"round(safe_cast({inner} as numeric), {fc[1][1].strip()})"
+
+    # Replace(str, find, repl)  →  REPLACE(CAST(… AS STRING), find, repl)
+    fc = _match_func_call(expr, r"Replace")
+    if fc and len(fc[1]) == 3:
+        inner = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        find = fc[1][1].strip().replace('"', "'")
+        repl = fc[1][2].strip().replace('"', "'")
+        return f"replace(cast({inner} as string), {find}, {repl})"
+
+    # Concat(…)  →  CONCAT(…)
+    fc = _match_func_call(expr, r"Concat")
+    if fc:
+        translated = [_formula_to_sql(p) or _literal_or_identifier_sql(p) for p in fc[1]]
+        return f"concat({', '.join(translated)})"
+
+    # DateTimeDiff(end, start, unit)  →  DATE_DIFF / TIMESTAMP_DIFF
+    fc = _match_func_call(expr, r"DateTimeDiff")
+    if fc and len(fc[1]) == 3:
+        end_expr = _formula_to_sql(fc[1][0]) or _literal_or_identifier_sql(fc[1][0])
+        start_expr = _formula_to_sql(fc[1][1]) or _literal_or_identifier_sql(fc[1][1])
+        unit = fc[1][2].strip().strip("'\"").upper()
+        bq_unit_map = {"SECONDS": "SECOND", "MINUTES": "MINUTE", "HOURS": "HOUR",
+                       "DAYS": "DAY", "MONTHS": "MONTH", "YEARS": "YEAR"}
+        bq_unit = bq_unit_map.get(unit, unit)
+        if bq_unit in ("SECOND", "MINUTE", "HOUR"):
+            return f"timestamp_diff(safe_cast({end_expr} as timestamp), safe_cast({start_expr} as timestamp), {bq_unit})"
+        return f"date_diff(safe_cast({end_expr} as date), safe_cast({start_expr} as date), {bq_unit})"
+
+    # ------------------------------------------------------------------
+    # End of Alteryx function translations
+    # ------------------------------------------------------------------
+
     contains_match = re.match(r"Contains\s*\((.+),\s*['\"]([^'\"]+)['\"]\)", expr, flags=re.IGNORECASE | re.DOTALL)
     if contains_match:
         haystack = _formula_to_sql(contains_match.group(1)) or _literal_or_identifier_sql(contains_match.group(1))
@@ -547,6 +741,50 @@ def _formula_to_sql(expression: str) -> str | None:
             f"safe_divide(safe_cast({_sql_identifier(div_match.group(1))} as numeric), "
             f"nullif(safe_cast({_sql_identifier(div_match.group(2))} as numeric), 0))"
         )
+    # ------------------------------------------------------------------
+    # Compound-expression function rewrite
+    # Must run BEFORE the arithmetic [col] rewrite below.
+    # Handles expressions like ``ToNumber([A]) - ToNumber([B])`` where
+    # _match_func_call() above correctly declined (compound expression).
+    # We tokenise on operators at depth-0 and recursively translate each token.
+    # ------------------------------------------------------------------
+    _ALTERYX_FUNC_NAMES = re.compile(
+        r"\b(To(?:Number|Decimal|Float|Integer|Int)|ToString|IsNull|IsEmpty|"
+        r"(?:String)?Length|Left|Right|Mid|Replace|Abs|Round|Ceil(?:ing)?|Floor|"
+        r"Concat|DateTimeDiff|DateTimeNow|DateTimeToday|DateTimeYear|DateTimeMonth|"
+        r"LowerCase|Uppercase|Trim(?:Left|Right)?|Contains|IIF|Null)\s*\(",
+        re.IGNORECASE,
+    )
+    if _ALTERYX_FUNC_NAMES.search(expr):
+        tokens: list[str] = []
+        ops: list[str] = []
+        current: list[str] = []
+        depth = 0
+        for ch in expr:
+            if ch == "(":
+                depth += 1
+                current.append(ch)
+            elif ch == ")":
+                depth -= 1
+                current.append(ch)
+            elif ch in "+-*/" and depth == 0:
+                tokens.append("".join(current).strip())
+                ops.append(ch)
+                current = []
+            else:
+                current.append(ch)
+        tokens.append("".join(current).strip())
+        if len(tokens) > 1:
+            translated_tokens = [
+                _formula_to_sql(t) or _literal_or_identifier_sql(t)
+                for t in tokens
+            ]
+            result_parts: list[str] = [translated_tokens[0]]
+            for op, tok in zip(ops, translated_tokens[1:]):
+                result_parts.append(f" {op} {tok}")
+            return "".join(result_parts)
+    # ------------------------------------------------------------------
+
     arithmetic = re.sub(r"\[([^\]]+)\]", lambda m: f"safe_cast({_sql_identifier(m.group(1))} as numeric)", expr)
     if arithmetic != expr and re.search(r"[+\-*/]", arithmetic):
         return arithmetic.replace("NULL()", "null")
@@ -1077,10 +1315,17 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         source_model_names.append(source_name)
         description = str(source.get("path") or source.get("type") or "")
         identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
+        # Build a YAML-safe description. Windows paths contain backslashes which
+        # are interpreted as YAML escape sequences inside double-quoted scalars,
+        # causing ``dbt parse`` to fail with "found unknown escape character" on
+        # Linux/cloud deployments.  _safe_yaml_description() normalises slashes
+        # and wraps the value in single quotes (no escape processing in YAML).
+        source_display_name = str(source.get("name") or source_name)
+        desc_text = f"Landed source for {source_display_name}. Original path: {description}"
         source_rows.append(
             f"      - name: {source_name}\n"
             f"{identifier_line}"
-            f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '').replace(chr(92), '/')}\""
+            f"        description: {_safe_yaml_description(desc_text)}"
         )
         staging_files[f"models/staging/stg_{source_name}.sql"] = (
             "{{ config(materialized='view') }}\n\n"
@@ -1157,15 +1402,15 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         + "\n\nmodels:\n"
         + "\n".join(
             [
-                f"  - name: stg_{name}\n    description: \"Staging view for landed source {name}.\""
+                f"  - name: stg_{name}\n    description: 'Staging view for landed source {name}.'"
                 for name in source_model_names
             ]
         )
         + "".join(
-            f"\n  - name: {_output_model_name(output, index)}\n    description: \"Output model for Alteryx target {str(output.get('name') or output.get('path') or index).replace(chr(34), '')}.\""
+            f"\n  - name: {_output_model_name(output, index)}\n    description: {_safe_yaml_description('Output model for Alteryx target ' + str(output.get('name') or output.get('path') or index) + '.')}"
             for index, output in enumerate(output_targets, start=1)
         )
-        + f"\n  - name: {project_name}\n    description: \"Final scaffold model for {workflow.get('name', 'Alteryx workflow')}.\"\n"
+        + f"\n  - name: {project_name}\n    description: {_safe_yaml_description('Final scaffold model for ' + str(workflow.get('name', 'Alteryx workflow')) + '.')}\n"
     )
 
     files = {
