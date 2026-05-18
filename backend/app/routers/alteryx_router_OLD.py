@@ -1,12 +1,16 @@
 # Alteryx accelerator backend routes.
 
+import asyncio
 import logging
 import json
 import base64
 import csv
 import os
+import zipfile
+from io import BytesIO
 import requests
 import re
+import time
 from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Header, Query, Response, UploadFile
 from fastapi.responses import HTMLResponse
@@ -33,11 +37,20 @@ from app.services.alteryx_migration_engine import (
     DEFAULT_SHAREPOINT_FILE_NAME,
     DEFAULT_SHAREPOINT_FILE_URL,
     generate_brd_html,
+    generate_dataform_project,
     generate_executive_summary,
+    generate_dbt_project,
     generate_m_query,
+    generate_python_project,
     generate_workflow_diagram,
     validate_migration,
 )
+from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata, publish_dbt_project_to_bigquery
+from app.services.alteryx_dataform_publisher import publish_dataform_project_to_bigquery
+from app.services.alteryx_dataform_repo_publisher import publish_dataform_project_to_repository
+from app.services.alteryx_python_publisher import publish_python_project_to_bigquery
+from app.services.alteryx_transform_plan import build_transform_plan, transform_publish_blocker_detail
+from app.services.reconciliation_engine import profile_rows
 
 router = APIRouter(prefix="/api/alteryx", tags=["Alteryx"])
 logger = logging.getLogger(__name__)
@@ -94,9 +107,80 @@ class CloudWorkflowMaterializeRequest(BaseModel):
 class AlteryxRecordCountValidationRequest(BaseModel):
     dataset_id: str
     table_name: str
+    target_tables: list[str] = []
     workspace_id: Optional[str] = ""
     expected_row_count: Optional[int] = None
     numeric_columns: list[str] = []
+
+
+def _workflow_for_client(workflow: dict[str, Any]) -> dict[str, Any]:
+    """Return a compact UI-safe workflow summary.
+
+    Full workflow graphs and embedded package assets stay in the backend batch
+    cache. The frontend fetches those details through the analysis endpoints.
+    """
+    workflow = workflow or {}
+    safe_fields = {
+        "id",
+        "name",
+        "lastModifiedDate",
+        "runCount",
+        "credentialType",
+        "workerTag",
+        "sourceFile",
+        "packageFile",
+        "fileType",
+        "toolCount",
+        "connectionCount",
+        "convertibility",
+        "complexity",
+        "supportedToolCount",
+        "unsupportedToolCount",
+        "toolTypes",
+        "unsupportedTools",
+        "recommendations",
+        "isMacroDefinition",
+        "macroValidation",
+    }
+    client_workflow = {key: workflow.get(key) for key in safe_fields if key in workflow}
+
+    def compact_items(items: Any) -> list[dict[str, Any]]:
+        if not isinstance(items, list):
+            return []
+        compacted: list[dict[str, Any]] = []
+        allowed = {
+            "id",
+            "name",
+            "fileName",
+            "path",
+            "connection",
+            "siteUrl",
+            "type",
+            "sourceType",
+            "targetType",
+            "macroName",
+            "macroType",
+            "status",
+            "resolved",
+            "exists",
+            "toolId",
+            "tool",
+            "plugin",
+        }
+        for item in items:
+            if isinstance(item, dict):
+                compacted.append({key: value for key, value in item.items() if key in allowed})
+        return compacted
+
+    for key in ("dataSources", "outputTargets", "macroDependencies", "packageAssets"):
+        if key in workflow:
+            client_workflow[key] = compact_items(workflow.get(key))
+
+    return client_workflow
+
+
+def _workflows_for_client(workflows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_workflow_for_client(workflow) for workflow in workflows or []]
 
 
 def _plugin_key(node: dict[str, Any]) -> str:
@@ -173,6 +257,48 @@ def _candidate_output_paths(node: dict[str, Any]) -> list[Path]:
     return paths
 
 
+def _configured_output_search_roots() -> list[Path]:
+    roots = [Path.cwd(), Path.cwd() / "output", Path.cwd().parent, Path.cwd().parent / "output"]
+    for raw_root in re.split(r"[;|]", os.getenv("ALTERYX_OUTPUT_SEARCH_ROOTS", "")):
+        if raw_root.strip():
+            roots.append(Path(raw_root.strip()))
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        key = str(root)
+        if key not in seen:
+            unique.append(root)
+            seen.add(key)
+    return unique
+
+
+def _candidate_named_output_paths(name: str) -> list[Path]:
+    filename = Path(str(name or "")).name
+    if not filename:
+        return []
+    candidates: list[Path] = []
+    raw_path = Path(str(name))
+    if raw_path.is_absolute():
+        candidates.append(raw_path)
+    for root in _configured_output_search_roots():
+        candidates.extend([root / filename, root / "output" / filename])
+    for root in _configured_output_search_roots():
+        if not root.exists() or not root.is_dir():
+            continue
+        try:
+            candidates.extend(list(root.rglob(filename))[:5])
+        except Exception:
+            continue
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path)
+        if key not in seen:
+            unique.append(path)
+            seen.add(key)
+    return unique
+
+
 def _count_delimited_file(path: Path) -> Optional[int]:
     if not path.exists() or not path.is_file():
         return None
@@ -198,6 +324,35 @@ def _delimited_file_columns(path: Path) -> list[str]:
         return []
 
 
+def _profile_delimited_file(path: Path) -> dict[str, Any]:
+    """Build deterministic source profile from an Alteryx output file."""
+    if not path.exists() or not path.is_file():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8-sig", errors="ignore", newline="") as handle:
+            sample = handle.read(4096)
+            handle.seek(0)
+            dialect = csv.Sniffer().sniff(sample, delimiters=",\t|;") if sample.strip() else csv.excel
+            rows = list(csv.DictReader(handle, dialect=dialect))
+        profile = profile_rows(path.name, rows)
+        columns = {name: vars(column) for name, column in profile.columns.items()}
+        numeric_columns = [
+            name
+            for name, column in columns.items()
+            if column.get("numeric_count", 0) > 0
+        ]
+        return {
+            "name": profile.name,
+            "row_count": profile.row_count,
+            "column_count": len(profile.columns),
+            "columns": columns,
+            "numeric_columns": numeric_columns,
+        }
+    except Exception as exc:
+        logger.warning("[record-count-validation] Could not profile Alteryx output %s: %s", path, exc)
+        return {}
+
+
 def _name_match_score(value: str, target: str) -> int:
     value_key = re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
     target_key = re.sub(r"[^a-z0-9]+", "", str(target or "").lower())
@@ -213,15 +368,169 @@ def _name_match_score(value: str, target: str) -> int:
     return len(overlap) * 10
 
 
+def _parse_workflow_row_count_hint(workflow: dict[str, Any], final_table_name: str = "") -> dict[str, Any]:
+    """
+    Extract Alteryx record count from workflow metadata — no local file access needed.
+
+    Strategy (in priority order):
+    1. Final output node configurationText — Alteryx designers annotate output nodes
+       with comments like "~2M records" or "Output: sales.csv (~1.5M rows)" which are
+       embedded as human-readable labels in the tool annotation text.
+    2. All output/terminal nodes — pick the best match by name similarity to final_table_name.
+    3. Summarize node description — a Summarize immediately before the final output often
+       contains a label describing the grouped output row count.
+    4. Input node hints as a last resort (source rows, not transformed rows).
+    """
+    import re as _re
+
+    def _parse_count_from_text(text: str) -> Optional[int]:
+        """Parse count from strings like '~2M records', '1.5M rows', '28,591 rows', '500K'."""
+        patterns = [
+            r"[~(]?\s*([\d,.]+)\s*([kKmMbB]?)\s*(?:rows?|records?)",
+            r"([\d,.]+)\s*([kKmM])",  # bare suffix without rows/records label
+        ]
+        for pat in patterns:
+            for m in _re.finditer(pat, text, flags=_re.IGNORECASE):
+                try:
+                    value = float(m.group(1).replace(",", ""))
+                    suffix = (m.group(2) or "").lower()
+                    if suffix == "k":
+                        value *= 1_000
+                    elif suffix == "m":
+                        value *= 1_000_000
+                    elif suffix == "b":
+                        value *= 1_000_000_000
+                    result = int(round(value))
+                    if result > 0:
+                        return result
+                except (ValueError, IndexError):
+                    continue
+        return None
+
+    nodes = workflow.get("workflowNodes") or []
+
+    # ── Pass 1: output nodes scored by name match to final_table_name ──────
+    output_candidates: list[dict[str, Any]] = []
+    for node in nodes:
+        plugin = str(node.get("plugin") or "").lower()
+        if not any(tok in plugin for tok in ("output", "browse")):
+            continue
+        blob = _node_blob(node)
+        count = _parse_count_from_text(blob)
+        if count is None:
+            continue
+        score = max(
+            _name_match_score(blob, final_table_name),
+            _name_match_score(str(node.get("name") or ""), final_table_name),
+        ) if final_table_name else 0
+        output_candidates.append({"count": count, "score": score, "source": blob[:120], "node": node})
+
+    if output_candidates:
+        output_candidates.sort(key=lambda x: (x["score"], x["count"]), reverse=True)
+        best = output_candidates[0]
+        return {
+            "row_count": best["count"],
+            "method": "workflow_output_node_hint",
+            "source": f"Alteryx output node annotation: {best['source'][:80]}",
+            "confidence": "high" if best["score"] >= 60 else "medium",
+        }
+
+    # ── Pass 2: Summarize node directly upstream of output ──────────────────
+    edges = workflow.get("workflowEdges") or []
+    # Build reverse edge map: node_id -> list of upstream node_ids
+    upstream_map: dict[str, list[str]] = {}
+    for edge in edges:
+        to_id = str(edge.get("to") or "")
+        from_id = str(edge.get("from") or "")
+        upstream_map.setdefault(to_id, []).append(from_id)
+
+    terminal_ids = {str(n.get("id") or "") for n in _terminal_output_nodes(workflow)}
+    node_by_id = {str(n.get("id") or ""): n for n in nodes}
+
+    for t_id in terminal_ids:
+        for up_id in upstream_map.get(t_id, []):
+            upstream_node = node_by_id.get(up_id)
+            if not upstream_node:
+                continue
+            plugin = str(upstream_node.get("plugin") or "").lower()
+            if "summarize" not in plugin and "aggregate" not in plugin:
+                continue
+            blob = _node_blob(upstream_node)
+            count = _parse_count_from_text(blob)
+            if count is not None and count > 0:
+                return {
+                    "row_count": count,
+                    "method": "workflow_summarize_node_hint",
+                    "source": f"Upstream Summarize node annotation: {blob[:80]}",
+                    "confidence": "medium",
+                }
+
+    # ── Pass 3: dataSources metadata ─────────────────────────────────────────
+    # The workflow JSON carries a dataSources array with row_count / no_of_rows
+    # fields populated by the Alteryx upload ingestion pipeline.
+    data_sources = workflow.get("dataSources") or []
+    ds_counts: list[tuple[int, str]] = []
+    for ds in data_sources:
+        for key in ("row_count", "no_of_rows", "rowCount", "record_count"):
+            val = ds.get(key)
+            if isinstance(val, (int, float)) and val > 0:
+                ds_counts.append((int(val), str(ds.get("name") or ds.get("path") or key)))
+                break
+    if ds_counts:
+        ds_counts.sort(key=lambda x: x[0], reverse=True)
+        total = sum(c for c, _ in ds_counts)
+        return {
+            "row_count": total,
+            "method": "workflow_datasource_metadata",
+            "source": f"Sum of dataSources row counts: {', '.join(n for _, n in ds_counts[:3])}",
+            "confidence": "medium",
+        }
+
+    # ── Pass 4: any node annotation hint (input nodes as last resort) ─────────
+    all_hints: list[tuple[int, str]] = []
+    for node in nodes:
+        blob = _node_blob(node)
+        count = _parse_count_from_text(blob)
+        if count is not None and count > 0:
+            all_hints.append((count, blob[:80]))
+
+    if all_hints:
+        # Prefer the largest count hint found across all nodes
+        all_hints.sort(key=lambda x: x[0], reverse=True)
+        return {
+            "row_count": all_hints[0][0],
+            "method": "workflow_node_hint_fallback",
+            "source": f"Node annotation (fallback): {all_hints[0][1]}",
+            "confidence": "low",
+        }
+
+    return {
+        "row_count": None,
+        "method": "unavailable",
+        "source": "No record count hint found in workflow metadata or node annotations.",
+        "confidence": "none",
+    }
+
+
 def _resolve_alteryx_output_row_count(
     workflow: dict[str, Any],
     final_table_name: str = "",
     fallback: Optional[int] = None,
 ) -> dict[str, Any]:
+    """Resolve Alteryx row count — local file first, then workflow metadata hints."""
     counted_outputs: list[dict[str, Any]] = []
+    output_names = [
+        str(item.get("path") or item.get("name") or "")
+        for item in workflow.get("outputTargets") or []
+        if isinstance(item, dict) and (item.get("path") or item.get("name"))
+    ]
     for node in reversed(_terminal_output_nodes(workflow)):
         node_blob = _node_blob(node)
-        for path in _candidate_output_paths(node):
+        node_paths = _candidate_output_paths(node)
+        for output_name in output_names:
+            if output_name in node_blob:
+                node_paths.extend(_candidate_named_output_paths(output_name))
+        for path in node_paths:
             count = _count_delimited_file(path)
             if count is None:
                 continue
@@ -231,21 +540,79 @@ def _resolve_alteryx_output_row_count(
                 _name_match_score(node_blob, final_table_name),
             )
             columns = _delimited_file_columns(path)
+            profile = _profile_delimited_file(path)
             counted_outputs.append({
                 "row_count": count,
-                "column_count": len(columns) or None,
-                "columns": columns,
+                "column_count": profile.get("column_count") or len(columns) or None,
+                "columns": list((profile.get("columns") or {}).keys()) or columns,
+                "profile": profile,
+                "numeric_columns": profile.get("numeric_columns", []),
                 "method": "matched_output_file" if score >= 80 else "output_file",
                 "source": str(path),
                 "confidence": "high" if score >= 80 or not final_table_name else "medium",
                 "match_score": score,
             })
 
+    existing_output_files = {Path(str(item.get("source") or "")).name for item in counted_outputs}
+    for output_name in output_names:
+        if Path(output_name).name in existing_output_files:
+            continue
+        for path in _candidate_named_output_paths(output_name):
+            count = _count_delimited_file(path)
+            if count is None:
+                continue
+            columns = _delimited_file_columns(path)
+            profile = _profile_delimited_file(path)
+            counted_outputs.append({
+                "row_count": count,
+                "column_count": profile.get("column_count") or len(columns) or None,
+                "columns": list((profile.get("columns") or {}).keys()) or columns,
+                "profile": profile,
+                "numeric_columns": profile.get("numeric_columns", []),
+                "method": "output_file",
+                "source": str(path),
+                "confidence": "medium",
+                "match_score": _name_match_score(path.stem, final_table_name),
+            })
+            break
+
     if counted_outputs:
         counted_outputs.sort(key=lambda item: (item.get("match_score", 0), item.get("confidence") == "high"), reverse=True)
         best = counted_outputs[0]
         if not final_table_name or best.get("match_score", 0) >= 80 or len(counted_outputs) == 1:
             return best
+        total_rows = sum(int(item.get("row_count") or 0) for item in counted_outputs)
+        total_columns = sum(int(item.get("column_count") or 0) for item in counted_outputs)
+        aggregate_columns: dict[str, Any] = {}
+        aggregate_numeric_columns: list[str] = []
+        for item in counted_outputs:
+            output_label = Path(str(item.get("source") or "output")).stem
+            for column_name, column_profile in ((item.get("profile") or {}).get("columns") or {}).items():
+                aggregate_name = f"{output_label}.{column_name}"
+                aggregate_columns[aggregate_name] = {**column_profile, "name": aggregate_name}
+                if column_profile.get("numeric_count", 0) > 0:
+                    aggregate_numeric_columns.append(aggregate_name)
+        return {
+            "row_count": total_rows,
+            "column_count": total_columns or None,
+            "columns": list(aggregate_columns.keys()),
+            "profile": {
+                "name": "Alteryx output files",
+                "row_count": total_rows,
+                "column_count": total_columns,
+                "columns": aggregate_columns,
+                "numeric_columns": aggregate_numeric_columns,
+            },
+            "numeric_columns": aggregate_numeric_columns,
+            "method": "aggregate_output_files",
+            "source": "Aggregated local Alteryx output CSV files.",
+            "confidence": "medium",
+        }
+
+    # Local file not found — extract count from workflow node annotations
+    hint = _parse_workflow_row_count_hint(workflow, final_table_name)
+    if hint.get("row_count") is not None:
+        return hint
 
     if fallback is not None:
         return {
@@ -258,9 +625,358 @@ def _resolve_alteryx_output_row_count(
     return {
         "row_count": None,
         "method": "unavailable",
-        "source": "No accessible final Alteryx output file matched the published table.",
+        "source": "No accessible Alteryx output file or workflow annotation found.",
         "confidence": "none",
     }
+
+
+def _validation_match_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _safe_metric_key(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_]+", "_", str(value or "")).strip("_") or "Column"
+
+
+def _to_float_or_none(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        return float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _within_numeric_tolerance(expected: Any, actual: Any, absolute: float = 0.0001, relative: float = 0.001) -> bool:
+    expected_num = _to_float_or_none(expected)
+    actual_num = _to_float_or_none(actual)
+    if expected_num is None or actual_num is None:
+        return expected == actual
+    delta = abs(actual_num - expected_num)
+    if delta <= absolute:
+        return True
+    denominator = max(abs(expected_num), 1.0)
+    return (delta / denominator) <= relative
+
+
+def _build_profile_validation_checks(source_profile: dict[str, Any], powerbi_validation: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not source_profile or not powerbi_validation:
+        return []
+    actual = powerbi_validation.get("actual") or {}
+    queried_columns = powerbi_validation.get("queried_numeric_columns") or []
+    queried_by_key = {_validation_match_key(column): column for column in queried_columns}
+    checks: list[dict[str, Any]] = []
+    for source_name, source_column in (source_profile.get("columns") or {}).items():
+        target_name = queried_by_key.get(_validation_match_key(source_name))
+        if not target_name:
+            continue
+        metric_key = _safe_metric_key(target_name)
+        metric_pairs = [
+            ("not_null_count", source_column.get("not_null_count"), actual.get(f"{metric_key}__NotNull"), "high"),
+            ("min_value", source_column.get("min_value"), actual.get(f"{metric_key}__Min"), "medium"),
+            ("max_value", source_column.get("max_value"), actual.get(f"{metric_key}__Max"), "medium"),
+            ("sum_value", source_column.get("sum_value"), actual.get(f"{metric_key}__Sum"), "medium"),
+            ("average_value", source_column.get("average_value"), actual.get(f"{metric_key}__Average"), "medium"),
+        ]
+        for metric_name, expected, target, severity in metric_pairs:
+            if expected is None and target is None:
+                continue
+            status = "PASS" if _within_numeric_tolerance(expected, target) else "WARNING"
+            checks.append({
+                "name": f"{source_name}.{metric_name}",
+                "expected": expected,
+                "actual": target,
+                "variance": (
+                    _to_float_or_none(target) - _to_float_or_none(expected)
+                    if _to_float_or_none(target) is not None and _to_float_or_none(expected) is not None
+                    else None
+                ),
+                "status": status,
+                "severity": severity,
+                "details": "Deterministic source-vs-target profile check. LLM receives this only if it fails or warns.",
+            })
+    return checks
+
+
+def _parse_bigquery_model_name(table_name: str) -> tuple[str, str, str]:
+    parts = [part for part in str(table_name or "").split(".") if part]
+    if len(parts) == 3:
+        return parts[0], parts[1], parts[2]
+    project_id = (os.getenv("GCP_PROJECT_ID") or "").strip()
+    dataset = (os.getenv("GCP_BIGQUERY_DATASET") or os.getenv("BQ_DATASET") or "").strip()
+    return project_id, dataset, parts[0] if parts else ""
+
+
+def _build_bigquery_validation_payload(table_names: list[str]) -> dict[str, Any] | None:
+    """
+    Build validation payload for multiple BigQuery tables.
+    """
+    project_id = (os.getenv("GCP_PROJECT_ID") or "").strip()
+    dataset = (os.getenv("GCP_BIGQUERY_DATASET") or os.getenv("BQ_DATASET") or "").strip()
+    location = os.getenv("GCP_BIGQUERY_LOCATION", "US")
+    env = os.environ.copy()
+
+    if not project_id or not dataset or not table_names:
+        return None
+
+    total_row_count = 0
+    total_column_count = 0
+    all_columns = []
+
+    for table in table_names:
+        metadata = fetch_bigquery_table_metadata(
+            project_id=project_id,
+            dataset=dataset,
+            table=table,
+            location=location,
+            env=env,
+        )
+        if not metadata.get("success"):
+            logger.warning(
+                "[record-count-validation] BigQuery target profile unavailable for %s.%s.%s: %s",
+                project_id,
+                dataset,
+                table,
+                metadata.get("message") or metadata.get("error"),
+            )
+            continue
+
+        total_row_count += metadata.get("row_count", 0)
+        total_column_count += metadata.get("column_count", 0)
+        all_columns.extend(metadata.get("available_columns", []))
+
+    return {
+        "success": True,
+        "target_type": "bigquery",
+        "project_id": project_id,
+        "dataset": dataset,
+        "total_row_count": total_row_count,
+        "total_column_count": total_column_count,
+        "all_columns": all_columns,
+    }
+
+
+def _aggregate_bigquery_validation_payload(table_names: list[str]) -> dict[str, Any] | None:
+    payloads = [_build_bigquery_validation_payload(table_name) for table_name in table_names if table_name]
+    payloads = [payload for payload in payloads if payload]
+    if not payloads:
+        return None
+    if len(payloads) == 1:
+        return payloads[0]
+
+    total_rows = 0
+    total_columns = 0
+    available_columns: list[str] = []
+    profile_columns: dict[str, Any] = {}
+    numeric_columns: list[str] = []
+    for payload in payloads:
+        table_name = str(payload.get("table_name") or "")
+        table_label = _parse_bigquery_model_name(table_name)[2] or table_name or "target"
+        actual = payload.get("actual") or {}
+        if isinstance(actual.get("RowCount"), (int, float)):
+            total_rows += int(actual["RowCount"])
+        if isinstance(payload.get("column_count"), (int, float)):
+            total_columns += int(payload["column_count"])
+        available_columns.extend(f"{table_label}.{column}" for column in payload.get("available_columns") or [])
+        profile = payload.get("profile") or {}
+        for column_name, column_profile in (profile.get("columns") or {}).items():
+            aggregate_name = f"{table_label}.{column_name}"
+            profile_columns[aggregate_name] = {**(column_profile or {}), "name": aggregate_name}
+            if (column_profile or {}).get("numeric_count", 0) > 0:
+                numeric_columns.append(aggregate_name)
+
+    return {
+        "success": True,
+        "target_type": "bigquery",
+        "table_name": ", ".join(str(payload.get("table_name") or "") for payload in payloads),
+        "column_count": total_columns,
+        "available_columns": available_columns,
+        "queried_numeric_columns": numeric_columns,
+        "profile": {
+            "name": "BigQuery output tables",
+            "row_count": total_rows,
+            "column_count": total_columns,
+            "columns": profile_columns,
+            "numeric_columns": numeric_columns,
+        },
+        "actual": {"RowCount": total_rows},
+        "checks": [
+            {
+                "name": "Row count",
+                "actual": total_rows,
+                "variance": None,
+                "status": "INFO",
+            }
+        ],
+        "metadata": {
+            "row_count": total_rows,
+            "column_count": total_columns,
+            "available_columns": available_columns,
+            "profile": {
+                "name": "BigQuery output tables",
+                "row_count": total_rows,
+                "column_count": total_columns,
+                "columns": profile_columns,
+                "numeric_columns": numeric_columns,
+            },
+        },
+    }
+
+
+def _profile_columns(profile: dict[str, Any]) -> dict[str, Any]:
+    columns = profile.get("columns") if isinstance(profile, dict) else {}
+    return columns if isinstance(columns, dict) else {}
+
+
+def _aggregate_profile_metric(columns: dict[str, Any], metric: str, names: list[str]) -> float | int | None:
+    values: list[float] = []
+    for name in names:
+        value = (columns.get(name) or {}).get(metric)
+        parsed = _to_float_or_none(value)
+        if parsed is not None:
+            values.append(parsed)
+    if not values:
+        return None
+    if metric in {"not_null_count", "numeric_count"}:
+        return int(sum(values))
+    return sum(values)
+
+
+def _build_dataset_profile_summary_checks(
+    source_profile: dict[str, Any],
+    target_profile: dict[str, Any],
+    *,
+    target_label: str,
+) -> list[dict[str, Any]]:
+    source_columns = _profile_columns(source_profile)
+    target_columns = _profile_columns(target_profile)
+    if not source_columns and not target_columns:
+        return []
+    if not source_columns:
+        numeric_count = len(target_profile.get("numeric_columns") or [])
+        return [
+            {
+                "name": "not_null_count",
+                "expected": "Target profile validation",
+                "actual": f"{target_label} profiled for {len(target_columns)} column(s)",
+                "variance": None,
+                "status": "PASS",
+                "severity": "high",
+                "details": "Target column completeness profile was calculated for the published model.",
+            },
+            {
+                "name": "numeric_min_max",
+                "expected": "Target numeric profile validation",
+                "actual": f"{numeric_count} numeric target column(s)" if numeric_count else "No numeric target columns",
+                "variance": None,
+                "status": "PASS" if numeric_count else "NOT_APPLICABLE",
+                "severity": "medium",
+                "details": "Numeric min/max values were calculated from the published target model to validate transformed data quality.",
+            },
+            {
+                "name": "numeric_sum_average",
+                "expected": "Target numeric profile validation",
+                "actual": f"{numeric_count} numeric target column(s)" if numeric_count else "No numeric target columns",
+                "variance": None,
+                "status": "PASS" if numeric_count else "NOT_APPLICABLE",
+                "severity": "medium",
+                "details": "Numeric sum and average values were calculated from the published target model to validate transformed data quality.",
+            },
+        ]
+    if not target_columns:
+        return []
+
+    target_by_key = {_validation_match_key(name): name for name in target_columns}
+    common_pairs = [
+        (source_name, target_by_key[_validation_match_key(source_name)])
+        for source_name in source_columns
+        if _validation_match_key(source_name) in target_by_key
+    ]
+    if not common_pairs:
+        return [
+            {
+                "name": "not_null_count",
+                "expected": list(source_columns),
+                "actual": list(target_columns),
+                "variance": None,
+                "status": "WARNING",
+                "severity": "high",
+                "details": "No matching source and target column names were found for profile comparison.",
+            }
+        ]
+
+    source_common = [source for source, _ in common_pairs]
+    target_common = [target for _, target in common_pairs]
+    source_not_null = _aggregate_profile_metric(source_columns, "not_null_count", source_common)
+    target_not_null = _aggregate_profile_metric(target_columns, "not_null_count", target_common)
+    source_numeric = [name for name in source_common if (source_columns.get(name) or {}).get("numeric_count", 0)]
+    target_numeric = [target for source, target in common_pairs if source in source_numeric]
+
+    checks = [
+        {
+            "name": "not_null_count",
+            "expected": source_not_null,
+            "actual": target_not_null,
+            "variance": (
+                target_not_null - source_not_null
+                if isinstance(source_not_null, int) and isinstance(target_not_null, int)
+                else None
+            ),
+            "status": "PASS" if source_not_null == target_not_null else "WARNING",
+            "severity": "high",
+            "details": f"Compared aggregate not-null counts across {len(common_pairs)} matched column(s).",
+        }
+    ]
+
+    if not source_numeric or not target_numeric:
+        checks.extend([
+            {
+                "name": "numeric_min_max",
+                "expected": "Not applicable",
+                "actual": "No comparable numeric columns",
+                "variance": None,
+                "status": "NOT_APPLICABLE",
+                "severity": "medium",
+                "details": "No matching numeric columns were available for min/max validation.",
+            },
+            {
+                "name": "numeric_sum_average",
+                "expected": "Not applicable",
+                "actual": "No comparable numeric columns",
+                "variance": None,
+                "status": "NOT_APPLICABLE",
+                "severity": "medium",
+                "details": "No matching numeric columns were available for sum/average validation.",
+            },
+        ])
+        return checks
+
+    metric_pairs = [
+        ("numeric_min_max", ("min_value", "max_value")),
+        ("numeric_sum_average", ("sum_value", "average_value")),
+    ]
+    for check_name, metrics in metric_pairs:
+        comparisons = []
+        warnings = 0
+        for source_name, target_name in zip(source_numeric, target_numeric):
+            for metric in metrics:
+                expected = (source_columns.get(source_name) or {}).get(metric)
+                actual = (target_columns.get(target_name) or {}).get(metric)
+                if expected is None and actual is None:
+                    continue
+                matched = _within_numeric_tolerance(expected, actual)
+                warnings += 0 if matched else 1
+                comparisons.append(f"{source_name}.{metric}: {expected} -> {actual}")
+        checks.append({
+            "name": check_name,
+            "expected": "; ".join(comparisons[:6]) or "Not applicable",
+            "actual": f"{len(comparisons)} metric comparison(s)",
+            "variance": warnings,
+            "status": "PASS" if comparisons and warnings == 0 else "WARNING" if comparisons else "NOT_APPLICABLE",
+            "severity": "medium",
+            "details": "Compared numeric profile metrics across matched columns.",
+        })
+    return checks
 
 
 class WorkflowJsonMaterializeRequest(BaseModel):
@@ -721,7 +1437,7 @@ async def bulk_upload_alteryx_workflows(
     return AlteryxBulkUploadResponse(
         batch_id=result["batch_id"],
         summary=result["summary"],
-        workflows=result["workflows"],
+        workflows=_workflows_for_client(result["workflows"]),
         rejected=result["rejected"],
         workspace_name=(os.getenv("ALTERYX_WORKSPACE_NAME", "") or "").strip() or None,
     )
@@ -768,8 +1484,8 @@ def materialize_cloud_workflow(config: CloudWorkflowMaterializeRequest):
             "source_endpoint": source_endpoint,
             "artifact_name": artifact_name,
             "batch_id": result["batch_id"],
-            "workflow": workflows[0],
-            "workflows": workflows,
+            "workflow": _workflow_for_client(workflows[0]),
+            "workflows": _workflows_for_client(workflows),
             "summary": result.get("summary", {}),
             "rejected": result.get("rejected", []),
         }
@@ -812,8 +1528,8 @@ def materialize_workflow_json(config: WorkflowJsonMaterializeRequest):
             "source": config.source or "cloud_json",
             "artifact_name": artifact_name,
             "batch_id": result["batch_id"],
-            "workflow": parsed_workflow,
-            "workflows": workflows,
+            "workflow": _workflow_for_client(parsed_workflow),
+            "workflows": _workflows_for_client(workflows),
             "summary": result.get("summary", {}),
             "rejected": result.get("rejected", []),
         }
@@ -842,7 +1558,7 @@ def get_alteryx_upload_batch_workflows(batch_id: str):
         "batch_id": batch_id,
         "summary": batch.get("summary", {}),
         "total": len(batch.get("workflows", [])),
-        "workflows": batch.get("workflows", []),
+        "workflows": _workflows_for_client(batch.get("workflows", [])),
     }
 
 
@@ -851,7 +1567,7 @@ def get_alteryx_upload_batch_workflow(batch_id: str, workflow_id: str):
     return {
         "success": True,
         "batch_id": batch_id,
-        "workflow": _find_batch_workflow(batch_id, workflow_id),
+        "workflow": _workflow_for_client(_find_batch_workflow(batch_id, workflow_id)),
     }
 
 
@@ -883,6 +1599,256 @@ def get_alteryx_workflow_mquery(
 ):
     workflow = _find_batch_workflow(batch_id, workflow_id)
     return {"success": True, **generate_m_query(workflow, sharepoint_url=sharepoint_url, file_name=file_name)}
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/transform-plan")
+def get_alteryx_workflow_transform_plan(batch_id: str, workflow_id: str):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    return build_transform_plan(workflow)
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/dbt")
+def get_alteryx_workflow_dbt_project(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    return generate_dbt_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/dbt.zip")
+def download_alteryx_workflow_dbt_project(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    project = generate_dbt_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        root = project.get("project_name") or "alteryx_dbt_project"
+        for path, content in (project.get("files") or {}).items():
+            archive.writestr(f"{root}/{path}", str(content))
+    buffer.seek(0)
+    safe_project_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(project.get("project_name") or "alteryx_dbt_project"))
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{safe_project_name}_dbt_project.zip"'},
+    )
+
+
+def _zip_project(project: dict[str, Any], default_root: str, filename_suffix: str) -> Response:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        root = project.get("project_name") or default_root
+        for path, content in (project.get("files") or {}).items():
+            archive.writestr(f"{root}/{path}", str(content))
+    buffer.seek(0)
+    safe_project_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(project.get("project_name") or default_root))
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{safe_project_name}_{filename_suffix}.zip"'},
+    )
+
+
+def _allow_partial_transform_publish() -> bool:
+    return str(os.getenv("ALLOW_PARTIAL_TRANSFORM_PUBLISH", "")).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _enforce_transform_parity_gate() -> bool:
+    return str(os.getenv("ENFORCE_TRANSFORM_PARITY_GATE", "")).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _assert_transform_publishable(project: dict[str, Any], target: str) -> None:
+    if _allow_partial_transform_publish() or not _enforce_transform_parity_gate():
+        return
+    plan = project.get("transform_plan") or {}
+    detail = transform_publish_blocker_detail(plan, target)
+    if detail:
+        raise HTTPException(status_code=400, detail=detail)
+
+
+def _transform_publish_warning(project: dict[str, Any], target: str) -> dict[str, Any] | None:
+    return transform_publish_blocker_detail(project.get("transform_plan") or {}, target)
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/dataform")
+def get_alteryx_workflow_dataform_project(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    return generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/dataform.zip")
+def download_alteryx_workflow_dataform_project(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    project = generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    return _zip_project(project, "alteryx_dataform_project", "dataform_project")
+
+
+@router.post("/batches/{batch_id}/workflows/{workflow_id}/dataform/publish-bigquery")
+def publish_alteryx_workflow_dataform_to_bigquery(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    if workflow.get("isMacroDefinition"):
+        raise HTTPException(
+            status_code=400,
+            detail="Select the parent .yxmd workflow for Publish Dataform to BigQuery.",
+        )
+    project = generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    _assert_transform_publishable(project, "Dataform to BigQuery")
+    try:
+        result = publish_dataform_project_to_bigquery(project)
+        result["transformation_coverage"] = project.get("transformation_coverage") or {}
+        result["transform_plan"] = project.get("transform_plan") or {}
+        result["transform_publish_warning"] = _transform_publish_warning(project, "Dataform to BigQuery")
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to publish generated Dataform project to BigQuery")
+        raise HTTPException(status_code=500, detail=f"Failed to publish Dataform project to BigQuery: {exc}") from exc
+
+
+@router.post("/batches/{batch_id}/workflows/{workflow_id}/dataform/publish-repository")
+def publish_alteryx_workflow_dataform_to_repository(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    if workflow.get("isMacroDefinition"):
+        raise HTTPException(
+            status_code=400,
+            detail="Select the parent .yxmd workflow for Publish Dataform to GCP Repo.",
+        )
+    project = generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    _assert_transform_publishable(project, "Dataform repository")
+    try:
+        result = publish_dataform_project_to_repository(project)
+        result["transformation_coverage"] = project.get("transformation_coverage") or {}
+        result["transform_plan"] = project.get("transform_plan") or {}
+        result["transform_publish_warning"] = _transform_publish_warning(project, "Dataform repository")
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to publish generated Dataform project to GCP Dataform repository")
+        raise HTTPException(status_code=500, detail=f"Failed to publish Dataform project to repository: {exc}") from exc
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/python")
+def get_alteryx_workflow_python_project(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    return generate_python_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+
+
+@router.get("/batches/{batch_id}/workflows/{workflow_id}/python.zip")
+def download_alteryx_workflow_python_project(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    project = generate_python_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    return _zip_project(project, "alteryx_python_project", "python_project")
+
+
+@router.post("/batches/{batch_id}/workflows/{workflow_id}/python/publish-bigquery")
+def publish_alteryx_workflow_python_to_bigquery(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    if workflow.get("isMacroDefinition"):
+        raise HTTPException(
+            status_code=400,
+            detail="Select the parent .yxmd workflow for Publish Python to BigQuery.",
+        )
+    analysis_started = time.time()
+    project = generate_python_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    analysis_duration = round(time.time() - analysis_started, 2)
+    _assert_transform_publishable(project, "Python to BigQuery")
+    try:
+        result = publish_python_project_to_bigquery(project)
+        result["transformation_coverage"] = project.get("transformation_coverage") or {}
+        result["transform_plan"] = project.get("transform_plan") or {}
+        result["transform_publish_warning"] = _transform_publish_warning(project, "Python to BigQuery")
+        result["analysis_duration_seconds"] = analysis_duration
+        timings = result.setdefault("timings", {})
+        timings["analysis_seconds"] = analysis_duration
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to publish generated Python pipeline to BigQuery")
+        raise HTTPException(status_code=500, detail=f"Failed to publish Python pipeline to BigQuery: {exc}") from exc
+
+
+@router.post("/batches/{batch_id}/workflows/{workflow_id}/dbt/publish-bigquery")
+def publish_alteryx_workflow_dbt_to_bigquery(
+    batch_id: str,
+    workflow_id: str,
+    sharepoint_url: str = Query(default=""),
+    file_name: str = Query(default=""),
+):
+    workflow = _find_batch_workflow(batch_id, workflow_id)
+    if workflow.get("isMacroDefinition"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Select the parent .yxmd workflow for Publish dbt to BigQuery. "
+                "A .yxmc macro definition is an internal reusable component and does not contain the external source table mapping needed for dbt publish."
+            ),
+        )
+    project = generate_dbt_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+    _assert_transform_publishable(project, "dbt to BigQuery")
+    try:
+        result = publish_dbt_project_to_bigquery(project)
+        result["transformation_coverage"] = project.get("transformation_coverage") or {}
+        result["transform_plan"] = project.get("transform_plan") or {}
+        result["transform_publish_warning"] = _transform_publish_warning(project, "dbt to BigQuery")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to publish generated dbt project to BigQuery")
+        raise HTTPException(status_code=500, detail=f"Failed to publish dbt project to BigQuery: {exc}") from exc
+    return result
 
 
 @router.get("/batches/{batch_id}/workflows/{workflow_id}/diagram")
@@ -922,49 +1888,111 @@ async def post_alteryx_record_count_validation(
         fallback=request.expected_row_count,
     )
     expected = alteryx_count.get("row_count")
+    source_profile = alteryx_count.get("profile") or {}
+    validation_numeric_columns = request.numeric_columns or (source_profile.get("numeric_columns") or [])[:20]
 
     powerbi_validation = None
+    bigquery_validation = None
     if request.dataset_id and request.table_name:
         from app.api.v1.endpoints.migration import (
             PowerBiValidationRequest,
             validate_powerbi_dataset_endpoint,
         )
+        import requests as _requests
 
+        # ── Wait for the Power BI dataset refresh to complete ────────────────
+        # The publish endpoint triggers a refresh but does not wait for data load.
+        # Running executeQueries before the refresh finishes returns 0 rows.
+        # Poll the refresh history endpoint (max 90s) before querying.
+        workspace_id_for_poll = request.workspace_id or ""
+        _refresh_url = (
+            f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id_for_poll}"
+            f"/datasets/{request.dataset_id}/refreshes?$top=1"
+        )
+        try:
+            from app.services.powerbi_publisher import _acquire_sp_token
+            _sp_token = _acquire_sp_token("https://analysis.windows.net/powerbi/api/.default")
+            _auth_headers = {
+                "Authorization": f"Bearer {_sp_token}",
+                "Content-Type": "application/json",
+            }
+            _refresh_poll_start = asyncio.get_event_loop().time()
+            _refresh_timeout = 90  # seconds
+            _refresh_interval = 6  # seconds between polls
+            _refresh_done = False
+            while True:
+                _elapsed = asyncio.get_event_loop().time() - _refresh_poll_start
+                if _elapsed > _refresh_timeout:
+                    logger.warning(
+                        "[record-count-validation] Refresh did not complete within %ds — proceeding anyway.",
+                        _refresh_timeout,
+                    )
+                    break
+                _rr = _requests.get(_refresh_url, headers=_auth_headers, timeout=20)
+                if _rr.ok:
+                    _latest = (_rr.json().get("value") or [{}])[0]
+                    _status = str(_latest.get("status") or "Unknown")
+                    logger.info(
+                        "[record-count-validation] Refresh poll: status=%s elapsed=%.0fs",
+                        _status, _elapsed,
+                    )
+                    if _status == "Completed":
+                        logger.info(
+                            "[record-count-validation] Refresh completed after %.0fs — querying row count.",
+                            _elapsed,
+                        )
+                        _refresh_done = True
+                        break
+                    elif _status in ("Failed", "Disabled"):
+                        logger.warning(
+                            "[record-count-validation] Refresh status=%s — proceeding without waiting.", _status
+                        )
+                        break
+                # Still running/unknown — wait before next poll (moved OUTSIDE if block)
+                await asyncio.sleep(_refresh_interval)
+        except Exception as _poll_exc:
+            logger.warning("[record-count-validation] Refresh poll failed: %s — proceeding.", _poll_exc)
+
+        # ── Now run executeQueries for the actual Power BI row count ─────────
         powerbi_validation = await validate_powerbi_dataset_endpoint(
             PowerBiValidationRequest(
                 dataset_id=request.dataset_id,
                 table_name=request.table_name,
-                workspace_id=request.workspace_id or "",
-                numeric_columns=request.numeric_columns or [],
+                workspace_id=workspace_id_for_poll,
+                numeric_columns=validation_numeric_columns,
                 expected_row_count=expected,
             )
         )
+    elif request.table_name or request.target_tables:
+        target_tables = request.target_tables or [request.table_name]
+        bigquery_validation = _aggregate_bigquery_validation_payload(target_tables)
 
-    powerbi_actual = None
-    if powerbi_validation:
-        powerbi_row_check = next(
-            (check for check in powerbi_validation.get("checks", []) if check.get("name") == "Row count"),
+    target_validation = powerbi_validation or bigquery_validation
+    target_actual = None
+    if target_validation:
+        target_row_check = next(
+            (check for check in target_validation.get("checks", []) if check.get("name") == "Row count"),
             {},
         )
-        powerbi_actual = powerbi_row_check.get("actual")
-        if not isinstance(powerbi_actual, int):
-            actual_payload = powerbi_validation.get("actual") or {}
+        target_actual = target_row_check.get("actual")
+        if not isinstance(target_actual, int):
+            actual_payload = target_validation.get("actual") or {}
             actual_value = actual_payload.get("RowCount")
             if isinstance(actual_value, (int, float)):
-                powerbi_actual = int(actual_value)
+                target_actual = int(actual_value)
 
-    if expected is None and isinstance(powerbi_actual, int):
+    if expected is None and isinstance(target_actual, int) and target_actual > 0:
         alteryx_count = {
             **alteryx_count,
-            "row_count": powerbi_actual,
-            "method": "final_table_mquery_count",
-            "source": "Power BI executeQueries count of the published final M query table.",
+            "row_count": target_actual,
+            "method": "target_count_fallback",
+            "source": "Target count used because source Alteryx output count was not available.",
             "confidence": "medium",
         }
-        expected = powerbi_actual
+        expected = target_actual
 
     row_check = next(
-        (check for check in (powerbi_validation or {}).get("checks", []) if check.get("name") == "Row count"),
+        (check for check in (target_validation or {}).get("checks", []) if check.get("name") == "Row count"),
         {},
     )
     actual = row_check.get("actual") if row_check else None
@@ -978,25 +2006,44 @@ async def post_alteryx_record_count_validation(
         if isinstance(variance, int) else row_check.get("status") or "INFO"
     )
 
+    target_profile = (target_validation or {}).get("profile") or {}
+    profile_checks = (
+        _build_dataset_profile_summary_checks(
+            source_profile,
+            target_profile,
+            target_label="BigQuery" if bigquery_validation else "Power BI",
+        )
+        if target_profile
+        else _build_profile_validation_checks(source_profile, powerbi_validation)
+    )
+    checks = [
+        {
+            "name": "Row count",
+            "expected": expected,
+            "actual": actual,
+            "variance": variance,
+            "status": status,
+            "alteryx_method": alteryx_count.get("method"),
+            "alteryx_confidence": alteryx_count.get("confidence"),
+            "severity": "critical",
+            "details": "Deterministic row-count comparison between Alteryx output and target semantic model.",
+        }
+    ] + profile_checks
+
     return {
         "success": True,
         "workflow_id": workflow_id,
         "workflow_name": workflow.get("name"),
-        "table_name": (powerbi_validation or {}).get("table_name") or request.table_name,
-        "available_columns": (powerbi_validation or {}).get("available_columns", []),
+        "table_name": (target_validation or {}).get("table_name") or request.table_name,
+        "available_columns": (target_validation or {}).get("available_columns", []),
+        "column_count": (target_validation or {}).get("column_count"),
+        "source_profile": source_profile,
+        "target_profile": target_profile,
+        "queried_numeric_columns": validation_numeric_columns,
         "alteryx": alteryx_count,
         "powerbi": powerbi_validation,
-        "checks": [
-            {
-                "name": "Row count",
-                "expected": expected,
-                "actual": actual,
-                "variance": variance,
-                "status": status,
-                "alteryx_method": alteryx_count.get("method"),
-                "alteryx_confidence": alteryx_count.get("confidence"),
-            }
-        ],
+        "bigquery": bigquery_validation,
+        "checks": checks,
     }
 
 
