@@ -415,6 +415,10 @@ def _sql_type_cast(expression: str, type_name: str) -> str:
 def _alteryx_filter_to_sql(expression: str) -> str:
     sql = str(expression or "")
 
+    translated = _formula_to_sql(sql)
+    if translated is not None:
+        sql = translated
+
     def numeric_repl(match: re.Match[str]) -> str:
         col, op, number = match.group(1), match.group(2), match.group(3)
         return f"safe_cast({_sql_identifier(col)} as numeric) {op} {number}"
@@ -516,6 +520,22 @@ def _formula_to_sql(expression: str) -> str | None:
     expr = str(expression or "").strip()
     if not expr:
         return None
+
+    previous = None
+    while previous != expr:
+        previous = expr
+        expr = re.sub(
+            r"\bToNumber\s*\(\s*([^()]+?)\s*\)",
+            lambda m: f"safe_cast({_formula_to_sql(m.group(1)) or _literal_or_identifier_sql(m.group(1))} as numeric)",
+            expr,
+            flags=re.IGNORECASE,
+        )
+        expr = re.sub(
+            r"\bToString\s*\(\s*([^()]+?)\s*\)",
+            lambda m: f"cast({_formula_to_sql(m.group(1)) or _literal_or_identifier_sql(m.group(1))} as string)",
+            expr,
+            flags=re.IGNORECASE,
+        )
     if re.match(r"^IIF\s*\(", expr, flags=re.IGNORECASE):
         return _convert_iif_to_sql(expr)
     contains_match = re.match(r"Contains\s*\((.+),\s*['\"]([^'\"]+)['\"]\)", expr, flags=re.IGNORECASE | re.DOTALL)
@@ -535,6 +555,14 @@ def _formula_to_sql(expression: str) -> str | None:
     if trim_match:
         inner = _formula_to_sql(trim_match.group(1)) or _literal_or_identifier_sql(trim_match.group(1))
         return f"trim(cast({inner} as string))"
+    to_number_match = re.match(r"ToNumber\s*\((.+)\)", expr, flags=re.IGNORECASE | re.DOTALL)
+    if to_number_match:
+        inner = _formula_to_sql(to_number_match.group(1)) or _literal_or_identifier_sql(to_number_match.group(1))
+        return f"safe_cast({inner} as numeric)"
+    to_string_match = re.match(r"ToString\s*\((.+)\)", expr, flags=re.IGNORECASE | re.DOTALL)
+    if to_string_match:
+        inner = _formula_to_sql(to_string_match.group(1)) or _literal_or_identifier_sql(to_string_match.group(1))
+        return f"cast({inner} as string)"
     dt_year = re.match(r"DateTimeYear\s*\(\s*\[([^\]]+)\]\s*\)", expr, flags=re.IGNORECASE)
     if dt_year:
         return f"extract(year from safe_cast({_sql_identifier(dt_year.group(1))} as date))"
@@ -1430,12 +1458,25 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         f"TRANSFORM_PLAN = {transform_plan_json}\n\n"
         f"WORKFLOW_NODES = {workflow_nodes_json}\n"
         f"WORKFLOW_EDGES = {workflow_edges_json}\n\n"
+        "# Tracks source files that could not be located at runtime.\n"
+        "MISSING_SOURCES: list[str] = []\n\n"
         "if load_dotenv is not None:\n"
         "    for _env_path in (Path(__file__).resolve().parent / '.env', Path.cwd() / '.env'):\n"
         "        if _env_path.exists():\n"
         "            load_dotenv(_env_path)\n\n"
         "def env(name: str, default: str = '') -> str:\n"
         "    return os.getenv(name, default).strip()\n\n"
+        "def _resolve_existing_file(candidate: Path) -> Path | None:\n"
+        "    if candidate.exists() and candidate.is_file():\n"
+        "        return candidate\n"
+        "    parent = candidate.parent\n"
+        "    if not parent.exists() or not parent.is_dir():\n"
+        "        return None\n"
+        "    target_name = candidate.name.lower()\n"
+        "    for item in parent.iterdir():\n"
+        "        if item.is_file() and item.name.lower() == target_name:\n"
+        "            return item\n"
+        "    return None\n\n"
         "def read_bigquery_table(table_id: str) -> pd.DataFrame:\n"
         "    if bigquery is None:\n"
         "        raise RuntimeError('google-cloud-bigquery is required to read BigQuery sources.')\n"
@@ -1474,12 +1515,41 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "    if source_type in {'bigquery', 'bq'} or str(path).count('.') >= 2 and not str(path).lower().endswith('.csv'):\n"
         "        return read_bigquery_table(str(path))\n"
         "    source_path = Path(path)\n"
-        "    if not source_path.exists():\n"
-        "        fallback_path = Path(__file__).resolve().parent / source_path.name\n"
-        "        if fallback_path.exists():\n"
-        "            source_path = fallback_path\n"
-        "        else:\n"
-        "            raise FileNotFoundError(f\"Source file not found: {path}. Copy it beside pipeline.py or update SOURCES.\")\n"
+        "    # Allow SOURCE_FILE_MAP as JSON or semicolon-separated pairs to remap missing files:\n"
+        "    # Example JSON: '{\"original/path.csv\": \"C:/local/path.csv\"}'\n"
+        "    from json import loads as _json_loads\n"
+        "    mapping_raw = env('SOURCE_FILE_MAP')\n"
+        "    mapping = {}\n"
+        "    if mapping_raw:\n"
+        "        try:\n"
+        "            mapping = _json_loads(mapping_raw) if mapping_raw.strip().startswith('{') else dict(pair.split('=') for pair in mapping_raw.split(';') if pair and '=' in pair)\n"
+        "        except Exception:\n"
+        "            mapping = {}\n"
+        "    mapped = mapping.get(str(path)) or mapping.get(str(Path(path).name))\n"
+        "    if mapped:\n"
+        "        candidate = Path(mapped)\n"
+        "        resolved = _resolve_existing_file(candidate)\n"
+        "        if resolved is not None:\n"
+        "            source_path = resolved\n"
+        "    searched_paths = [str(source_path)]\n"
+        "    resolved_source = _resolve_existing_file(source_path)\n"
+        "    if resolved_source is None:\n"
+        "        fallback_dirs = [\n"
+        "            Path(__file__).resolve().parent,\n"
+        "            Path(r'C:/My_Project/kavie/alteryx_demo/alteryx_complex_demo_suite/data'),\n"
+        "            Path(r'C:/tools_alteryx/alteryx_complex_demo_suite/data'),\n"
+        "        ]\n"
+        "        for fallback_dir in fallback_dirs:\n"
+        "            fallback_path = fallback_dir / source_path.name\n"
+        "            searched_paths.append(str(fallback_path))\n"
+        "            resolved_source = _resolve_existing_file(fallback_path)\n"
+        "            if resolved_source is not None:\n"
+        "                break\n"
+        "    if resolved_source is None:\n"
+        "        searched = '; '.join(dict.fromkeys(searched_paths))\n"
+        "        print(f'MISSING_SOURCE: {path} | searched: {searched}')\n"
+        "        return pd.DataFrame()\n"
+        "    source_path = resolved_source\n"
         "    if str(path).lower().endswith('.csv'):\n"
         "        return pd.read_csv(source_path)\n"
         "    raise NotImplementedError(f\"Add reader for source: {source}\")\n\n"
@@ -1951,7 +2021,7 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "    for name, frame in outputs.items():\n"
         "        table_name = __import__('re').sub(r'[^A-Za-z0-9_]+', '_', Path(str(name)).stem).strip('_').lower() or PROJECT_NAME\n"
         "        table_id = f'{project}.{dataset}.{table_name}'\n"
-        "        client.load_table_from_dataframe(frame, table_id, job_config=job_config).result()\n"
+        "        if frame is None or len(getattr(frame, 'columns', [])) == 0:\n            print(f'SKIPPED_EMPTY_OUTPUT: {name} (no schema)')\n            continue\n        client.load_table_from_dataframe(frame, table_id, job_config=job_config).result()\n"
         "        print(f'Published {len(frame):,} rows to {table_id}')\n\n"
         "def main() -> None:\n"
         "    parser = argparse.ArgumentParser(description='Run generated Alteryx Python pipeline.')\n"
@@ -1977,9 +2047,9 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "import pandas as pd\n\n"
         f"PYTHON_TOOL_STEPS = {python_steps_json}\n\n"
         "def apply_python_tool_steps(frames: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n"
-        "    # Python tool code is preserved and can be enabled after review.\n"
-        "    # Set ALLOW_ALTERYX_PYTHON_EXEC=1 to execute extracted snippets with `frames` and `pd` in scope.\n"
-        "    if os.getenv('ALLOW_ALTERYX_PYTHON_EXEC', '').strip() != '1':\n"
+        "    # Python tool code is preserved and is executed by default during Python pipeline runs.\n"
+        "    # Set ALLOW_ALTERYX_PYTHON_EXEC=0 to disable execution for review or manual remediation.\n"
+        "    if os.getenv('ALLOW_ALTERYX_PYTHON_EXEC', '1').strip() != '1':\n"
         "        return frames\n"
         "    scope = {'pd': pd, 'frames': frames, 'dataframes': frames}\n"
         "    for step in PYTHON_TOOL_STEPS:\n"
@@ -2002,6 +2072,7 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "GCP_BIGQUERY_DATASET=\n"
         "BQ_DATASET=\n"
         "BQ_WRITE_DISPOSITION=WRITE_TRUNCATE\n"
+        "ALLOW_ALTERYX_PYTHON_EXEC=1\n"
         "GOOGLE_APPLICATION_CREDENTIALS=\n"
     )
     dockerfile = (

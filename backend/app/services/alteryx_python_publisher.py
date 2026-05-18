@@ -267,6 +267,7 @@ def publish_python_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any
         run_env["GCP_BIGQUERY_DATASET"] = target_dataset
         run_env.setdefault("BQ_DATASET", target_dataset)
         run_env.setdefault("GCP_BIGQUERY_LOCATION", location)
+        run_env.setdefault("ALLOW_ALTERYX_PYTHON_EXEC", "1")
         run_env.setdefault("BQ_WRITE_DISPOSITION", _env("BQ_WRITE_DISPOSITION", "WRITE_TRUNCATE"))
         _write_inline_service_account(temp_path, run_env)
         _write_project_files(project_dir, files)
@@ -279,6 +280,35 @@ def publish_python_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any
         dataset_duration = round(time.time() - dataset_started, 2)
         command = [python_executable, "pipeline.py", "--publish-bq"]
         result = _run_python_pipeline(command, project_dir, run_env, timeout_seconds)
+        # Detect missing source markers emitted by the generated pipeline and fail fast with a clear message.
+        _stdout = str(result.get("stdout") or "")
+        _missing = re.findall(r"^MISSING_SOURCE:\s*(.*)$", _stdout, flags=re.MULTILINE)
+        if _missing:
+            missing_sources = sorted(list(dict.fromkeys([m.strip() for m in _missing if m.strip()])))
+            missing_detail = "\n".join(f"- {item}" for item in missing_sources)
+            return {
+                "success": False,
+                "status": "missing_sources",
+                "target": "python",
+                "project_id": project_id,
+                "target_dataset": target_dataset,
+                "location": location,
+                "project_name": project_name,
+                "dataset_status": dataset_status,
+                "commands": [result],
+                "timings": {
+                    "setup_seconds": setup_duration,
+                    "dataset_prepare_seconds": dataset_duration,
+                    "pipeline_execution_seconds": result.get("duration_seconds"),
+                    "total_seconds": round(time.time() - publish_started, 2),
+                },
+                "missing_sources": missing_sources,
+                "message": (
+                    "Publish aborted: missing source files detected. "
+                    "Provide the missing files or map them via SOURCE_FILE_MAP and retry.\n"
+                    f"Searched paths:\n{missing_detail}"
+                ),
+            }
         if not result["success"]:
             return {
                 "success": False,
