@@ -516,6 +516,7 @@ def _resolve_alteryx_output_row_count(
     workflow: dict[str, Any],
     final_table_name: str = "",
     fallback: Optional[int] = None,
+    aggregate_all_outputs: bool = False,
 ) -> dict[str, Any]:
     """Resolve Alteryx row count — local file first, then workflow metadata hints."""
     counted_outputs: list[dict[str, Any]] = []
@@ -579,7 +580,7 @@ def _resolve_alteryx_output_row_count(
     if counted_outputs:
         counted_outputs.sort(key=lambda item: (item.get("match_score", 0), item.get("confidence") == "high"), reverse=True)
         best = counted_outputs[0]
-        if not final_table_name or best.get("match_score", 0) >= 80 or len(counted_outputs) == 1:
+        if not aggregate_all_outputs and (not final_table_name or best.get("match_score", 0) >= 80 or len(counted_outputs) == 1):
             return best
         total_rows = sum(int(item.get("row_count") or 0) for item in counted_outputs)
         total_columns = sum(int(item.get("column_count") or 0) for item in counted_outputs)
@@ -1879,6 +1880,7 @@ async def post_alteryx_record_count_validation(
         workflow,
         final_table_name=request.table_name,
         fallback=request.expected_row_count,
+        aggregate_all_outputs=len(request.target_tables or []) > 1,
     )
     expected = alteryx_count.get("row_count")
     source_profile = alteryx_count.get("profile") or {}

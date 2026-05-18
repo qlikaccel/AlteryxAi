@@ -3580,7 +3580,7 @@ async def download_pdf(payload: dict = Body(...)):
         
         # Get all metric keys - sorted for consistent order
         metric_order = ['row_count', 'table_count', 'column_count', 'null_count', 'total_records', 'tool_count', 'certification_status']
-        excluded_keys = {'column_names', 'timestamp', 'column_variance', 'record_count', 'record_variance', 'total_commands'}
+        excluded_keys = {'column_names', 'timestamp'}
         all_keys = set(list(qlik_metrics.keys()) + list(powerbi_metrics.keys()))
         
         # Filter out excluded keys and sort by preferred order
@@ -3592,12 +3592,6 @@ async def download_pdf(payload: dict = Body(...)):
         for metric in all_keys:
             q_val = qlik_metrics.get(metric)
             p_val = powerbi_metrics.get(metric)
-            # For null_count, treat None/missing as 0 (no nulls found)
-            if metric == 'null_count':
-                if q_val is None:
-                    q_val = 0
-                if p_val is None:
-                    p_val = 0
             target_not_applicable = (
                 str(metric).lower() in {"tool_count", "total_tools_used", "tools_used"}
                 and isinstance(p_val, str)

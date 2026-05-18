@@ -133,6 +133,43 @@ def _expected_output_tables(project: dict[str, Any]) -> list[str]:
     return sorted(set(tables))
 
 
+def _aggregate_published_table_metadata(items: list[dict[str, Any]]) -> dict[str, Any]:
+    row_counts = [int(item.get("row_count")) for item in items if item.get("row_count") is not None]
+    column_counts = [int(item.get("column_count")) for item in items if item.get("column_count") is not None]
+    columns: dict[str, Any] = {}
+    numeric_columns: list[str] = []
+    available_columns: list[str] = []
+    for item in items:
+        table = str(item.get("table") or "").strip() or "target"
+        metadata = item.get("metadata") or {}
+        profile = metadata.get("profile") or {}
+        available_columns.extend(f"{table}.{column}" for column in metadata.get("available_columns") or [])
+        for column_name, column_profile in (profile.get("columns") or {}).items():
+            aggregate_name = f"{table}.{column_name}"
+            columns[aggregate_name] = {**(column_profile or {}), "name": aggregate_name}
+            if (column_profile or {}).get("numeric_count", 0) > 0:
+                numeric_columns.append(aggregate_name)
+    row_total = sum(row_counts) if row_counts else None
+    column_total = sum(column_counts) if column_counts else None
+    return {
+        "row_count": row_total,
+        "total_rows": row_total,
+        "record_count": row_total,
+        "total_records": row_total,
+        "column_count": column_total,
+        "total_columns": column_total,
+        "available_columns": available_columns,
+        "profile": {
+            "name": "BigQuery output tables",
+            "row_count": row_total,
+            "column_count": column_total,
+            "columns": columns,
+            "numeric_columns": numeric_columns,
+        },
+        "numeric_columns": numeric_columns,
+    }
+
+
 def _run_python_pipeline(command: list[str], cwd: Path, env: dict[str, str], timeout_seconds: int) -> dict[str, Any]:
     started = time.time()
     completed = subprocess.run(
@@ -334,6 +371,11 @@ def publish_python_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any
         if table.get("column_count") is not None
     ]
     aggregate_column_count = sum(known_column_counts) if known_column_counts else primary.get("column_count")
+    bigquery_metadata = (
+        _aggregate_published_table_metadata(published_tables)
+        if len(published_tables) > 1
+        else (primary.get("metadata") or {})
+    )
     total_duration = round(time.time() - publish_started, 2)
     return {
         "success": True,
@@ -357,15 +399,15 @@ def publish_python_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any
         "published_tables": published_tables,
         "tables_deployed": len(published_tables),
         "final_model": primary.get("final_model") or f"{project_id}.{target_dataset}.{_safe_table_name(project_name, 'alteryx_python_pipeline')}",
-        "bigquery_metadata": primary.get("metadata") or {},
-        "target_profile": (primary.get("metadata") or {}).get("profile") or {},
+        "bigquery_metadata": bigquery_metadata,
+        "target_profile": bigquery_metadata.get("profile") or {},
         "row_count": aggregate_row_count,
         "total_rows": aggregate_row_count,
         "record_count": aggregate_row_count,
         "total_records": aggregate_row_count,
         "column_count": aggregate_column_count,
         "total_columns": aggregate_column_count,
-        "available_columns": primary.get("available_columns") or [],
+        "available_columns": bigquery_metadata.get("available_columns") or primary.get("available_columns") or [],
         "output_count": len(published_tables),
         "message": "Python pipeline published to BigQuery successfully.",
     }

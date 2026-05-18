@@ -339,6 +339,7 @@ export default function PublishPage() {
     (Array.isArray(publishedTables) && publishedTables.length
       ? publishedTables.reduce((sum: number, table: any) => sum + (Array.isArray(table?.columns) ? table.columns.length : 0), 0)
       : null);
+  const hasMultiplePublishedTables = Array.isArray(publishedTables) && publishedTables.length > 1;
 
   const [validationResult, setValidationResult] = useState<any>(() => {
     if (routeState.validationResult) return routeState.validationResult;
@@ -386,6 +387,7 @@ export default function PublishPage() {
     arrayLength(storedMigrationColumns),
   );
   const targetColumnCount = firstPositiveNumber(
+    isBigQueryPublish && hasMultiplePublishedTables ? publishedTableColumnCountFromTables : null,
     targetProfile?.column_count,
     validationResult?.powerbi?.column_count,
     validationResult?.bigquery?.column_count,
@@ -403,7 +405,8 @@ export default function PublishPage() {
   );
   const columnCount = sourceColumnCount ?? targetColumnCount;
   const bigQueryRowCount = isBigQueryPublish
-    ? asNumber(publishResult?.total_records) ??
+    ? (hasMultiplePublishedTables ? publishedTableRowCount : null) ??
+      asNumber(publishResult?.total_records) ??
       asNumber(publishResult?.record_count) ??
       asNumber(publishResult?.total_rows) ??
       asNumber(publishResult?.row_count) ??
@@ -419,7 +422,8 @@ export default function PublishPage() {
     : null;
 
   const bigQueryRecordCount = isBigQueryPublish
-    ? asNumber(publishResult?.total_records) ??
+    ? (hasMultiplePublishedTables ? publishedTableRowCount : null) ??
+      asNumber(publishResult?.total_records) ??
       asNumber(publishResult?.record_count) ??
       asNumber(bigQueryMetadata?.record_count) ??
       asNumber(bigQueryMetadata?.total_records) ??
@@ -578,12 +582,9 @@ export default function PublishPage() {
   const bigQueryExpectedRows = isBigQueryPublish ? bigQueryAlteryxRecordCount ?? "Pending" : expectedRows;
   const displayedColumnCount = columnCount ?? 0;
   const displayedTargetColumnCount = isBigQueryPublish ? bigQueryColumnCount : columnCount;
-  const sourceNullCount = sumProfileColumnMetric(sourceProfile, "null_count");
-  const targetNullCount = sumProfileColumnMetric(targetProfile, "null_count");
-  const nullCountVariance =
-    sourceNullCount !== null && targetNullCount !== null
-      ? targetNullCount - sourceNullCount
-      : "Not applicable";
+  const sourceNullCount = sumProfileColumnMetric(sourceProfile, "null_count") ?? 0;
+  const targetNullCount = sumProfileColumnMetric(targetProfile, "null_count") ?? 0;
+  const nullCountVariance = targetNullCount - sourceNullCount;
 
   const validationMetrics = [
     {
@@ -606,8 +607,8 @@ export default function PublishPage() {
     },
     {
       metric: "Null Column Count",
-      alteryx: sourceNullCount ?? "Not available",
-      powerbi: targetNullCount ?? "Not available",
+      alteryx: sourceNullCount,
+      powerbi: targetNullCount,
       variance: nullCountVariance,
     },
     {
@@ -641,8 +642,8 @@ export default function PublishPage() {
     },
     {
       metric: "Null Column Count",
-      alteryx: sourceNullCount ?? "Not available",
-      bigquery: targetNullCount ?? "Not available",
+      alteryx: sourceNullCount,
+      bigquery: targetNullCount,
       variance: nullCountVariance,
     },
     {
@@ -829,7 +830,8 @@ export default function PublishPage() {
     if (!isBigQueryPublish || !batchId || !workflowId) {
       return;
     }
-    const validationTables = [bigQueryFinalModel].filter(Boolean);
+    const validationTables = (targetBigQueryTables.length > 0 ? targetBigQueryTables : [bigQueryFinalModel])
+      .filter((model: string, index: number, values: string[]) => Boolean(model) && values.indexOf(model) === index);
     const requestKey = validationTables.join("|") || finalValidationTableName || bigQueryTarget.table || datasetName;
     if (!force && bigQueryAlteryxRecordCountRequestedRef.current === requestKey) {
       return;
@@ -925,7 +927,7 @@ export default function PublishPage() {
                 profile: aggregateMetadataProfiles(metadataWithValues),
               }
             : metadataWithValues[0];
-        const metadata = primaryMetadata || aggregateMetadata;
+        const metadata = aggregateMetadata || primaryMetadata;
         const hasMetadata =
           asNumber(metadata?.row_count) !== null ||
           asNumber(metadata?.total_rows) !== null ||
