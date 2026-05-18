@@ -32,3 +32,6 @@ _alteryx_upload_batches/
 backend/_alteryx_upload_batches/
 .env
 .env.local
+
+
+backend/- Copy.env
