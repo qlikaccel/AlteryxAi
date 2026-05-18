@@ -23,3 +23,12 @@ Thumbs.db
 
 # Cache
 .pytest_cache/
+
+
+_alteryx_upload_batches/
+.env
+.env.local
+
+backend/_alteryx_upload_batches/
+.env
+.env.local
