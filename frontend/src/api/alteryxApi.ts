@@ -758,6 +758,7 @@ export async function publishAlteryxMQuery(payload: {
 export async function validatePowerBiMigration(payload: {
   dataset_id: string;
   table_name: string;
+  target_tables?: string[];
   workspace_id?: string;
   numeric_columns?: string[];
   expected_row_count?: number | null;
@@ -789,6 +790,7 @@ export async function validateAlteryxPowerBiRecordCounts(payload: {
   workflow_id: string;
   dataset_id: string;
   table_name: string;
+  target_tables?: string[];
   workspace_id?: string;
   numeric_columns?: string[];
   expected_row_count?: number | null;
@@ -801,6 +803,7 @@ export async function validateAlteryxPowerBiRecordCounts(payload: {
       body: JSON.stringify({
         dataset_id: payload.dataset_id,
         table_name: payload.table_name,
+        target_tables: payload.target_tables || [],
         workspace_id: payload.workspace_id || "",
         numeric_columns: payload.numeric_columns || [],
         expected_row_count: payload.expected_row_count ?? null,
@@ -919,6 +922,9 @@ export async function fetchBigQueryTableMetadata(finalModel: string): Promise<{
   column_count: number | null;
   total_columns: number | null;
   available_columns: string[];
+  profile?: Record<string, any>;
+  columns_profile?: Record<string, any>;
+  numeric_columns?: string[];
 }> {
   const empty = {
     row_count: null,
@@ -928,6 +934,9 @@ export async function fetchBigQueryTableMetadata(finalModel: string): Promise<{
     column_count: null,
     total_columns: null,
     available_columns: [] as string[],
+    profile: {},
+    columns_profile: {},
+    numeric_columns: [] as string[],
   };
 
   if (!finalModel) return empty;
@@ -955,6 +964,9 @@ export async function fetchBigQueryTableMetadata(finalModel: string): Promise<{
       column_count: colCount,
       total_columns: colCount,
       available_columns: Array.isArray(data.available_columns) ? data.available_columns : [],
+      profile: data.profile || {},
+      columns_profile: data.columns_profile || {},
+      numeric_columns: Array.isArray(data.numeric_columns) ? data.numeric_columns : [],
     };
   } catch {
     return empty;

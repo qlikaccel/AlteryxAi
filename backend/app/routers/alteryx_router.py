@@ -45,7 +45,7 @@ from app.services.alteryx_migration_engine import (
     generate_workflow_diagram,
     validate_migration,
 )
-from app.services.alteryx_dbt_publisher import publish_dbt_project_to_bigquery
+from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata, publish_dbt_project_to_bigquery
 from app.services.alteryx_dataform_publisher import publish_dataform_project_to_bigquery
 from app.services.alteryx_dataform_repo_publisher import publish_dataform_project_to_repository
 from app.services.alteryx_python_publisher import publish_python_project_to_bigquery
@@ -107,6 +107,7 @@ class CloudWorkflowMaterializeRequest(BaseModel):
 class AlteryxRecordCountValidationRequest(BaseModel):
     dataset_id: str
     table_name: str
+    target_tables: list[str] = []
     workspace_id: Optional[str] = ""
     expected_row_count: Optional[int] = None
     numeric_columns: list[str] = []
@@ -254,6 +255,48 @@ def _candidate_output_paths(node: dict[str, Any]) -> list[Path]:
         else:
             paths.append(path)
     return paths
+
+
+def _configured_output_search_roots() -> list[Path]:
+    roots = [Path.cwd(), Path.cwd() / "output", Path.cwd().parent, Path.cwd().parent / "output"]
+    for raw_root in re.split(r"[;|]", os.getenv("ALTERYX_OUTPUT_SEARCH_ROOTS", "")):
+        if raw_root.strip():
+            roots.append(Path(raw_root.strip()))
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        key = str(root)
+        if key not in seen:
+            unique.append(root)
+            seen.add(key)
+    return unique
+
+
+def _candidate_named_output_paths(name: str) -> list[Path]:
+    filename = Path(str(name or "")).name
+    if not filename:
+        return []
+    candidates: list[Path] = []
+    raw_path = Path(str(name))
+    if raw_path.is_absolute():
+        candidates.append(raw_path)
+    for root in _configured_output_search_roots():
+        candidates.extend([root / filename, root / "output" / filename])
+    for root in _configured_output_search_roots():
+        if not root.exists() or not root.is_dir():
+            continue
+        try:
+            candidates.extend(list(root.rglob(filename))[:5])
+        except Exception:
+            continue
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path)
+        if key not in seen:
+            unique.append(path)
+            seen.add(key)
+    return unique
 
 
 def _count_delimited_file(path: Path) -> Optional[int]:
@@ -476,9 +519,18 @@ def _resolve_alteryx_output_row_count(
 ) -> dict[str, Any]:
     """Resolve Alteryx row count — local file first, then workflow metadata hints."""
     counted_outputs: list[dict[str, Any]] = []
+    output_names = [
+        str(item.get("path") or item.get("name") or "")
+        for item in workflow.get("outputTargets") or []
+        if isinstance(item, dict) and (item.get("path") or item.get("name"))
+    ]
     for node in reversed(_terminal_output_nodes(workflow)):
         node_blob = _node_blob(node)
-        for path in _candidate_output_paths(node):
+        node_paths = _candidate_output_paths(node)
+        for output_name in output_names:
+            if output_name in node_blob:
+                node_paths.extend(_candidate_named_output_paths(output_name))
+        for path in node_paths:
             count = _count_delimited_file(path)
             if count is None:
                 continue
@@ -501,11 +553,61 @@ def _resolve_alteryx_output_row_count(
                 "match_score": score,
             })
 
+    existing_output_files = {Path(str(item.get("source") or "")).name for item in counted_outputs}
+    for output_name in output_names:
+        if Path(output_name).name in existing_output_files:
+            continue
+        for path in _candidate_named_output_paths(output_name):
+            count = _count_delimited_file(path)
+            if count is None:
+                continue
+            columns = _delimited_file_columns(path)
+            profile = _profile_delimited_file(path)
+            counted_outputs.append({
+                "row_count": count,
+                "column_count": profile.get("column_count") or len(columns) or None,
+                "columns": list((profile.get("columns") or {}).keys()) or columns,
+                "profile": profile,
+                "numeric_columns": profile.get("numeric_columns", []),
+                "method": "output_file",
+                "source": str(path),
+                "confidence": "medium",
+                "match_score": _name_match_score(path.stem, final_table_name),
+            })
+            break
+
     if counted_outputs:
         counted_outputs.sort(key=lambda item: (item.get("match_score", 0), item.get("confidence") == "high"), reverse=True)
         best = counted_outputs[0]
         if not final_table_name or best.get("match_score", 0) >= 80 or len(counted_outputs) == 1:
             return best
+        total_rows = sum(int(item.get("row_count") or 0) for item in counted_outputs)
+        total_columns = sum(int(item.get("column_count") or 0) for item in counted_outputs)
+        aggregate_columns: dict[str, Any] = {}
+        aggregate_numeric_columns: list[str] = []
+        for item in counted_outputs:
+            output_label = Path(str(item.get("source") or "output")).stem
+            for column_name, column_profile in ((item.get("profile") or {}).get("columns") or {}).items():
+                aggregate_name = f"{output_label}.{column_name}"
+                aggregate_columns[aggregate_name] = {**column_profile, "name": aggregate_name}
+                if column_profile.get("numeric_count", 0) > 0:
+                    aggregate_numeric_columns.append(aggregate_name)
+        return {
+            "row_count": total_rows,
+            "column_count": total_columns or None,
+            "columns": list(aggregate_columns.keys()),
+            "profile": {
+                "name": "Alteryx output files",
+                "row_count": total_rows,
+                "column_count": total_columns,
+                "columns": aggregate_columns,
+                "numeric_columns": aggregate_numeric_columns,
+            },
+            "numeric_columns": aggregate_numeric_columns,
+            "method": "aggregate_output_files",
+            "source": "Aggregated local Alteryx output CSV files.",
+            "confidence": "medium",
+        }
 
     # Local file not found — extract count from workflow node annotations
     hint = _parse_workflow_row_count_hint(workflow, final_table_name)
@@ -593,6 +695,280 @@ def _build_profile_validation_checks(source_profile: dict[str, Any], powerbi_val
                 "severity": severity,
                 "details": "Deterministic source-vs-target profile check. LLM receives this only if it fails or warns.",
             })
+    return checks
+
+
+def _parse_bigquery_model_name(table_name: str) -> tuple[str, str, str]:
+    parts = [part for part in str(table_name or "").split(".") if part]
+    if len(parts) == 3:
+        return parts[0], parts[1], parts[2]
+    project_id = (os.getenv("GCP_PROJECT_ID") or "").strip()
+    dataset = (os.getenv("GCP_BIGQUERY_DATASET") or os.getenv("BQ_DATASET") or "").strip()
+    return project_id, dataset, parts[0] if parts else ""
+
+
+def _build_bigquery_validation_payload(table_name: str) -> dict[str, Any] | None:
+    project_id, dataset, table = _parse_bigquery_model_name(table_name)
+    if not project_id or not dataset or not table:
+        return None
+    metadata = fetch_bigquery_table_metadata(
+        project_id=project_id,
+        dataset=dataset,
+        table=table,
+        location=os.getenv("GCP_BIGQUERY_LOCATION", "US"),
+        env=os.environ.copy(),
+    )
+    if not metadata.get("success"):
+        logger.warning(
+            "[record-count-validation] BigQuery target profile unavailable for %s.%s.%s: %s",
+            project_id,
+            dataset,
+            table,
+            metadata.get("message") or metadata.get("error"),
+        )
+        return None
+    row_count = metadata.get("row_count")
+    return {
+        "success": True,
+        "target_type": "bigquery",
+        "table_name": metadata.get("final_model") or f"{project_id}.{dataset}.{table}",
+        "column_count": metadata.get("column_count"),
+        "available_columns": metadata.get("available_columns") or [],
+        "queried_numeric_columns": metadata.get("numeric_columns") or [],
+        "profile": metadata.get("profile") or {},
+        "actual": {"RowCount": row_count},
+        "checks": [
+            {
+                "name": "Row count",
+                "actual": row_count,
+                "variance": None,
+                "status": "INFO",
+            }
+        ],
+        "metadata": metadata,
+    }
+
+
+def _aggregate_bigquery_validation_payload(table_names: list[str]) -> dict[str, Any] | None:
+    payloads = [_build_bigquery_validation_payload(table_name) for table_name in table_names if table_name]
+    payloads = [payload for payload in payloads if payload]
+    if not payloads:
+        return None
+    if len(payloads) == 1:
+        return payloads[0]
+
+    total_rows = 0
+    total_columns = 0
+    available_columns: list[str] = []
+    profile_columns: dict[str, Any] = {}
+    numeric_columns: list[str] = []
+    for payload in payloads:
+        table_name = str(payload.get("table_name") or "")
+        table_label = _parse_bigquery_model_name(table_name)[2] or table_name or "target"
+        actual = payload.get("actual") or {}
+        if isinstance(actual.get("RowCount"), (int, float)):
+            total_rows += int(actual["RowCount"])
+        if isinstance(payload.get("column_count"), (int, float)):
+            total_columns += int(payload["column_count"])
+        available_columns.extend(f"{table_label}.{column}" for column in payload.get("available_columns") or [])
+        profile = payload.get("profile") or {}
+        for column_name, column_profile in (profile.get("columns") or {}).items():
+            aggregate_name = f"{table_label}.{column_name}"
+            profile_columns[aggregate_name] = {**(column_profile or {}), "name": aggregate_name}
+            if (column_profile or {}).get("numeric_count", 0) > 0:
+                numeric_columns.append(aggregate_name)
+
+    return {
+        "success": True,
+        "target_type": "bigquery",
+        "table_name": ", ".join(str(payload.get("table_name") or "") for payload in payloads),
+        "column_count": total_columns,
+        "available_columns": available_columns,
+        "queried_numeric_columns": numeric_columns,
+        "profile": {
+            "name": "BigQuery output tables",
+            "row_count": total_rows,
+            "column_count": total_columns,
+            "columns": profile_columns,
+            "numeric_columns": numeric_columns,
+        },
+        "actual": {"RowCount": total_rows},
+        "checks": [
+            {
+                "name": "Row count",
+                "actual": total_rows,
+                "variance": None,
+                "status": "INFO",
+            }
+        ],
+        "metadata": {
+            "row_count": total_rows,
+            "column_count": total_columns,
+            "available_columns": available_columns,
+            "profile": {
+                "name": "BigQuery output tables",
+                "row_count": total_rows,
+                "column_count": total_columns,
+                "columns": profile_columns,
+                "numeric_columns": numeric_columns,
+            },
+        },
+    }
+
+
+def _profile_columns(profile: dict[str, Any]) -> dict[str, Any]:
+    columns = profile.get("columns") if isinstance(profile, dict) else {}
+    return columns if isinstance(columns, dict) else {}
+
+
+def _aggregate_profile_metric(columns: dict[str, Any], metric: str, names: list[str]) -> float | int | None:
+    values: list[float] = []
+    for name in names:
+        value = (columns.get(name) or {}).get(metric)
+        parsed = _to_float_or_none(value)
+        if parsed is not None:
+            values.append(parsed)
+    if not values:
+        return None
+    if metric in {"not_null_count", "numeric_count"}:
+        return int(sum(values))
+    return sum(values)
+
+
+def _build_dataset_profile_summary_checks(
+    source_profile: dict[str, Any],
+    target_profile: dict[str, Any],
+    *,
+    target_label: str,
+) -> list[dict[str, Any]]:
+    source_columns = _profile_columns(source_profile)
+    target_columns = _profile_columns(target_profile)
+    if not source_columns and not target_columns:
+        return []
+    if not source_columns:
+        numeric_count = len(target_profile.get("numeric_columns") or [])
+        return [
+            {
+                "name": "not_null_count",
+                "expected": "Target profile validation",
+                "actual": f"{target_label} profiled for {len(target_columns)} column(s)",
+                "variance": None,
+                "status": "PASS",
+                "severity": "high",
+                "details": "Target column completeness profile was calculated for the published model.",
+            },
+            {
+                "name": "numeric_min_max",
+                "expected": "Target numeric profile validation",
+                "actual": f"{numeric_count} numeric target column(s)" if numeric_count else "No numeric target columns",
+                "variance": None,
+                "status": "PASS" if numeric_count else "NOT_APPLICABLE",
+                "severity": "medium",
+                "details": "Numeric min/max values were calculated from the published target model to validate transformed data quality.",
+            },
+            {
+                "name": "numeric_sum_average",
+                "expected": "Target numeric profile validation",
+                "actual": f"{numeric_count} numeric target column(s)" if numeric_count else "No numeric target columns",
+                "variance": None,
+                "status": "PASS" if numeric_count else "NOT_APPLICABLE",
+                "severity": "medium",
+                "details": "Numeric sum and average values were calculated from the published target model to validate transformed data quality.",
+            },
+        ]
+    if not target_columns:
+        return []
+
+    target_by_key = {_validation_match_key(name): name for name in target_columns}
+    common_pairs = [
+        (source_name, target_by_key[_validation_match_key(source_name)])
+        for source_name in source_columns
+        if _validation_match_key(source_name) in target_by_key
+    ]
+    if not common_pairs:
+        return [
+            {
+                "name": "not_null_count",
+                "expected": list(source_columns),
+                "actual": list(target_columns),
+                "variance": None,
+                "status": "WARNING",
+                "severity": "high",
+                "details": "No matching source and target column names were found for profile comparison.",
+            }
+        ]
+
+    source_common = [source for source, _ in common_pairs]
+    target_common = [target for _, target in common_pairs]
+    source_not_null = _aggregate_profile_metric(source_columns, "not_null_count", source_common)
+    target_not_null = _aggregate_profile_metric(target_columns, "not_null_count", target_common)
+    source_numeric = [name for name in source_common if (source_columns.get(name) or {}).get("numeric_count", 0)]
+    target_numeric = [target for source, target in common_pairs if source in source_numeric]
+
+    checks = [
+        {
+            "name": "not_null_count",
+            "expected": source_not_null,
+            "actual": target_not_null,
+            "variance": (
+                target_not_null - source_not_null
+                if isinstance(source_not_null, int) and isinstance(target_not_null, int)
+                else None
+            ),
+            "status": "PASS" if source_not_null == target_not_null else "WARNING",
+            "severity": "high",
+            "details": f"Compared aggregate not-null counts across {len(common_pairs)} matched column(s).",
+        }
+    ]
+
+    if not source_numeric or not target_numeric:
+        checks.extend([
+            {
+                "name": "numeric_min_max",
+                "expected": "Not applicable",
+                "actual": "No comparable numeric columns",
+                "variance": None,
+                "status": "NOT_APPLICABLE",
+                "severity": "medium",
+                "details": "No matching numeric columns were available for min/max validation.",
+            },
+            {
+                "name": "numeric_sum_average",
+                "expected": "Not applicable",
+                "actual": "No comparable numeric columns",
+                "variance": None,
+                "status": "NOT_APPLICABLE",
+                "severity": "medium",
+                "details": "No matching numeric columns were available for sum/average validation.",
+            },
+        ])
+        return checks
+
+    metric_pairs = [
+        ("numeric_min_max", ("min_value", "max_value")),
+        ("numeric_sum_average", ("sum_value", "average_value")),
+    ]
+    for check_name, metrics in metric_pairs:
+        comparisons = []
+        warnings = 0
+        for source_name, target_name in zip(source_numeric, target_numeric):
+            for metric in metrics:
+                expected = (source_columns.get(source_name) or {}).get(metric)
+                actual = (target_columns.get(target_name) or {}).get(metric)
+                if expected is None and actual is None:
+                    continue
+                matched = _within_numeric_tolerance(expected, actual)
+                warnings += 0 if matched else 1
+                comparisons.append(f"{source_name}.{metric}: {expected} -> {actual}")
+        checks.append({
+            "name": check_name,
+            "expected": "; ".join(comparisons[:6]) or "Not applicable",
+            "actual": f"{len(comparisons)} metric comparison(s)",
+            "variance": warnings,
+            "status": "PASS" if comparisons and warnings == 0 else "WARNING" if comparisons else "NOT_APPLICABLE",
+            "severity": "medium",
+            "details": "Compared numeric profile metrics across matched columns.",
+        })
     return checks
 
 
@@ -1509,6 +1885,7 @@ async def post_alteryx_record_count_validation(
     validation_numeric_columns = request.numeric_columns or (source_profile.get("numeric_columns") or [])[:20]
 
     powerbi_validation = None
+    bigquery_validation = None
     if request.dataset_id and request.table_name:
         from app.api.v1.endpoints.migration import (
             PowerBiValidationRequest,
@@ -1579,32 +1956,36 @@ async def post_alteryx_record_count_validation(
                 expected_row_count=expected,
             )
         )
+    elif request.table_name or request.target_tables:
+        target_tables = request.target_tables or [request.table_name]
+        bigquery_validation = _aggregate_bigquery_validation_payload(target_tables)
 
-    powerbi_actual = None
-    if powerbi_validation:
-        powerbi_row_check = next(
-            (check for check in powerbi_validation.get("checks", []) if check.get("name") == "Row count"),
+    target_validation = powerbi_validation or bigquery_validation
+    target_actual = None
+    if target_validation:
+        target_row_check = next(
+            (check for check in target_validation.get("checks", []) if check.get("name") == "Row count"),
             {},
         )
-        powerbi_actual = powerbi_row_check.get("actual")
-        if not isinstance(powerbi_actual, int):
-            actual_payload = powerbi_validation.get("actual") or {}
+        target_actual = target_row_check.get("actual")
+        if not isinstance(target_actual, int):
+            actual_payload = target_validation.get("actual") or {}
             actual_value = actual_payload.get("RowCount")
             if isinstance(actual_value, (int, float)):
-                powerbi_actual = int(actual_value)
+                target_actual = int(actual_value)
 
-    if expected is None and isinstance(powerbi_actual, int) and powerbi_actual > 0:
+    if expected is None and isinstance(target_actual, int) and target_actual > 0:
         alteryx_count = {
             **alteryx_count,
-            "row_count": powerbi_actual,
-            "method": "final_table_mquery_count",
-            "source": "Power BI executeQueries count of the published final M query table.",
+            "row_count": target_actual,
+            "method": "target_count_fallback",
+            "source": "Target count used because source Alteryx output count was not available.",
             "confidence": "medium",
         }
-        expected = powerbi_actual
+        expected = target_actual
 
     row_check = next(
-        (check for check in (powerbi_validation or {}).get("checks", []) if check.get("name") == "Row count"),
+        (check for check in (target_validation or {}).get("checks", []) if check.get("name") == "Row count"),
         {},
     )
     actual = row_check.get("actual") if row_check else None
@@ -1618,7 +1999,16 @@ async def post_alteryx_record_count_validation(
         if isinstance(variance, int) else row_check.get("status") or "INFO"
     )
 
-    profile_checks = _build_profile_validation_checks(source_profile, powerbi_validation)
+    target_profile = (target_validation or {}).get("profile") or {}
+    profile_checks = (
+        _build_dataset_profile_summary_checks(
+            source_profile,
+            target_profile,
+            target_label="BigQuery" if bigquery_validation else "Power BI",
+        )
+        if target_profile
+        else _build_profile_validation_checks(source_profile, powerbi_validation)
+    )
     checks = [
         {
             "name": "Row count",
@@ -1637,12 +2027,15 @@ async def post_alteryx_record_count_validation(
         "success": True,
         "workflow_id": workflow_id,
         "workflow_name": workflow.get("name"),
-        "table_name": (powerbi_validation or {}).get("table_name") or request.table_name,
-        "available_columns": (powerbi_validation or {}).get("available_columns", []),
+        "table_name": (target_validation or {}).get("table_name") or request.table_name,
+        "available_columns": (target_validation or {}).get("available_columns", []),
+        "column_count": (target_validation or {}).get("column_count"),
         "source_profile": source_profile,
+        "target_profile": target_profile,
         "queried_numeric_columns": validation_numeric_columns,
         "alteryx": alteryx_count,
         "powerbi": powerbi_validation,
+        "bigquery": bigquery_validation,
         "checks": checks,
     }
 

@@ -3579,7 +3579,7 @@ async def download_pdf(payload: dict = Body(...)):
                 return str(value)
         
         # Get all metric keys - sorted for consistent order
-        metric_order = ['row_count', 'table_count', 'column_count', 'total_records', 'certification_status']
+        metric_order = ['row_count', 'table_count', 'column_count', 'null_count', 'total_records', 'tool_count', 'certification_status']
         excluded_keys = {'column_names', 'timestamp'}
         all_keys = set(list(qlik_metrics.keys()) + list(powerbi_metrics.keys()))
         
@@ -3592,6 +3592,11 @@ async def download_pdf(payload: dict = Body(...)):
         for metric in all_keys:
             q_val = qlik_metrics.get(metric)
             p_val = powerbi_metrics.get(metric)
+            target_not_applicable = (
+                str(metric).lower() in {"tool_count", "total_tools_used", "tools_used"}
+                and isinstance(p_val, str)
+                and p_val.strip().lower() in {"not applicable", "n/a", "na"}
+            )
             
             # Format display values properly
             q_display = format_value(q_val)
@@ -3602,7 +3607,9 @@ async def download_pdf(payload: dict = Body(...)):
             status = "PASS"
             
             # Calculate variance for numeric values only
-            if isinstance(q_val, (int, float)) and isinstance(p_val, (int, float)):
+            if target_not_applicable:
+                status = "N/A"
+            elif isinstance(q_val, (int, float)) and isinstance(p_val, (int, float)):
                 variance = p_val - q_val
                 if q_val != 0:
                     variance_percent = abs((variance / q_val) * 100)
@@ -3633,8 +3640,9 @@ async def download_pdf(payload: dict = Body(...)):
                 differences.append(metric_data)
         
         # Calculate certification score
-        pass_count = sum(1 for m in all_metrics if m["status"] == "PASS")
-        score = (pass_count / len(all_metrics)) * 100 if all_metrics else 0
+        applicable_metrics = [m for m in all_metrics if m["status"] != "N/A"]
+        pass_count = sum(1 for m in applicable_metrics if m["status"] == "PASS")
+        score = (pass_count / len(applicable_metrics)) * 100 if applicable_metrics else 0
         certified = score >= 95
         
         # ==============================
@@ -3751,7 +3759,7 @@ async def download_pdf(payload: dict = Body(...)):
             else:
                 variance_str = "—"
             
-            status_symbol = "✓ PASS" if m["status"] == "PASS" else "✗ FAIL"
+            status_symbol = "N/A" if m["status"] == "N/A" else ("✓ PASS" if m["status"] == "PASS" else "✗ FAIL")
             
             table_data.append([
                 metric_name,
@@ -3876,7 +3884,7 @@ async def download_pdf(payload: dict = Body(...)):
         
         certification_text = f"""
         <b>Overall Score:</b> {round(score, 1)}%<br/>
-        <b>Metrics Evaluated:</b> {len(all_metrics)} | <b>Passed:</b> {pass_count} | <b>Failed:</b> {len(differences)}<br/>
+        <b>Metrics Evaluated:</b> {len(applicable_metrics)} | <b>Passed:</b> {pass_count} | <b>Failed:</b> {len(differences)}<br/>
         <b>Certification Status:</b> <font color="{cert_color}"><b>{cert_status}</b></font> (95% required)
         """
         elements.append(Paragraph(certification_text, normal_style))

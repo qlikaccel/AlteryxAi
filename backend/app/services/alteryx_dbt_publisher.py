@@ -441,7 +441,7 @@ def fetch_bigquery_table_metadata(
     location: str = "",
     env: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
-    """Read row and column counts from the published BigQuery object."""
+    """Read row, column, and lightweight data profile metrics from BigQuery."""
     try:
         from google.cloud import bigquery
     except Exception as exc:
@@ -471,6 +471,7 @@ def fetch_bigquery_table_metadata(
         table_id = f"{project_id}.{dataset}.{table}"
         table_ref = client.get_table(table_id)
         columns = [field.name for field in table_ref.schema]
+        schema_by_name = {field.name: str(field.field_type or "").upper() for field in table_ref.schema}
  
         count_sql = f"select count(1) as row_count from `{project_id}.{dataset}.{table}`"
         job_config = bigquery.QueryJobConfig(use_legacy_sql=False)
@@ -482,6 +483,72 @@ def fetch_bigquery_table_metadata(
         row_count = next(iter(count_job.result())).row_count
         row_count = int(row_count or 0)
         column_count = len(columns)
+        profile_columns: dict[str, Any] = {}
+        numeric_columns: list[str] = []
+
+        def _quote_identifier(value: str) -> str:
+            return f"`{str(value).replace('`', '')}`"
+
+        def _safe_alias(value: str) -> str:
+            return re.sub(r"[^A-Za-z0-9_]+", "_", str(value)).strip("_") or "Column"
+
+        numeric_types = {"INT64", "INTEGER", "FLOAT64", "FLOAT", "NUMERIC", "BIGNUMERIC", "DECIMAL", "BIGDECIMAL"}
+        profile_limit = int(_env("BQ_PROFILE_MAX_COLUMNS", "40") or "40")
+        profile_fields = table_ref.schema[: max(profile_limit, 0)]
+        if profile_fields:
+            select_parts = []
+            for field in profile_fields:
+                name = field.name
+                alias = _safe_alias(name)
+                quoted = _quote_identifier(name)
+                field_type = schema_by_name.get(name, "")
+                select_parts.append(f"count({quoted}) as `{alias}__NotNull`")
+                if field_type in numeric_types:
+                    numeric_columns.append(name)
+                    select_parts.extend([
+                        f"count({quoted}) as `{alias}__NumericCount`",
+                        f"min({quoted}) as `{alias}__Min`",
+                        f"max({quoted}) as `{alias}__Max`",
+                        f"sum(cast({quoted} as FLOAT64)) as `{alias}__Sum`",
+                        f"avg(cast({quoted} as FLOAT64)) as `{alias}__Average`",
+                    ])
+            profile_sql = f"select {', '.join(select_parts)} from `{project_id}.{dataset}.{table}`"
+            profile_job = client.query(
+                profile_sql,
+                job_config=bigquery.QueryJobConfig(use_legacy_sql=False),
+                location=location or None,
+            )
+            profile_row = dict(next(iter(profile_job.result())))
+            for field in profile_fields:
+                name = field.name
+                alias = _safe_alias(name)
+                not_null_count = int(profile_row.get(f"{alias}__NotNull") or 0)
+                column_profile = {
+                    "name": name,
+                    "row_count": row_count,
+                    "not_null_count": not_null_count,
+                    "null_count": max(row_count - not_null_count, 0),
+                    "numeric_count": int(profile_row.get(f"{alias}__NumericCount") or 0),
+                    "data_type": schema_by_name.get(name),
+                }
+                if name in numeric_columns:
+                    column_profile.update({
+                        "min_value": None if profile_row.get(f"{alias}__Min") is None else str(profile_row.get(f"{alias}__Min")),
+                        "max_value": None if profile_row.get(f"{alias}__Max") is None else str(profile_row.get(f"{alias}__Max")),
+                        "sum_value": None if profile_row.get(f"{alias}__Sum") is None else str(profile_row.get(f"{alias}__Sum")),
+                        "average_value": None if profile_row.get(f"{alias}__Average") is None else str(profile_row.get(f"{alias}__Average")),
+                    })
+                profile_columns[name] = column_profile
+
+        profile = {
+            "name": table_id,
+            "row_count": row_count,
+            "column_count": column_count,
+            "columns": profile_columns,
+            "numeric_columns": numeric_columns,
+            "profiled_column_count": len(profile_columns),
+            "profile_limit": profile_limit,
+        }
  
         return {
             "success": True,
@@ -497,6 +564,9 @@ def fetch_bigquery_table_metadata(
             "column_count": column_count,
             "total_columns": column_count,
             "available_columns": columns,
+            "profile": profile,
+            "columns_profile": profile_columns,
+            "numeric_columns": numeric_columns,
             "table_type": getattr(table_ref, "table_type", None),
             "num_rows_metadata": getattr(table_ref, "num_rows", None),
             "source": "bigquery_count_query_and_table_schema",
@@ -592,6 +662,59 @@ def _extract_dbt_stdout_row_count(command_results: list[dict[str, Any]], project
     return candidates[-1] if candidates else None
 
 
+def _safe_table_name(value: str, fallback: str) -> str:
+    raw = str(value or fallback).split("\\")[-1].split("/")[-1]
+    raw = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet|yxdb)$", "", raw, flags=re.IGNORECASE)
+    safe = re.sub(r"[^A-Za-z0-9_]+", "_", raw).strip("_").lower()
+    return safe or fallback
+
+
+def _output_table_names(project_name: str, output_targets: list[dict[str, Any]]) -> list[str]:
+    if not output_targets:
+        return [project_name]
+    names: list[str] = []
+    for index, output in enumerate(output_targets, start=1):
+        if not isinstance(output, dict):
+            continue
+        names.append(_safe_table_name(str(output.get("name") or output.get("path") or f"output_{index}"), f"output_{index}"))
+    return names or [project_name]
+
+
+def _aggregate_published_table_metadata(items: list[dict[str, Any]]) -> dict[str, Any]:
+    row_counts = [int(item.get("row_count")) for item in items if item.get("row_count") is not None]
+    column_counts = [int(item.get("column_count")) for item in items if item.get("column_count") is not None]
+    columns: dict[str, Any] = {}
+    numeric_columns: list[str] = []
+    available_columns: list[str] = []
+    for item in items:
+        table = str(item.get("table") or "").strip() or "target"
+        metadata = item.get("metadata") or {}
+        profile = metadata.get("profile") or {}
+        available_columns.extend(f"{table}.{column}" for column in metadata.get("available_columns") or [])
+        for column_name, column_profile in (profile.get("columns") or {}).items():
+            aggregate_name = f"{table}.{column_name}"
+            columns[aggregate_name] = {**(column_profile or {}), "name": aggregate_name}
+            if (column_profile or {}).get("numeric_count", 0) > 0:
+                numeric_columns.append(aggregate_name)
+    return {
+        "row_count": sum(row_counts) if row_counts else None,
+        "total_rows": sum(row_counts) if row_counts else None,
+        "record_count": sum(row_counts) if row_counts else None,
+        "total_records": sum(row_counts) if row_counts else None,
+        "column_count": sum(column_counts) if column_counts else None,
+        "total_columns": sum(column_counts) if column_counts else None,
+        "available_columns": available_columns,
+        "profile": {
+            "name": "BigQuery output tables",
+            "row_count": sum(row_counts) if row_counts else None,
+            "column_count": sum(column_counts) if column_counts else None,
+            "columns": columns,
+            "numeric_columns": numeric_columns,
+        },
+        "numeric_columns": numeric_columns,
+    }
+
+
 def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     project_id = _required_env("GCP_PROJECT_ID")
     target_dataset = _required_env("GCP_BIGQUERY_DATASET")
@@ -606,6 +729,7 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     macro_complexity = project.get("macro_complexity") or {}
     tool_count = int(project.get("tool_count") or 0)
     connection_count = int(project.get("connection_count") or 0)
+    output_targets = project.get("output_targets") or []
  
     # Load Google Cloud credentials from GOOGLE_CREDENTIALS_JSON env var
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
@@ -668,17 +792,29 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
                     "macro_complexity": macro_complexity,
                     "tool_count": tool_count,
                     "connection_count": connection_count,
+                    "output_targets": output_targets,
+                    "output_count": len(output_targets),
                     "missing_source_tables": missing_tables,
                     "message": message,
                 }
  
-        bigquery_metadata = fetch_bigquery_table_metadata(
-            project_id,
-            target_dataset,
-            project_name,
-            location,
-            run_env,
-        )
+        published_tables = []
+        for table_name in _output_table_names(project_name, output_targets):
+            metadata = fetch_bigquery_table_metadata(project_id, target_dataset, table_name, location, run_env)
+            published_tables.append({
+                "table": table_name,
+                "name": table_name,
+                "final_model": f"{project_id}.{target_dataset}.{table_name}",
+                "metadata": metadata,
+                "row_count": metadata.get("row_count"),
+                "record_count": metadata.get("record_count"),
+                "total_records": metadata.get("total_records"),
+                "column_count": metadata.get("column_count"),
+                "total_columns": metadata.get("total_columns"),
+                "available_columns": metadata.get("available_columns") or [],
+                "profile": metadata.get("profile") or {},
+            })
+        bigquery_metadata = _aggregate_published_table_metadata(published_tables) if len(published_tables) > 1 else (published_tables[0].get("metadata") if published_tables else {})
         stdout_row_count = _extract_dbt_stdout_row_count(command_results, project_name)
         if bigquery_metadata.get("row_count") is None and stdout_row_count is not None:
             bigquery_metadata = {
@@ -703,8 +839,13 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
         "macro_complexity": macro_complexity,
         "tool_count": tool_count,
         "connection_count": connection_count,
+        "output_targets": output_targets,
+        "output_count": len(output_targets),
+        "published_tables": published_tables,
+        "tables_deployed": len(published_tables),
         "final_model": f"{project_id}.{target_dataset}.{project_name}",
         "bigquery_metadata": bigquery_metadata,
+        "target_profile": bigquery_metadata.get("profile") or {},
         "row_count": bigquery_metadata.get("row_count"),
         "total_rows": bigquery_metadata.get("total_rows"),
         "record_count": bigquery_metadata.get("record_count"),

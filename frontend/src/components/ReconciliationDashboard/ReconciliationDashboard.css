@@ -68,7 +68,8 @@
 }
 
 .recon-score--warn strong,
-.recon-score--pending strong {
+.recon-score--pending strong,
+.recon-score--not_applicable strong {
   color: #946200;
 }
 
@@ -101,7 +102,8 @@
 }
 
 .recon-metric--warn strong,
-.recon-metric--pending strong {
+.recon-metric--pending strong,
+.recon-metric--not_applicable strong {
   color: #946200;
 }
 
@@ -144,7 +146,7 @@
 
 .recon-table-wrap {
   overflow: auto;
-  border: 1px solid #d7dee5;
+  border: 1px solid #b9c6d3;
   border-radius: 8px;
   background: #ffffff;
 }
@@ -153,12 +155,13 @@
   width: 100%;
   min-width: 920px;
   border-collapse: collapse;
+  border: 1px solid #b9c6d3;
 }
 
 .recon-table th,
 .recon-table td {
   padding: 12px 14px;
-  border-bottom: 1px solid #edf1f5;
+  border: 1px solid #cbd5df;
   text-align: left;
   vertical-align: top;
   font-size: 13px;
@@ -195,6 +198,11 @@
 .recon-status--pending {
   color: #7a4d00;
   background: #fff3c4;
+}
+
+.recon-status--not_applicable {
+  color: #475467;
+  background: #eef2f6;
 }
 
 .recon-status--fail {

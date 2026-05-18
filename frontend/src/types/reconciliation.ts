@@ -1,4 +1,4 @@
-export type ValidationStatus = "pass" | "warn" | "fail" | "pending";
+export type ValidationStatus = "pass" | "warn" | "fail" | "pending" | "not_applicable";
 
 export type ValidationSeverity = "critical" | "high" | "medium" | "low";
 
@@ -23,6 +23,7 @@ export interface ValidationSummary {
   total: number;
   passed: number;
   pending: number;
+  notApplicable: number;
   warned: number;
   failed: number;
   criticalFailed: number;

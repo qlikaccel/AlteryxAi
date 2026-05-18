@@ -518,6 +518,14 @@ def _formula_to_sql(expression: str) -> str | None:
         return None
     if re.match(r"^IIF\s*\(", expr, flags=re.IGNORECASE):
         return _convert_iif_to_sql(expr)
+    to_number_match = re.match(r"^ToNumber\s*\(\s*([^()+\-*/]+)\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if to_number_match:
+        inner = _formula_to_sql(to_number_match.group(1)) or _literal_or_identifier_sql(to_number_match.group(1))
+        return f"safe_cast({inner} as numeric)"
+    to_string_match = re.match(r"^ToString\s*\(\s*([^()+\-*/]+)\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
+    if to_string_match:
+        inner = _formula_to_sql(to_string_match.group(1)) or _literal_or_identifier_sql(to_string_match.group(1))
+        return f"cast({inner} as string)"
     contains_match = re.match(r"Contains\s*\((.+),\s*['\"]([^'\"]+)['\"]\)", expr, flags=re.IGNORECASE | re.DOTALL)
     if contains_match:
         haystack = _formula_to_sql(contains_match.group(1)) or _literal_or_identifier_sql(contains_match.group(1))
@@ -561,7 +569,19 @@ def _formula_to_sql(expression: str) -> str | None:
             f"safe_divide(safe_cast({_sql_identifier(div_match.group(1))} as numeric), "
             f"nullif(safe_cast({_sql_identifier(div_match.group(2))} as numeric), 0))"
         )
-    arithmetic = re.sub(r"\[([^\]]+)\]", lambda m: f"safe_cast({_sql_identifier(m.group(1))} as numeric)", expr)
+    arithmetic = re.sub(
+        r"\bToNumber\s*\(\s*\[([^\]]+)\]\s*\)",
+        lambda m: f"safe_cast({_sql_identifier(m.group(1))} as numeric)",
+        expr,
+        flags=re.IGNORECASE,
+    )
+    arithmetic = re.sub(
+        r"\bToString\s*\(\s*\[([^\]]+)\]\s*\)",
+        lambda m: f"cast({_sql_identifier(m.group(1))} as string)",
+        arithmetic,
+        flags=re.IGNORECASE,
+    )
+    arithmetic = re.sub(r"\[([^\]]+)\]", lambda m: f"safe_cast({_sql_identifier(m.group(1))} as numeric)", arithmetic)
     if arithmetic != expr and re.search(r"[+\-*/]", arithmetic):
         return arithmetic.replace("NULL()", "null")
     return _literal_or_identifier_sql(expr)

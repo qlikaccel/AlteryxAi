@@ -308,11 +308,16 @@ def publish_python_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any
             row_count = metadata_row_count if metadata_row_count is not None else stdout_row_counts.get(table)
             published_tables.append({
                 "table": table,
+                "name": table,
                 "final_model": f"{project_id}.{target_dataset}.{table}",
                 "metadata": metadata,
                 "row_count": row_count,
+                "record_count": metadata.get("record_count") if metadata.get("record_count") is not None else row_count,
+                "total_records": metadata.get("total_records") if metadata.get("total_records") is not None else row_count,
                 "column_count": metadata.get("column_count"),
+                "total_columns": metadata.get("total_columns"),
                 "available_columns": metadata.get("available_columns") or [],
+                "profile": metadata.get("profile") or {},
             })
         metadata_duration = round(time.time() - metadata_started, 2)
 
@@ -353,6 +358,7 @@ def publish_python_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any
         "tables_deployed": len(published_tables),
         "final_model": primary.get("final_model") or f"{project_id}.{target_dataset}.{_safe_table_name(project_name, 'alteryx_python_pipeline')}",
         "bigquery_metadata": primary.get("metadata") or {},
+        "target_profile": (primary.get("metadata") or {}).get("profile") or {},
         "row_count": aggregate_row_count,
         "total_rows": aggregate_row_count,
         "record_count": aggregate_row_count,

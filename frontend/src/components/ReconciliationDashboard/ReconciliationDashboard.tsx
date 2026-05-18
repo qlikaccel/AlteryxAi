@@ -19,6 +19,7 @@ const statusLabels: Record<ValidationStatus, string> = {
   warn: "Warn",
   fail: "Fail",
   pending: "Pending",
+  not_applicable: "N/A",
 };
 
 export function ReconciliationDashboard({
@@ -57,7 +58,7 @@ export function ReconciliationDashboard({
       </div>
 
       <div className="recon-toolbar" role="toolbar" aria-label="Filter validation checks">
-        {(["all", "pending", "fail", "warn", "pass"] as const).map((item) => (
+        {(["all", "pending", "fail", "warn", "pass", "not_applicable"] as const).map((item) => (
           <button
             key={item}
             type="button"
@@ -139,10 +140,11 @@ function summarizeChecks(checks: ValidationCheck[]): ValidationSummary {
       if (check.status === "pending") summary.pending += 1;
       if (check.status === "warn") summary.warned += 1;
       if (check.status === "fail") summary.failed += 1;
+      if (check.status === "not_applicable") summary.notApplicable += 1;
       if (check.status === "fail" && check.severity === "critical") summary.criticalFailed += 1;
       return summary;
     },
-    { total: 0, passed: 0, pending: 0, warned: 0, failed: 0, criticalFailed: 0 },
+    { total: 0, passed: 0, pending: 0, notApplicable: 0, warned: 0, failed: 0, criticalFailed: 0 },
   );
 }
 

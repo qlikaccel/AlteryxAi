@@ -111,17 +111,74 @@ function safePercent(value: number, total: number) {
   return total > 0 ? Math.round((value / total) * 100) : 0;
 }
 
-function buildPieSlices(workflow: AlteryxWorkflow | null) {
-  const counts = new Map<string, number>();
-  (workflow?.toolTypes || []).forEach((tool) => {
-    const shortName = tool.split(".").filter(Boolean).slice(-1)[0] || tool;
-    counts.set(shortName, (counts.get(shortName) || 0) + 1);
+function extractWorkflowColumns(workflow: AlteryxWorkflow | null) {
+  const columns = new Set<string>();
+  const addColumn = (value: unknown) => {
+    const name = String(value || "").trim();
+    if (name && /^[A-Za-z_][A-Za-z0-9_ ]{0,80}$/.test(name)) columns.add(name);
+  };
+  const scanObject = (value: any) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      value.forEach(scanObject);
+      return;
+    }
+    if (typeof value !== "object") return;
+    Object.entries(value).forEach(([key, item]) => {
+      if (/^(name|field|fieldName|sourceColumn|column)$/i.test(key)) addColumn(item);
+      if (/columns|fields|schema|formulas/i.test(key)) scanObject(item);
+    });
+  };
+
+  scanObject(workflow?.dataSources);
+  scanObject(workflow?.outputTargets);
+  (workflow?.workflowNodes || []).forEach((node: any) => {
+    scanObject(node?.config);
+    String(node?.configurationText || "")
+      .match(/\b(RowID|CustomerID|CustomerName|Region|Segment|JoinDate|MetricA|MetricB|Category|Amount|Revenue|Quantity|TotalMetric|Profit)\b/g)
+      ?.forEach(addColumn);
   });
-  const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 7);
-  const unsupported = workflow?.unsupportedToolCount || 0;
-  if (unsupported) entries.push(["Needs remediation", unsupported]);
-  if (!entries.length) return [["Workflow", 1] as [string, number]];
-  return entries;
+  return Array.from(columns);
+}
+
+function buildPieSlices(workflow: AlteryxWorkflow | null, summaryBullets: string[] = []) {
+  const columns = extractWorkflowColumns(workflow);
+  const summaryText = summaryBullets.join(" ").toLowerCase();
+  const countColumns = (patterns: RegExp[]) =>
+    columns.filter((column) => patterns.some((pattern) => pattern.test(column))).length;
+
+  const businessSignals: Array<[string, RegExp[], RegExp[]]> = [
+    ["Salary distribution", [/salary|basepay|compensation|pay/i], [/salary|base salary|compensation|pay/i]],
+    ["Department equalization", [/department|dept|costcenter/i], [/department|dept|equaliz|equalis/i]],
+    ["Threshold exceptions", [/threshold|above|below|exception/i], [/threshold|above|below|exception/i]],
+    ["Resolved employees", [/employee|person|worker|staff/i], [/employee|resolved|adjusted/i]],
+    ["Customer analytics", [/customer/i], [/customer/i]],
+    ["Category performance", [/category/i], [/category/i]],
+    ["Regional segmentation", [/region|country|city/i], [/region|country|city/i]],
+    ["Segment insights", [/segment|tier/i], [/segment|tier/i]],
+    ["Metric performance", [/metric|amount|revenue|sales|profit|quantity|total/i], [/metric|amount|revenue|sales|profit|quantity|total/i]],
+    ["Time-based analysis", [/date|month|year|time/i], [/date|month|year|time/i]],
+  ];
+
+  const entries: Array<[string, number]> = businessSignals.map(([label, columnPatterns, summaryPatterns]) => {
+    const columnScore = countColumns(columnPatterns);
+    const summaryScore = summaryPatterns.reduce((score, pattern) => score + (pattern.test(summaryText) ? 2 : 0), 0);
+    return [label, columnScore + summaryScore] as [string, number];
+  }).filter(([, value]) => value > 0);
+
+  if (entries.length) return entries;
+  const outputDriven = (workflow?.outputTargets || [])
+    .map((output: any) => String(output?.name || output?.path || ""))
+    .filter(Boolean)
+    .map((name: string) => [
+      name.replace(/\.[^.]+$/, "").replace(/_/g, " "),
+      1,
+    ] as [string, number]);
+  if (outputDriven.length) return outputDriven;
+  return ([
+    ["Business rules", Math.max(1, workflow?.toolCount || 1)],
+    ["Target outputs", Math.max(1, (workflow?.outputTargets || []).length || 1)],
+  ] as Array<[string, number]>).filter(([, value]) => value > 0);
 }
 
 function workflowSourceName(workflow: AlteryxWorkflow | null, fallback = "") {
@@ -461,7 +518,7 @@ function PieChart({ slices }: { slices: Array<[string, number]> }) {
   return (
     <div className="workflow-distribution-chart">
       <div className="chart-header">
-        <p className="chart-title">Workflow distribution</p>
+        <p className="chart-title">Business outcome distribution</p>
       </div>
       <div className="chart-wrapper">
         <div className="canvas-container">
@@ -629,7 +686,10 @@ export default function SummaryPage() {
   //   return { totalTools, supportedTools, unsupportedTools, automationScore };
   // }, [workflow]);
 
-  const pieSlices = useMemo(() => buildPieSlices(workflow), [workflow]);
+  const summaryBullets = analysis?.summary?.bullets || [
+    "Workflow metadata loaded. Upload the exported workflow package to generate a full executive summary.",
+  ];
+  const pieSlices = useMemo(() => buildPieSlices(workflow, summaryBullets), [workflow, summaryBullets]);
   // const conversionSteps = analysis?.mquery?.conversion_steps || [];
   const generation = analysis?.mquery || {};
   const generationMethod = generation.generation_method || "rule_based";
@@ -1484,35 +1544,16 @@ export default function SummaryPage() {
   );
 }
 
-  // if (dbtPublishing || dataformPublishing || dataformRepoPublishing) {
-  //   return (
-  //     <LoadingOverlay
-  //       isVisible={dbtPublishing || dataformPublishing || dataformRepoPublishing}
-  //       message={
-  //         dataformRepoPublishing
-  //           ? "Publishing Dataform project to GCP repository..."
-  //           : dataformPublishing
-  //             ? "Publishing Dataform project to BigQuery..."
-  //             : "Publishing dbt models to BigQuery..."
-  //       }
-  //     />
-  //   );
-  // }
-
-
-
-  if (dbtPublishing || dataformPublishing || dataformRepoPublishing || pythonPublishing) {
+  if (dbtPublishing || dataformPublishing || dataformRepoPublishing) {
     return (
       <LoadingOverlay
-        isVisible={dbtPublishing || dataformPublishing || dataformRepoPublishing || pythonPublishing}
+        isVisible={dbtPublishing || dataformPublishing || dataformRepoPublishing}
         message={
           dataformRepoPublishing
             ? "Publishing Dataform project to GCP repository..."
             : dataformPublishing
               ? "Publishing Dataform project to BigQuery..."
-              : pythonPublishing
-                ? "Publishing Python pipeline to BigQuery..."
-                : "Publishing dbt models to BigQuery..."
+              : "Publishing dbt models to BigQuery..."
         }
       />
     );
@@ -1600,11 +1641,7 @@ export default function SummaryPage() {
           <div className="alteryx-exec-copy">
             <h2>Executive Summary</h2>
             <ul>
-              {(
-                analysis?.summary?.bullets || [
-                  "Workflow metadata loaded. Upload the exported workflow package to generate a full executive summary.",
-                ]
-              ).map((item: string) => (
+              {summaryBullets.map((item: string) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>

@@ -123,6 +123,59 @@ def _format_dataform_failure(result: dict[str, Any]) -> str:
     return f"Publish to BigQuery failed while running: {result['command']}{suffix}"
 
 
+def _safe_table_name(value: str, fallback: str) -> str:
+    raw = str(value or fallback).split("\\")[-1].split("/")[-1]
+    raw = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet|yxdb)$", "", raw, flags=re.IGNORECASE)
+    safe = re.sub(r"[^A-Za-z0-9_]+", "_", raw).strip("_").lower()
+    return safe or fallback
+
+
+def _output_table_names(final_table_name: str, output_targets: list[dict[str, Any]]) -> list[str]:
+    if not output_targets:
+        return [final_table_name]
+    names: list[str] = []
+    for index, output in enumerate(output_targets, start=1):
+        if not isinstance(output, dict):
+            continue
+        names.append(_safe_table_name(str(output.get("name") or output.get("path") or f"output_{index}"), f"output_{index}"))
+    return names or [final_table_name]
+
+
+def _aggregate_published_table_metadata(items: list[dict[str, Any]]) -> dict[str, Any]:
+    row_counts = [int(item.get("row_count")) for item in items if item.get("row_count") is not None]
+    column_counts = [int(item.get("column_count")) for item in items if item.get("column_count") is not None]
+    columns: dict[str, Any] = {}
+    numeric_columns: list[str] = []
+    available_columns: list[str] = []
+    for item in items:
+        table = str(item.get("table") or "").strip() or "target"
+        metadata = item.get("metadata") or {}
+        profile = metadata.get("profile") or {}
+        available_columns.extend(f"{table}.{column}" for column in metadata.get("available_columns") or [])
+        for column_name, column_profile in (profile.get("columns") or {}).items():
+            aggregate_name = f"{table}.{column_name}"
+            columns[aggregate_name] = {**(column_profile or {}), "name": aggregate_name}
+            if (column_profile or {}).get("numeric_count", 0) > 0:
+                numeric_columns.append(aggregate_name)
+    return {
+        "row_count": sum(row_counts) if row_counts else None,
+        "total_rows": sum(row_counts) if row_counts else None,
+        "record_count": sum(row_counts) if row_counts else None,
+        "total_records": sum(row_counts) if row_counts else None,
+        "column_count": sum(column_counts) if column_counts else None,
+        "total_columns": sum(column_counts) if column_counts else None,
+        "available_columns": available_columns,
+        "profile": {
+            "name": "BigQuery output tables",
+            "row_count": sum(row_counts) if row_counts else None,
+            "column_count": sum(column_counts) if column_counts else None,
+            "columns": columns,
+            "numeric_columns": numeric_columns,
+        },
+        "numeric_columns": numeric_columns,
+    }
+
+
 def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     project_id = _required_env("GCP_PROJECT_ID")
     target_dataset = _required_env("GCP_BIGQUERY_DATASET")
@@ -134,6 +187,7 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
     final_table_name = str(project.get("final_table_name") or project_name.removesuffix("_dataform"))
     final_model = f"{project_id}.{target_dataset}.{final_table_name}"
     files = project.get("files") or {}
+    output_targets = project.get("output_targets") or []
 
     if not files:
         raise ValueError("No Dataform project files were generated for this workflow.")
@@ -185,18 +239,28 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
                     "final_model": final_model,
                     "commands": command_results,
                     "missing_source_tables": missing_tables,
-                    "output_targets": project.get("output_targets", []),
-                    "output_count": project.get("output_count", 0),
+                    "output_targets": output_targets,
+                    "output_count": len(output_targets),
                     "message": message,
                 }
 
-        bigquery_metadata = fetch_bigquery_table_metadata(
-            project_id,
-            target_dataset,
-            final_table_name,
-            location,
-            run_env,
-        )
+        published_tables = []
+        for table_name in _output_table_names(final_table_name, output_targets):
+            metadata = fetch_bigquery_table_metadata(project_id, target_dataset, table_name, location, run_env)
+            published_tables.append({
+                "table": table_name,
+                "name": table_name,
+                "final_model": f"{project_id}.{target_dataset}.{table_name}",
+                "metadata": metadata,
+                "row_count": metadata.get("row_count"),
+                "record_count": metadata.get("record_count"),
+                "total_records": metadata.get("total_records"),
+                "column_count": metadata.get("column_count"),
+                "total_columns": metadata.get("total_columns"),
+                "available_columns": metadata.get("available_columns") or [],
+                "profile": metadata.get("profile") or {},
+            })
+        bigquery_metadata = _aggregate_published_table_metadata(published_tables) if len(published_tables) > 1 else (published_tables[0].get("metadata") if published_tables else {})
 
     return {
         "success": True,
@@ -210,6 +274,9 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
         "final_model": final_model,
         "commands": command_results,
         "bigquery_metadata": bigquery_metadata,
+        "target_profile": bigquery_metadata.get("profile") or {},
+        "published_tables": published_tables,
+        "tables_deployed": len(published_tables),
         "row_count": bigquery_metadata.get("row_count"),
         "total_rows": bigquery_metadata.get("total_rows"),
         "record_count": bigquery_metadata.get("record_count"),
@@ -217,7 +284,7 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
         "column_count": bigquery_metadata.get("column_count"),
         "total_columns": bigquery_metadata.get("total_columns"),
         "available_columns": bigquery_metadata.get("available_columns") or [],
-        "output_targets": project.get("output_targets", []),
-        "output_count": project.get("output_count", 0),
+        "output_targets": output_targets,
+        "output_count": len(output_targets),
         "message": "Dataform project published to BigQuery successfully.",
     }
