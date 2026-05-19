@@ -1564,16 +1564,35 @@ export default function SummaryPage() {
   );
 }
 
-  if (dbtPublishing || dataformPublishing || dataformRepoPublishing) {
+  // if (dbtPublishing || dataformPublishing || dataformRepoPublishing) {
+  //   return (
+  //     <LoadingOverlay
+  //       isVisible={dbtPublishing || dataformPublishing || dataformRepoPublishing}
+  //       message={
+  //         dataformRepoPublishing
+  //           ? "Publishing Dataform project to GCP repository..."
+  //           : dataformPublishing
+  //             ? "Publishing Dataform project to BigQuery..."
+  //             : "Publishing dbt models to BigQuery..."
+  //       }
+  //     />
+  //   );
+  // }
+
+
+
+  if (dbtPublishing || dataformPublishing || dataformRepoPublishing || pythonPublishing) {
     return (
-      <LoadingOverlay
-        isVisible={dbtPublishing || dataformPublishing || dataformRepoPublishing}
+<LoadingOverlay
+        isVisible={dbtPublishing || dataformPublishing || dataformRepoPublishing || pythonPublishing}
         message={
           dataformRepoPublishing
             ? "Publishing Dataform project to GCP repository..."
             : dataformPublishing
               ? "Publishing Dataform project to BigQuery..."
-              : "Publishing dbt models to BigQuery..."
+              : pythonPublishing
+                ? "Publishing Python pipeline to BigQuery..."
+                : "Publishing dbt models to BigQuery..."
         }
       />
     );
