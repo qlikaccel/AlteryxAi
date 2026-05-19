@@ -1646,17 +1646,24 @@ def get_alteryx_workflow_analysis(
     workflow_id: str,
     sharepoint_url: str = Query(default=""),
     file_name: str = Query(default=""),
+    async_analysis: bool = Query(default=False, alias="async"),
 ):
-    workflow = _find_batch_workflow(batch_id, workflow_id)
-    m_query = generate_m_query(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
-    return {
-        "success": True,
-        "workflow": workflow,
-        "summary": generate_executive_summary(workflow),
-        "diagram": generate_workflow_diagram(workflow),
-        "mquery": m_query,
-        "validation": validate_migration(workflow),
-    }
+    def _run_analysis() -> dict[str, Any]:
+        workflow = _find_batch_workflow(batch_id, workflow_id)
+        m_query = generate_m_query(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+        return {
+            "success": True,
+            "workflow": workflow,
+            "summary": generate_executive_summary(workflow),
+            "diagram": generate_workflow_diagram(workflow),
+            "mquery": m_query,
+            "validation": validate_migration(workflow),
+        }
+
+    if async_analysis:
+        job = _start_publish_job("workflow_analysis", _run_analysis)
+        return {**job, "success": True, "status": "accepted"}
+    return _run_analysis()
 
 
 @router.get("/batches/{batch_id}/workflows/{workflow_id}/mquery")

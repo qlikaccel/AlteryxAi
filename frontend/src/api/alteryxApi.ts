@@ -529,7 +529,7 @@ export async function fetchAlteryxWorkflowAnalysis(
   sharePointUrl = "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx",
   fileName = "sales_data_1M.csv"
 ): Promise<any> {
-  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName, async: "true" });
   const res = await fetch(
     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/analysis?${params.toString()}`
   );
@@ -537,6 +537,10 @@ export async function fetchAlteryxWorkflowAnalysis(
 
   if (!res.ok) {
     throw new Error(data.detail || `Failed to analyze workflow (${res.status})`);
+  }
+
+  if (data?.job_id) {
+    return pollAlteryxPublishJob(data.job_id, "Failed to analyze workflow");
   }
 
   return data;
@@ -696,13 +700,13 @@ export async function publishAlteryxPythonToBigQuery(
   }
 
   if (data?.job_id) {
-    return pollAlteryxPublishJob(data.job_id);
+    return pollAlteryxPublishJob(data.job_id, "Failed to publish Python pipeline to BigQuery");
   }
 
   return data;
 }
 
-async function pollAlteryxPublishJob(jobId: string): Promise<any> {
+async function pollAlteryxPublishJob(jobId: string, fallbackMessage = "Publish job failed"): Promise<any> {
   const deadline = Date.now() + 30 * 60 * 1000;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -715,10 +719,10 @@ async function pollAlteryxPublishJob(jobId: string): Promise<any> {
       return data.result || data;
     }
     if (data.status === "failed") {
-      throw new Error(apiErrorMessage(data.error || data.detail, "Failed to publish Python pipeline to BigQuery"));
+      throw new Error(apiErrorMessage(data.error || data.detail, fallbackMessage));
     }
   }
-  throw new Error("Python publish is still running after 30 minutes. Check DigitalOcean logs and BigQuery job history.");
+  throw new Error(`${fallbackMessage} is still running after 30 minutes. Check DigitalOcean logs.`);
 }
 
 export async function fetchAlteryxBrdHtml(

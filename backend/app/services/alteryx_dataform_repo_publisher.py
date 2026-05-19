@@ -91,23 +91,49 @@ def _request_allowing(method: str, url: str, headers: dict[str, str], allowed: s
     return response
 
 
+def _workspace_exists(headers: dict[str, str], workspace_name: str) -> bool:
+    get_url = f"{DATAFORM_API_BASE}/{workspace_name}"
+    response = requests.get(get_url, headers=headers, timeout=60)
+    if response.status_code == 200:
+        return True
+    if response.status_code == 404:
+        return False
+    raise RuntimeError(f"Dataform API GET {get_url} failed: {response.status_code} {response.text}")
+
+
+def _wait_for_workspace(headers: dict[str, str], workspace_name: str) -> None:
+    timeout_seconds = int(_env("GCP_DATAFORM_WORKSPACE_READY_TIMEOUT_SECONDS", "45") or "45")
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if _workspace_exists(headers, workspace_name):
+            return
+        time.sleep(2)
+    raise RuntimeError(
+        f"Dataform workspace was created but was not readable within {timeout_seconds}s: {workspace_name}. "
+        "Check GCP_DATAFORM_LOCATION and GCP_DATAFORM_REPOSITORY match an existing Dataform repository."
+    )
+
+
 def _ensure_workspace(headers: dict[str, str], repository_name: str, workspace_id: str) -> str:
     workspace_name = f"{repository_name}/workspaces/{workspace_id}"
-    get_url = f"{DATAFORM_API_BASE}/{workspace_name}"
-    existing = requests.get(get_url, headers=headers, timeout=60)
-    if existing.status_code == 200:
+    if _workspace_exists(headers, workspace_name):
         return workspace_name
-    if existing.status_code != 404:
-        raise RuntimeError(f"Dataform API GET {get_url} failed: {existing.status_code} {existing.text}")
 
     create_url = f"{DATAFORM_API_BASE}/{repository_name}/workspaces"
-    _request(
+    created = _request_allowing(
         "POST",
         create_url,
         headers,
+        {404, 409},
         params={"workspaceId": workspace_id},
         json={},
     )
+    if created.status_code == 404:
+        raise RuntimeError(
+            f"Dataform repository was not found: {repository_name}. "
+            "Set GCP_DATAFORM_LOCATION and GCP_DATAFORM_REPOSITORY to the exact repository id shown in GCP Dataform."
+        )
+    _wait_for_workspace(headers, workspace_name)
     return workspace_name
 
 
@@ -125,7 +151,10 @@ def _make_directories(headers: dict[str, str], workspace_name: str, files: dict[
 
     for directory in directories:
         url = f"{DATAFORM_API_BASE}/{workspace_name}:makeDirectory"
-        _request_allowing("POST", url, headers, {409}, json={"path": directory})
+        response = _request_allowing("POST", url, headers, {404, 409}, json={"path": directory})
+        if response.status_code == 404:
+            _wait_for_workspace(headers, workspace_name)
+            _request_allowing("POST", url, headers, {409}, json={"path": directory})
     return directories
 
 
@@ -135,7 +164,10 @@ def _write_file(headers: dict[str, str], workspace_name: str, path: str, content
         "path": path.replace("\\", "/"),
         "contents": base64.b64encode(content.encode("utf-8")).decode("ascii"),
     }
-    _request("POST", url, headers, json=payload)
+    response = _request_allowing("POST", url, headers, {404}, json=payload)
+    if response.status_code == 404:
+        _wait_for_workspace(headers, workspace_name)
+        _request("POST", url, headers, json=payload)
 
 
 def _patched_files(files: dict[str, str], project_id: str, target_dataset: str, source_dataset: str, location: str) -> dict[str, str]:
