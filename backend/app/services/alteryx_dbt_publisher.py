@@ -290,6 +290,8 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional
+
+from app.services.gcp_credentials import service_account_info_from_env, write_service_account_file_from_env
  
  
 def _env(name: str, default: str = "") -> str:
@@ -362,17 +364,7 @@ def _write_profiles(
  
  
 def _write_service_account_json(work_dir: Path, env: dict[str, str]) -> None:
-    service_account_json = _env("GCP_SERVICE_ACCOUNT_JSON")
-    if not service_account_json:
-        return
- 
-    credentials_path = work_dir / "gcp_service_account.json"
-    try:
-        parsed = json.loads(service_account_json)
-        credentials_path.write_text(json.dumps(parsed), encoding="utf-8")
-    except json.JSONDecodeError:
-        credentials_path.write_text(service_account_json, encoding="utf-8")
-    env["GOOGLE_APPLICATION_CREDENTIALS"] = str(credentials_path)
+    write_service_account_file_from_env(work_dir, env)
  
  
 def _validate_service_account_config(auth_method: str, env: dict[str, str]) -> str:
@@ -460,11 +452,11 @@ def fetch_bigquery_table_metadata(
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
  
     try:
-        service_account_json = (env or {}).get("GCP_SERVICE_ACCOUNT_JSON") or os.getenv("GCP_SERVICE_ACCOUNT_JSON")
-        if not credentials_path and service_account_json:
+        service_account_info = service_account_info_from_env(env)
+        if not credentials_path and service_account_info:
             from google.oauth2 import service_account
  
-            credentials = service_account.Credentials.from_service_account_info(json.loads(service_account_json))
+            credentials = service_account.Credentials.from_service_account_info(service_account_info)
             client = bigquery.Client(project=project_id, credentials=credentials)
         else:
             client = bigquery.Client(project=project_id)
@@ -730,14 +722,6 @@ def publish_dbt_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     tool_count = int(project.get("tool_count") or 0)
     connection_count = int(project.get("connection_count") or 0)
     output_targets = project.get("output_targets") or []
- 
-    # Load Google Cloud credentials from GOOGLE_CREDENTIALS_JSON env var
-    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if creds_json:
-        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
-        tmp.write(creds_json)
-        tmp.flush()
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
  
     if not files:
         raise ValueError("No dbt project files were generated for this workflow.")

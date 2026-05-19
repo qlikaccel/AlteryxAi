@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata
+from app.services.alteryx_dataform_repo_publisher import publish_dataform_project_to_repository
+from app.services.gcp_credentials import write_service_account_file_from_env
 
 
 def _env(name: str, default: str = "") -> str:
@@ -71,11 +73,7 @@ def _normalize_dataform_project_for_cli(project_dir: Path) -> None:
 
 
 def _write_service_account_json(work_dir: Path, env: dict[str, str]) -> None:
-    service_account_json = _env("GCP_SERVICE_ACCOUNT_JSON")
-    if service_account_json:
-        credentials_path = work_dir / "gcp_service_account.json"
-        credentials_path.write_text(service_account_json, encoding="utf-8")
-        env["GOOGLE_APPLICATION_CREDENTIALS"] = str(credentials_path)
+    write_service_account_file_from_env(work_dir, env)
 
 
 def _run_dataform_command(command: list[str], cwd: Path, env: dict[str, str], timeout_seconds: int) -> dict[str, Any]:
@@ -193,9 +191,23 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
         raise ValueError("No Dataform project files were generated for this workflow.")
     resolved_dataform_executable = shutil.which(dataform_executable)
     if not resolved_dataform_executable:
+        if _env("GCP_DATAFORM_REPOSITORY") and _env("GCP_DATAFORM_LOCATION"):
+            result = publish_dataform_project_to_repository(project, run=True)
+            result.update({
+                "target": "dataform",
+                "project_id": project_id,
+                "target_dataset": target_dataset,
+                "source_dataset": source_dataset,
+                "bigquery_location": location,
+                "project_name": project_name,
+                "final_table_name": final_table_name,
+                "final_model": final_model,
+                "used_dataform_api_fallback": True,
+            })
+            return result
         raise RuntimeError(
-            f"Dataform executable '{dataform_executable}' was not found. "
-            "Install @dataform/cli and set DATAFORM_EXECUTABLE=dataform."
+            f"Dataform executable '{dataform_executable}' was not found and no GCP Dataform repository fallback is configured. "
+            "Install @dataform/cli or set GCP_DATAFORM_LOCATION and GCP_DATAFORM_REPOSITORY."
         )
 
     with tempfile.TemporaryDirectory(prefix="alteryx_dataform_publish_") as temp_root:

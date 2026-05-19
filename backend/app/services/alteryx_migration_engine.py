@@ -83,7 +83,7 @@ def _call_documentation_hf(prompt: str, system_prompt: str, max_tokens: int = 60
                     "max_tokens": max_tokens,
                     "temperature": 0.2,
                 },
-                timeout=45,
+                timeout=int(os.getenv("ALTERYX_DOC_LLM_TIMEOUT_SECONDS", "12") or "12"),
             )
             response.raise_for_status()
             data = response.json()
@@ -175,14 +175,14 @@ def _dbt_identifier(value: str, fallback: str = "alteryx_model", max_length: int
 
 def _dbt_source_name(source: dict[str, Any], index: int) -> str:
     name = str(source.get("name") or source.get("path") or f"source_{index}")
-    name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet|yxmd|yxmc)$", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet)$", "", name, flags=re.IGNORECASE)
     return _dbt_identifier(name, f"source_{index}")
 
 
 def _dbt_source_identifier(source: dict[str, Any], index: int) -> str:
     name = str(source.get("name") or source.get("path") or f"source_{index}")
     name = name.replace("\\", "/").rsplit("/", 1)[-1]
-    name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet|yxmd|yxmc)$", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet)$", "", name, flags=re.IGNORECASE)
     cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", name or "").strip("_")
     return _shorten_identifier(cleaned or _dbt_source_name(source, index), 120)
 
@@ -512,19 +512,64 @@ def _literal_or_identifier_sql(expr: str) -> str:
     return value
 
 
+def _outer_function_argument(expr: str, function_name: str) -> str | None:
+    value = str(expr or "").strip()
+    prefix = f"{function_name}("
+    if not value.lower().startswith(prefix.lower()) or not value.endswith(")"):
+        return None
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(value[len(function_name):], start=len(function_name)):
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0 and index != len(value) - 1:
+                return None
+            if depth < 0:
+                return None
+    if depth != 0:
+        return None
+    inner = value[len(function_name) + 1:-1].strip()
+    return inner or None
+
+
 def _formula_to_sql(expression: str) -> str | None:
     expr = str(expression or "").strip()
     if not expr:
         return None
     if re.match(r"^IIF\s*\(", expr, flags=re.IGNORECASE):
         return _convert_iif_to_sql(expr)
-    to_number_match = re.match(r"^ToNumber\s*\(\s*([^()+\-*/]+)\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if to_number_match:
-        inner = _formula_to_sql(to_number_match.group(1)) or _literal_or_identifier_sql(to_number_match.group(1))
+    to_number_arg = _outer_function_argument(expr, "ToNumber")
+    if to_number_arg:
+        inner = _formula_to_sql(to_number_arg) or _literal_or_identifier_sql(to_number_arg)
         return f"safe_cast({inner} as numeric)"
-    to_string_match = re.match(r"^ToString\s*\(\s*([^()+\-*/]+)\s*\)$", expr, flags=re.IGNORECASE | re.DOTALL)
-    if to_string_match:
-        inner = _formula_to_sql(to_string_match.group(1)) or _literal_or_identifier_sql(to_string_match.group(1))
+    for function_name, target_type in (
+        ("ToDouble", "numeric"),
+        ("ToDecimal", "numeric"),
+        ("ToInteger", "int64"),
+        ("ToInt32", "int64"),
+        ("ToInt64", "int64"),
+    ):
+        cast_arg = _outer_function_argument(expr, function_name)
+        if cast_arg:
+            inner = _formula_to_sql(cast_arg) or _literal_or_identifier_sql(cast_arg)
+            return f"safe_cast({inner} as {target_type})"
+    to_string_arg = _outer_function_argument(expr, "ToString")
+    if to_string_arg:
+        inner = _formula_to_sql(to_string_arg) or _literal_or_identifier_sql(to_string_arg)
         return f"cast({inner} as string)"
     contains_match = re.match(r"Contains\s*\((.+),\s*['\"]([^'\"]+)['\"]\)", expr, flags=re.IGNORECASE | re.DOTALL)
     if contains_match:
@@ -569,10 +614,21 @@ def _formula_to_sql(expression: str) -> str | None:
             f"safe_divide(safe_cast({_sql_identifier(div_match.group(1))} as numeric), "
             f"nullif(safe_cast({_sql_identifier(div_match.group(2))} as numeric), 0))"
         )
+    def _inline_numeric_cast(match: re.Match[str], target_type: str = "numeric") -> str:
+        inner = match.group(1).strip()
+        inner_sql = re.sub(r"\[([^\]]+)\]", lambda field: f"safe_cast({_sql_identifier(field.group(1))} as numeric)", inner)
+        return f"safe_cast({inner_sql} as {target_type})"
+
     arithmetic = re.sub(
-        r"\bToNumber\s*\(\s*\[([^\]]+)\]\s*\)",
-        lambda m: f"safe_cast({_sql_identifier(m.group(1))} as numeric)",
+        r"\b(?:ToNumber|ToDouble|ToDecimal)\s*\(\s*([^()]+?)\s*\)",
+        lambda m: _inline_numeric_cast(m, "numeric"),
         expr,
+        flags=re.IGNORECASE,
+    )
+    arithmetic = re.sub(
+        r"\b(?:ToInteger|ToInt32|ToInt64)\s*\(\s*([^()]+?)\s*\)",
+        lambda m: _inline_numeric_cast(m, "int64"),
+        arithmetic,
         flags=re.IGNORECASE,
     )
     arithmetic = re.sub(
@@ -1506,9 +1562,12 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "        raise RuntimeError('google-cloud-bigquery is required to read BigQuery sources.')\n"
         "    client = bigquery.Client(project=env('GCP_PROJECT_ID') or None)\n"
         "    return client.query(f'SELECT * FROM `{table_id}`').to_dataframe()\n\n"
+        "def _source_basename(value: str) -> str:\n"
+        "    raw = str(value or '').replace('\\\\', '/')\n"
+        "    return raw.rsplit('/', 1)[-1]\n\n"
         "def _safe_bq_table_name(value: str) -> str:\n"
         "    import re\n"
-        "    stem = Path(str(value or '')).stem\n"
+        "    stem = Path(_source_basename(value)).stem\n"
         "    return re.sub(r'[^A-Za-z0-9_]+', '_', stem).strip('_').lower()\n\n"
         "def _bq_source_table_candidates(source: dict) -> list[str]:\n"
         "    import re\n"
@@ -1526,8 +1585,8 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "    for value in raw_values:\n"
         "        if not value:\n"
         "            continue\n"
-        "        table = value.split('.')[-1] if value.count('.') >= 2 else value\n"
-        "        exact = Path(str(table)).stem.strip().strip('`')\n"
+        "        table = value.split('.')[-1] if value.count('.') >= 2 and '/' not in value and '\\\\' not in value else value\n"
+        "        exact = Path(_source_basename(table)).stem.strip().strip('`')\n"
         "        safe = _safe_bq_table_name(table)\n"
         "        exact_safe = __import__('re').sub(r'[^A-Za-z0-9_]+', '_', exact).strip('_')\n"
         "        variants = [exact_safe, safe]\n"
@@ -1535,10 +1594,46 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "        variants.append(re.sub(r'^\\d+_+', '', safe))\n"
         "        variants.append(re.sub(r'^(input|source)_?\\d+_+', '', safe))\n"
         "        variants.append(re.sub(r'_csv$', '', safe))\n"
+        "        if safe.endswith('s'):\n"
+        "            variants.append(safe[:-1])\n"
         "        for variant in variants:\n"
         "            if variant and variant not in candidates:\n"
         "                candidates.append(variant)\n"
         "    return candidates\n\n"
+        "def _normalized_table_token(value: str) -> str:\n"
+        "    import re\n"
+        "    return re.sub(r'[^a-z0-9]+', '', str(value or '').lower())\n\n"
+        "def _candidate_matches_table(candidate: str, table_name: str) -> bool:\n"
+        "    candidate_token = _normalized_table_token(candidate)\n"
+        "    table_token = _normalized_table_token(table_name)\n"
+        "    if not candidate_token or not table_token:\n"
+        "        return False\n"
+        "    if candidate_token == table_token:\n"
+        "        return True\n"
+        "    if table_token.startswith(candidate_token) or table_token.endswith(candidate_token):\n"
+        "        return True\n"
+        "    if candidate_token.endswith('s') and table_token.startswith(candidate_token[:-1]):\n"
+        "        return True\n"
+        "    return False\n\n"
+        "def _discover_bigquery_source_tables(project: str, dataset: str, candidates: list[str]) -> list[str]:\n"
+        "    if bigquery is None or not project or not dataset or not candidates:\n"
+        "        return []\n"
+        "    client = bigquery.Client(project=project)\n"
+        "    try:\n"
+        "        tables = list(client.list_tables(f'{project}.{dataset}'))\n"
+        "    except Exception:\n"
+        "        return []\n"
+        "    exact_matches: list[str] = []\n"
+        "    fuzzy_matches: list[str] = []\n"
+        "    candidate_tokens = {_normalized_table_token(candidate) for candidate in candidates if candidate}\n"
+        "    for table in tables:\n"
+        "        table_name = getattr(table, 'table_id', '') or ''\n"
+        "        table_token = _normalized_table_token(table_name)\n"
+        "        if table_token in candidate_tokens and table_name not in exact_matches:\n"
+        "            exact_matches.append(table_name)\n"
+        "        elif any(_candidate_matches_table(candidate, table_name) for candidate in candidates) and table_name not in fuzzy_matches:\n"
+        "            fuzzy_matches.append(table_name)\n"
+        "    return exact_matches + [table for table in fuzzy_matches if table not in exact_matches]\n\n"
         "def read_bigquery_source_fallback(source: dict) -> pd.DataFrame:\n"
         "    project = env('GCP_PROJECT_ID')\n"
         "    dataset = env('GCP_BIGQUERY_SOURCE_DATASET') or env('BQ_SOURCE_DATASET') or env('GCP_BIGQUERY_DATASET') or env('BQ_DATASET')\n"
@@ -1555,10 +1650,18 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "            return read_bigquery_table(table_id)\n"
         "        except Exception as exc:\n"
         "            errors.append(f'{table_id}: {exc}')\n"
+        "    discovered_candidates = _discover_bigquery_source_tables(project, dataset, candidates)\n"
+        "    for table in discovered_candidates:\n"
+        "        table_id = f'{project}.{dataset}.{table}'\n"
+        "        try:\n"
+        "            return read_bigquery_table(table_id)\n"
+        "        except Exception as exc:\n"
+        "            errors.append(f'{table_id}: {exc}')\n"
         "    raise FileNotFoundError(\n"
         "        f\"Source file not found locally and no BigQuery fallback table matched for {source.get('path') or source.get('name')}. \"\n"
-        "        f\"Tried: {', '.join(candidates)}. \"\n"
-        "        'Set BQ_SOURCE_TABLE_<SOURCE_NAME> to the exact BigQuery table name if the landed source name differs.'\n"
+        "        f\"Tried: {', '.join(candidates + discovered_candidates)}. \"\n"
+        "        'The accelerator also scanned the configured BigQuery source dataset for compatible table names. '\n"
+        "        'Set BQ_SOURCE_TABLE_<SOURCE_NAME> only when the landed source name is intentionally unrelated.'\n"
         "    )\n\n"
         "def read_http_csv(source: dict) -> pd.DataFrame:\n"
         "    url = str(source.get('path') or source.get('url') or '')\n"
@@ -2100,34 +2203,15 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "    for name, frame in outputs.items():\n"
         "        safe_name = Path(str(name)).stem or 'output'\n"
         "        frame.to_csv(target_dir / f'{safe_name}.csv', index=False)\n\n"
-        "def _bigquery_type_for_series(series: pd.Series) -> str:\n"
-        "    if pd.api.types.is_bool_dtype(series):\n"
-        "        return 'BOOL'\n"
-        "    if pd.api.types.is_integer_dtype(series):\n"
-        "        return 'INT64'\n"
-        "    if pd.api.types.is_float_dtype(series):\n"
-        "        return 'FLOAT64'\n"
-        "    if pd.api.types.is_datetime64_any_dtype(series):\n"
-        "        return 'TIMESTAMP'\n"
-        "    return 'STRING'\n\n"
-        "def _prepare_frame_for_bigquery(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[Any]]:\n"
+        "def _validate_bigquery_output_frame(name: str, frame: pd.DataFrame) -> None:\n"
+        "    if not isinstance(frame, pd.DataFrame):\n"
+        "        raise RuntimeError(f\"Output {name!r} is not a pandas DataFrame and cannot be published to BigQuery.\")\n"
         "    if len(frame.columns) == 0:\n"
-        "        return pd.DataFrame({'placeholder': []}), [bigquery.SchemaField('placeholder', 'STRING')]\n"
-        "    prepared = frame.copy()\n"
-        "    schema = []\n"
-        "    for column in prepared.columns:\n"
-        "        field_name = str(column)\n"
-        "        field_type = _bigquery_type_for_series(prepared[column])\n"
-        "        if field_type == 'STRING':\n"
-        "            prepared[column] = prepared[column].where(prepared[column].notna(), None).astype('string')\n"
-        "        elif field_type in {'INT64', 'FLOAT64'}:\n"
-        "            prepared[column] = pd.to_numeric(prepared[column], errors='coerce')\n"
-        "        elif field_type == 'BOOL':\n"
-        "            prepared[column] = prepared[column].astype('boolean')\n"
-        "        elif field_type == 'TIMESTAMP':\n"
-        "            prepared[column] = pd.to_datetime(prepared[column], errors='coerce')\n"
-        "        schema.append(bigquery.SchemaField(field_name, field_type))\n"
-        "    return prepared, schema\n\n"
+        "        raise RuntimeError(\n"
+        "            f\"Output {name!r} has zero columns, so BigQuery cannot create a schema. \"\n"
+        "            \"This usually means an upstream Python tool did not write tabular output for the connected anchor, \"\n"
+        "            \"or the Alteryx output is connected to an anchor that the Python code did not produce.\"\n"
+        "        )\n\n"
         "def publish_outputs_to_bigquery(outputs: dict[str, pd.DataFrame], dataset: str, project_id: str = '') -> None:\n"
         "    if bigquery is None:\n"
         "        raise RuntimeError('google-cloud-bigquery is required for BigQuery publishing.')\n"
@@ -2135,18 +2219,11 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "    if not project or not dataset:\n"
         "        raise RuntimeError('Set GCP_PROJECT_ID and BQ_DATASET/GCP_BIGQUERY_DATASET before publishing.')\n"
         "    client = bigquery.Client(project=project)\n"
+        "    job_config = bigquery.LoadJobConfig(write_disposition=env('BQ_WRITE_DISPOSITION', 'WRITE_TRUNCATE'), autodetect=True)\n"
         "    for name, frame in outputs.items():\n"
-        "        # Skip empty DataFrames with no columns\n"
-        "        if frame.empty and len(frame.columns) == 0:\n"
-        "            print(f'Skipped {name}: empty result with no columns')\n"
-        "            continue\n"
+        "        _validate_bigquery_output_frame(name, frame)\n"
         "        table_name = __import__('re').sub(r'[^A-Za-z0-9_]+', '_', Path(str(name)).stem).strip('_').lower() or PROJECT_NAME\n"
         "        table_id = f'{project}.{dataset}.{table_name}'\n"
-        "        frame, schema = _prepare_frame_for_bigquery(frame)\n"
-        "        job_config = bigquery.LoadJobConfig(\n"
-        "            schema=schema,\n"
-        "            write_disposition=env('BQ_WRITE_DISPOSITION', 'WRITE_TRUNCATE')\n"
-        "        )\n"
         "        client.load_table_from_dataframe(frame, table_id, job_config=job_config).result()\n"
         "        print(f'Published {len(frame):,} rows to {table_id}')\n\n"
         "def main() -> None:\n"
@@ -2344,7 +2421,7 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
     }
 
 
-def generate_executive_summary(workflow: dict[str, Any]) -> dict[str, Any]:
+def generate_executive_summary(workflow: dict[str, Any], use_llm: bool | None = None) -> dict[str, Any]:
     name = workflow.get("name", "Selected workflow")
     tool_count = workflow.get("toolCount", 0)
     unsupported_count = workflow.get("unsupportedToolCount", 0)
@@ -2373,7 +2450,10 @@ def generate_executive_summary(workflow: dict[str, Any]) -> dict[str, Any]:
     provider = "deterministic"
     llm_status = "fallback"
 
-    if (os.getenv("ALTERYX_DOC_LLM_PROVIDER") or "huggingface").strip().lower() in {"huggingface", "hf"}:
+    if use_llm is None:
+        use_llm = (os.getenv("ALTERYX_DOC_LLM_ENABLED") or "true").strip().lower() in {"1", "true", "yes", "on"}
+
+    if use_llm and (os.getenv("ALTERYX_DOC_LLM_PROVIDER") or "huggingface").strip().lower() in {"huggingface", "hf"}:
         node_context = [
             {
                 "id": node.get("id"),

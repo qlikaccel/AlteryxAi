@@ -8,9 +8,11 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
 from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata
+from app.services.gcp_credentials import write_service_account_file_from_env
 
 
 def _env(name: str, default: str = "") -> str:
@@ -31,6 +33,11 @@ def _write_project_files(project_dir: Path, files: dict[str, Any]) -> None:
         target.write_text(str(content), encoding="utf-8")
 
 
+def _portable_basename(value: str) -> str:
+    raw = str(value or "")
+    return PureWindowsPath(raw).name or PurePosixPath(raw).name or Path(raw).name
+
+
 def _copy_accessible_source_files(project_dir: Path, sources: list[dict[str, Any]]) -> None:
     search_roots = [
         Path(path.strip())
@@ -40,11 +47,12 @@ def _copy_accessible_source_files(project_dir: Path, sources: list[dict[str, Any
     for source in sources:
         source_path = Path(str(source.get("path") or ""))
         if not source_path.exists() or not source_path.is_file():
+            source_name = _portable_basename(str(source.get("path") or source.get("name") or ""))
             matched = None
             for root in search_roots:
                 candidates = [
                     root / source_path,
-                    root / source_path.name,
+                    root / source_name,
                 ]
                 for candidate in candidates:
                     if candidate.exists() and candidate.is_file():
@@ -53,7 +61,7 @@ def _copy_accessible_source_files(project_dir: Path, sources: list[dict[str, Any
                 if matched is not None:
                     break
                 try:
-                    matches = list(root.rglob(source_path.name))
+                    matches = list(root.rglob(source_name))
                 except Exception:
                     matches = []
                 if matches:
@@ -62,7 +70,7 @@ def _copy_accessible_source_files(project_dir: Path, sources: list[dict[str, Any
             if matched is None:
                 continue
             source_path = matched
-        target = project_dir / source_path.name
+        target = project_dir / _portable_basename(str(source_path))
         if target.exists():
             continue
         target.write_bytes(source_path.read_bytes())
@@ -85,17 +93,7 @@ def _write_embedded_source_assets(project_dir: Path, assets: list[dict[str, Any]
 
 
 def _write_inline_service_account(work_dir: Path, env: dict[str, str]) -> None:
-    service_account_json = _env("GCP_SERVICE_ACCOUNT_JSON") or _env("GOOGLE_CREDENTIALS_JSON")
-    if not service_account_json:
-        return
-
-    credentials_path = work_dir / "gcp_service_account.json"
-    try:
-        parsed = json.loads(service_account_json)
-        credentials_path.write_text(json.dumps(parsed), encoding="utf-8")
-    except json.JSONDecodeError:
-        credentials_path.write_text(service_account_json, encoding="utf-8")
-    env["GOOGLE_APPLICATION_CREDENTIALS"] = str(credentials_path)
+    write_service_account_file_from_env(work_dir, env)
 
 
 def _create_bigquery_dataset(project_id: str, dataset: str, location: str, env: dict[str, str]) -> dict[str, Any]:

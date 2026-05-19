@@ -16,7 +16,8 @@ SUPPORTED_JSON_WORKFLOW_EXTENSIONS = {".json"}
 SUPPORTED_ARCHIVE_EXTENSIONS = {".yxzp", ".zip"}
 SUPPORTED_SOURCE_ASSET_EXTENSIONS = {".csv", ".txt", ".xlsx", ".xls", ".parquet", ".json"}
 UPLOAD_CACHE_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "_alteryx_upload_batches")
+    os.getenv("ALTERYX_UPLOAD_CACHE_DIR")
+    or os.path.join(os.path.dirname(__file__), "..", "..", "_alteryx_upload_batches")
 )
 
 
