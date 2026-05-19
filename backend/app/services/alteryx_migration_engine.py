@@ -1406,6 +1406,7 @@ def generate_dataform_project(workflow: dict[str, Any], sharepoint_url: str = ""
         "macro_plan": dbt_project.get("macro_plan", {}),
         "transform_plan": transform_plan,
         "transformation_coverage": transform_plan.get("coverage") or {},
+        "dbt_project": dbt_project,
     }
 
 
@@ -1476,6 +1477,7 @@ def _python_transform_steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
 def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", file_name: str = "") -> dict[str, Any]:
     project_name = _python_identifier(workflow.get("name") or "alteryx_python_pipeline", "alteryx_python_pipeline")
     transform_plan = build_transform_plan(workflow)
+    dbt_project = generate_dbt_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
     if sharepoint_url or file_name:
         sources = [_source_from_override(sharepoint_url, file_name)]
     else:
@@ -2436,6 +2438,7 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "macro_plan": macro_plan,
         "transform_plan": transform_plan,
         "transformation_coverage": transform_plan.get("coverage") or {},
+        "dbt_project": dbt_project,
     }
 
 

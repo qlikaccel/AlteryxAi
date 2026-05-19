@@ -11,7 +11,7 @@ from pathlib import Path
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
-from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata
+from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata, publish_dbt_project_to_bigquery
 from app.services.gcp_credentials import write_service_account_file_from_env
 
 
@@ -252,6 +252,34 @@ def _format_pipeline_failure(result: dict[str, Any]) -> str:
     return f"Publish to BigQuery failed while running: {result['command']}{suffix}"
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = _env(name)
+    if value == "":
+        return default
+    return value.lower() in {"1", "true", "yes", "y"}
+
+
+def _publish_dbt_fallback(project: dict[str, Any], reason: str) -> dict[str, Any] | None:
+    if not _env_flag("PYTHON_BIGQUERY_FALLBACK_TO_DBT", True):
+        return None
+    dbt_project = project.get("dbt_project")
+    if not isinstance(dbt_project, dict) or not dbt_project.get("files"):
+        return None
+    result = publish_dbt_project_to_bigquery(dbt_project)
+    result.update({
+        "target": "python",
+        "status": "published_via_dbt_fallback" if result.get("success", True) else "failed_via_dbt_fallback",
+        "used_dbt_fallback": True,
+        "fallback_reason": reason,
+        "message": (
+            "Python native publish was unavailable for this workflow, so the equivalent dbt project was published to BigQuery successfully."
+            if result.get("success", True)
+            else result.get("message", "Python native publish failed and dbt fallback also failed.")
+        ),
+    })
+    return result
+
+
 def publish_python_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any]:
     publish_started = time.time()
     project_id = _required_env("GCP_PROJECT_ID")
@@ -291,6 +319,13 @@ def publish_python_project_to_bigquery(project: dict[str, Any]) -> dict[str, Any
         command = [python_executable, "pipeline.py", "--publish-bq"]
         result = _run_python_pipeline(command, project_dir, run_env, timeout_seconds)
         if not result["success"]:
+            fallback = _publish_dbt_fallback(project, _format_pipeline_failure(result))
+            if fallback is not None:
+                fallback.setdefault("commands", [result])
+                fallback.setdefault("timings", {})
+                fallback["timings"].setdefault("python_pipeline_execution_seconds", result.get("duration_seconds"))
+                fallback["timings"].setdefault("total_seconds", round(time.time() - publish_started, 2))
+                return fallback
             return {
                 "success": False,
                 "status": "failed",

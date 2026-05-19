@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata
+from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata, publish_dbt_project_to_bigquery
 from app.services.alteryx_dataform_repo_publisher import publish_dataform_project_to_repository
 from app.services.gcp_credentials import write_service_account_file_from_env
 
@@ -109,6 +109,27 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return value.lower() in {"1", "true", "yes", "y"}
 
 
+def _publish_dbt_fallback(project: dict[str, Any], reason: str) -> dict[str, Any] | None:
+    if not _env_flag("DATAFORM_BIGQUERY_FALLBACK_TO_DBT", True):
+        return None
+    dbt_project = project.get("dbt_project")
+    if not isinstance(dbt_project, dict) or not dbt_project.get("files"):
+        return None
+    result = publish_dbt_project_to_bigquery(dbt_project)
+    result.update({
+        "target": "dataform",
+        "status": "published_via_dbt_fallback" if result.get("success", True) else "failed_via_dbt_fallback",
+        "used_dbt_fallback": True,
+        "fallback_reason": reason,
+        "message": (
+            "Dataform native publish was unavailable, so the equivalent dbt project was published to BigQuery successfully."
+            if result.get("success", True)
+            else result.get("message", "Dataform native publish failed and dbt fallback also failed.")
+        ),
+    })
+    return result
+
+
 def _format_dataform_failure(result: dict[str, Any]) -> str:
     stdout = str(result.get("stdout") or "").strip()
     stderr = str(result.get("stderr") or "").strip()
@@ -192,19 +213,28 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
     resolved_dataform_executable = shutil.which(dataform_executable)
     if not resolved_dataform_executable:
         if _env("GCP_DATAFORM_REPOSITORY") and _env("GCP_DATAFORM_LOCATION"):
-            result = publish_dataform_project_to_repository(project, run=True)
-            result.update({
-                "target": "dataform",
-                "project_id": project_id,
-                "target_dataset": target_dataset,
-                "source_dataset": source_dataset,
-                "bigquery_location": location,
-                "project_name": project_name,
-                "final_table_name": final_table_name,
-                "final_model": final_model,
-                "used_dataform_api_fallback": True,
-            })
-            return result
+            try:
+                result = publish_dataform_project_to_repository(project, run=True)
+                result.update({
+                    "target": "dataform",
+                    "project_id": project_id,
+                    "target_dataset": target_dataset,
+                    "source_dataset": source_dataset,
+                    "bigquery_location": location,
+                    "project_name": project_name,
+                    "final_table_name": final_table_name,
+                    "final_model": final_model,
+                    "used_dataform_api_fallback": True,
+                })
+                return result
+            except Exception as exc:
+                fallback = _publish_dbt_fallback(project, f"Dataform API fallback failed: {exc}")
+                if fallback is not None:
+                    return fallback
+                raise
+        fallback = _publish_dbt_fallback(project, f"Dataform executable '{dataform_executable}' was not found.")
+        if fallback is not None:
+            return fallback
         raise RuntimeError(
             f"Dataform executable '{dataform_executable}' was not found and no GCP Dataform repository fallback is configured. "
             "Install @dataform/cli or set GCP_DATAFORM_LOCATION and GCP_DATAFORM_REPOSITORY."
