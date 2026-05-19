@@ -49,6 +49,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fastapi import FastAPI, Query, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks, Body, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, HTMLResponse, PlainTextResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from typing import List, Dict, Any, Optional
 #from routers.alteryx_router import router as alteryx_router
 
@@ -170,6 +171,17 @@ app.include_router(workflows_html_router)
 app.include_router(alteryx_router)   # ✅ added here
 
 app.include_router(context_engineering_router)
+
+# Serve frontend static files (if the frontend has been built into ../frontend/dist)
+try:
+    FRONTEND_DIST = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist"))
+    if os.path.isdir(FRONTEND_DIST):
+        app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+        logger.info(f"Frontend static mounted at: {FRONTEND_DIST}")
+    else:
+        logger.info(f"Frontend dist not found at: {FRONTEND_DIST}; skipping static mount")
+except Exception as e:
+    logger.warning(f"Failed to mount frontend static files: {e}")
 
 # ==================== DEPENDENCY INJECTION ====================
 # FIX 3+4: single definition of each dependency — no duplicates
