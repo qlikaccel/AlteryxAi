@@ -173,6 +173,10 @@ def _dbt_identifier(value: str, fallback: str = "alteryx_model", max_length: int
     return _shorten_identifier(cleaned or fallback, max_length)
 
 
+def _yaml_double_quoted(value: Any) -> str:
+    return json.dumps(str(value or ""), ensure_ascii=False)
+
+
 def _dbt_source_name(source: dict[str, Any], index: int) -> str:
     name = str(source.get("name") or source.get("path") or f"source_{index}")
     name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet|yxmd|yxmc)$", "", name, flags=re.IGNORECASE)
@@ -1109,12 +1113,14 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         source_name = _dbt_source_name(source, index)
         source_identifier = _dbt_source_identifier(source, index)
         source_model_names.append(source_name)
-        description = str(source.get("path") or source.get("type") or "")
+        source_display = str(source.get("name") or source_name).replace("\\", "/")
+        original_path = str(source.get("path") or source.get("type") or "").replace("\\", "/")
+        description = _yaml_double_quoted(f"Landed source for {source_display}. Original path: {original_path}")
         identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
         source_rows.append(
             f"      - name: {source_name}\n"
             f"{identifier_line}"
-            f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '').replace(chr(92), '/')}\""
+            f"        description: {description}"
         )
         staging_files[f"models/staging/stg_{source_name}.sql"] = (
             "{{ config(materialized='view') }}\n\n"
@@ -1185,21 +1191,21 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         "version: 2\n\n"
         "sources:\n"
         "  - name: alteryx_raw\n"
-        "    description: \"Warehouse-landed source tables used by the Alteryx migration scaffold.\"\n"
+        f"    description: {_yaml_double_quoted('Warehouse-landed source tables used by the Alteryx migration scaffold.')}\n"
         "    tables:\n"
         + "\n".join(source_rows)
         + "\n\nmodels:\n"
         + "\n".join(
             [
-                f"  - name: stg_{name}\n    description: \"Staging view for landed source {name}.\""
+                f"  - name: stg_{name}\n    description: {_yaml_double_quoted('Staging view for landed source ' + name + '.')}"
                 for name in source_model_names
             ]
         )
         + "".join(
-            f"\n  - name: {_output_model_name(output, index)}\n    description: \"Output model for Alteryx target {str(output.get('name') or output.get('path') or index).replace(chr(34), '')}.\""
+            f"\n  - name: {_output_model_name(output, index)}\n    description: {_yaml_double_quoted('Output model for Alteryx target ' + str(output.get('name') or output.get('path') or index) + '.')}"
             for index, output in enumerate(output_targets, start=1)
         )
-        + f"\n  - name: {project_name}\n    description: \"Final scaffold model for {workflow.get('name', 'Alteryx workflow')}.\"\n"
+        + f"\n  - name: {project_name}\n    description: {_yaml_double_quoted('Final scaffold model for ' + str(workflow.get('name', 'Alteryx workflow')) + '.')}\n"
     )
 
     files = {
