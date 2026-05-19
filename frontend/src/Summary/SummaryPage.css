@@ -2956,7 +2956,7 @@ PAGE WRAP
 }
 
 .source-environment-banner-content {
-  display: flex;
+  /* display: flex; */
   align-items: center;
   justify-content: flex-start;
 }

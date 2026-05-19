@@ -202,6 +202,23 @@ def _node_blob(node: dict[str, Any]) -> str:
     return "\n".join(piece for piece in pieces if piece)
 
 
+def _workflow_has_python_tools(workflow: dict[str, Any]) -> bool:
+    values: list[str] = []
+    for key in ("unsupportedTools", "toolTypes", "recommendations"):
+        values.extend(str(item or "") for item in (workflow.get(key) or []))
+    for node in workflow.get("workflowNodes") or []:
+        config = node.get("config") or {}
+        values.extend(
+            [
+                str(node.get("plugin") or ""),
+                str(node.get("tool") or ""),
+                str(node.get("name") or ""),
+                str(config.get("toolFamily") or ""),
+            ]
+        )
+    return any("python" in value.lower() for value in values)
+
+
 def _terminal_output_nodes(workflow: dict[str, Any]) -> list[dict[str, Any]]:
     nodes = workflow.get("workflowNodes") or []
     if not nodes:
@@ -1710,6 +1727,14 @@ def publish_alteryx_workflow_dataform_to_bigquery(
             status_code=400,
             detail="Select the parent .yxmd workflow for Publish Dataform to BigQuery.",
         )
+    if _workflow_has_python_tools(workflow):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This workflow contains Alteryx Python tools. Use Python to BigQuery instead of Dataform to BigQuery; "
+                "Dataform expects SQL-convertible logic and pre-landed source tables."
+            ),
+        )
     project = generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
     _assert_transform_publishable(project, "Dataform to BigQuery")
     try:
@@ -1739,6 +1764,14 @@ def publish_alteryx_workflow_dataform_to_repository(
         raise HTTPException(
             status_code=400,
             detail="Select the parent .yxmd workflow for Publish Dataform to GCP Repo.",
+        )
+    if _workflow_has_python_tools(workflow):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This workflow contains Alteryx Python tools. Use Python to BigQuery instead of Dataform repository publish; "
+                "Dataform expects SQL-convertible logic and cannot execute Python tool logic."
+            ),
         )
     project = generate_dataform_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
     _assert_transform_publishable(project, "Dataform repository")
@@ -1829,6 +1862,14 @@ def publish_alteryx_workflow_dbt_to_bigquery(
             detail=(
                 "Select the parent .yxmd workflow for Publish dbt to BigQuery. "
                 "A .yxmc macro definition is an internal reusable component and does not contain the external source table mapping needed for dbt publish."
+            ),
+        )
+    if _workflow_has_python_tools(workflow):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This workflow contains Alteryx Python tools. Use Python to BigQuery instead of dbt to BigQuery; "
+                "dbt expects pre-landed source tables and cannot execute Python tool logic."
             ),
         )
     project = generate_dbt_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)

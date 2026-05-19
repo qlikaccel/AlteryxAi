@@ -141,6 +141,24 @@ function extractWorkflowColumns(workflow: AlteryxWorkflow | null) {
   return Array.from(columns);
 }
 
+function workflowHasPythonTools(workflow: AlteryxWorkflow | null) {
+  if (!workflow) return false;
+  const source: any = workflow;
+  const values: string[] = [];
+
+  (source.unsupportedTools || []).forEach((tool: any) => values.push(String(tool || "")));
+  (source.toolTypes || []).forEach((tool: any) => values.push(String(tool || "")));
+  (source.recommendations || []).forEach((item: any) => values.push(String(item || "")));
+  (source.workflowNodes || []).forEach((node: any) => {
+    values.push(String(node?.plugin || ""));
+    values.push(String(node?.tool || ""));
+    values.push(String(node?.name || ""));
+    values.push(String(node?.config?.toolFamily || ""));
+  });
+
+  return values.some((value) => value.toLowerCase().includes("python"));
+}
+
 function buildPieSlices(workflow: AlteryxWorkflow | null, summaryBullets: string[] = []) {
   const columns = extractWorkflowColumns(workflow);
   const summaryText = summaryBullets.join(" ").toLowerCase();
@@ -573,7 +591,6 @@ export default function SummaryPage() {
     }
   });
   const [mqueryCopied, setMqueryCopied] = useState(false);
-  const [selectedDownloadTarget, setSelectedDownloadTarget] = useState<DownloadTarget>("mquery");
   const [selectedDownloadBannerTarget, setSelectedDownloadBannerTarget] = useState<DownloadTarget>("mquery");
   const [selectedPublishTarget, setSelectedPublishTarget] = useState<PublishTarget>("dbt");
   const sourceMQueryPanelRef = useRef<HTMLElement | null>(null);
@@ -582,7 +599,17 @@ export default function SummaryPage() {
   const diagramSectionRef = useRef<HTMLElement | null>(null);
   const sourceTypesSectionRef = useRef<HTMLElement | null>(null);
 
+  // ─── Helper: Detect Python tools ──────────────────────────────────────────
+  const hasPythonTools = useMemo(() => workflowHasPythonTools(workflow), [workflow]);
+
   // ─── Data fetch (dev12 backend logic) ──────────────────────────────────────
+
+  // Auto-select Python publish target if Python tools are detected
+  useEffect(() => {
+    if (hasPythonTools && selectedPublishTarget !== "python") {
+      setSelectedPublishTarget("python");
+    }
+  }, [hasPythonTools, selectedPublishTarget]);
 
   useEffect(() => {
     if (!workflowId) {
@@ -1239,9 +1266,9 @@ export default function SummaryPage() {
     }
   };
 
-  const runSelectedDownload = () => {
-    runDownloadTarget(selectedDownloadTarget);
-  };
+  // const runSelectedDownload = () => {
+  //   runDownloadTarget(selectedDownloadTarget);
+  // };
 
   const runSelectedDownloadBanner = () => {
     runDownloadTarget(selectedDownloadBannerTarget);
@@ -1272,19 +1299,12 @@ export default function SummaryPage() {
   };
 
   const runSelectedPublish = () => {
+    if (hasPythonTools && selectedPublishTarget !== "python") {
+      runPublishTarget("python");
+      return;
+    }
     runPublishTarget(selectedPublishTarget);
   };
-
-  const selectedDownloadDisabled =
-    selectedDownloadTarget === "mquery"
-      ? !mqueryPreview
-      : selectedDownloadTarget === "dbt"
-        ? !batchId || !workflowId
-        : selectedDownloadTarget === "dataform"
-          ? !batchId || !workflowId
-          : selectedDownloadTarget === "pythonscripts"
-            ? !batchId || !workflowId
-            : false;
 
   const selectedDownloadBannerDisabled =
     selectedDownloadBannerTarget === "mquery"
@@ -1299,13 +1319,13 @@ export default function SummaryPage() {
 
   const selectedPublishDisabled =
     selectedPublishTarget === "dbt"
-      ? !batchId || !workflowId || dbtPublishing
+      ? !batchId || !workflowId || dbtPublishing || hasPythonTools
       : selectedPublishTarget === "powerbi"
-        ? !mqueryPreview || publishing || dbtPublishing
+        ? !mqueryPreview || publishing || dbtPublishing || hasPythonTools
         : selectedPublishTarget === "dataformbq"
-          ? !batchId || !workflowId || dataformPublishing || dbtPublishing
+          ? !batchId || !workflowId || dataformPublishing || dbtPublishing || hasPythonTools
           : selectedPublishTarget === "dataformgcp"
-            ? !batchId || !workflowId || dataformRepoPublishing || dbtPublishing
+            ? !batchId || !workflowId || dataformRepoPublishing || dbtPublishing || hasPythonTools
             : selectedPublishTarget === "python"
               ? !batchId || !workflowId || pythonPublishing || dbtPublishing
               : true;
@@ -1919,6 +1939,13 @@ export default function SummaryPage() {
                 <section className="source-environment-banner">
                   <div className="source-environment-banner-content">
                     <h3>Publish to Environment</h3>
+                    {hasPythonTools && (
+                      <div className="python-tools-disclaimer">
+                        <p>
+                          ⚠️ <strong>Python Tools Detected:</strong> This workflow contains Python tools. Only the "Python to BigQuery" option is supported for publishing.
+                        </p>
+                      </div>
+                    )}
                   </div>
                   <div className="source-environment-banner-options">
                     {[
@@ -1927,22 +1954,26 @@ export default function SummaryPage() {
                       { id: "python" as PublishTarget, label: "Python to BigQuery" },
                       { id: "dataformbq" as PublishTarget, label: "Dataform to BigQuery" },
                       { id: "dataformgcp" as PublishTarget, label: "Dataform to GCP Repo" },
-                    ].map((option) => (
-                      <label
-                        key={option.id}
-                        className={`source-publish-option ${selectedPublishTarget === option.id ? "selected" : ""}`}
-                      >
-                        <span className="source-option-line">
-                          <input
-                            type="radio"
-                            name="source-publish-banner-option"
-                            checked={selectedPublishTarget === option.id}
-                            onChange={() => setSelectedPublishTarget(option.id)}
-                          />
-                          <span>{option.label}</span>
-                        </span>
-                      </label>
-                    ))}
+                    ].map((option) => {
+                      const isDisabled = hasPythonTools && option.id !== "python";
+                      return (
+                        <label
+                          key={option.id}
+                          className={`source-publish-option ${selectedPublishTarget === option.id ? "selected" : ""} ${isDisabled ? "disabled" : ""}`}
+                        >
+                          <span className="source-option-line">
+                            <input
+                              type="radio"
+                              name="source-publish-banner-option"
+                              checked={selectedPublishTarget === option.id}
+                              onChange={() => !isDisabled && setSelectedPublishTarget(option.id)}
+                              disabled={isDisabled}
+                            />
+                            <span>{option.label}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
                   </div>
                   <button
                     className="source-box-action-button source-publish-banner-submit"
@@ -1991,7 +2022,7 @@ export default function SummaryPage() {
                   </button>
                 </section>
 
-                <div className="source-environment-boxes">
+                {/* <div className="source-environment-boxes">
                   <section className="source-environment-box" aria-labelledby="source-download-title">
                     <h3 id="source-download-title">Download</h3>
                     <div className="source-option-list">
@@ -2032,6 +2063,13 @@ export default function SummaryPage() {
 
                   <section className="source-environment-box" aria-labelledby="source-publish-title">
                     <h3 id="source-publish-title">Publish to Environment</h3>
+                    {hasPythonTools && (
+                      <div className="python-tools-disclaimer">
+                        <p>
+                          ⚠️ <strong>Python Tools Detected:</strong> This workflow contains Python tools. Only the "Python to BigQuery" option is supported for publishing.
+                        </p>
+                      </div>
+                    )}
                     <div className="source-option-list">
                       {[
                         { id: "dbt" as PublishTarget, label: "DBT to BigQuery" },
@@ -2041,15 +2079,17 @@ export default function SummaryPage() {
                         { id: "dataformgcp" as PublishTarget, label: "Dataform to GCP Repo" },
                       ].map((option) => {
                         const isSelected = selectedPublishTarget === option.id;
+                        const isDisabled = hasPythonTools && option.id !== "python";
 
                         return (
-                          <label className="source-publish-option" key={option.id}>
+                          <label className={`source-publish-option ${isDisabled ? "disabled" : ""}`} key={option.id}>
                             <span className="source-option-line">
                               <input
                                 type="radio"
                                 name="source-publish-option"
                                 checked={isSelected}
-                                onChange={() => setSelectedPublishTarget(option.id)}
+                                onChange={() => !isDisabled && setSelectedPublishTarget(option.id)}
+                                disabled={isDisabled}
                               />
                               <span>{option.label}</span>
                             </span>
@@ -2067,14 +2107,14 @@ export default function SummaryPage() {
                       Publish
                     </button>
                   </section>
-                </div>
+                </div> */}
                 {dbtPublishResult && (
                   <div className={`dbt-publish-result ${dbtPublishResult.success ? "success" : "failed"}`}>
                     <strong>{dbtPublishResult.success ? "BigQuery publish complete" : "BigQuery publish failed"}</strong>
                     <span>{dbtPublishResult.final_model || dbtPublishResult.message}</span>
                     {!dbtPublishResult.success && dbtPublishResult.commands?.length > 0 && (
                       <details>
-                        <summary>View dbt error log</summary>
+                        <summary>View publish error log</summary>
                         <pre>
                           {[
                             dbtPublishResult.commands[dbtPublishResult.commands.length - 1]?.stdout,

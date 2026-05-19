@@ -175,14 +175,14 @@ def _dbt_identifier(value: str, fallback: str = "alteryx_model", max_length: int
 
 def _dbt_source_name(source: dict[str, Any], index: int) -> str:
     name = str(source.get("name") or source.get("path") or f"source_{index}")
-    name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet)$", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet|yxmd|yxmc)$", "", name, flags=re.IGNORECASE)
     return _dbt_identifier(name, f"source_{index}")
 
 
 def _dbt_source_identifier(source: dict[str, Any], index: int) -> str:
     name = str(source.get("name") or source.get("path") or f"source_{index}")
     name = name.replace("\\", "/").rsplit("/", 1)[-1]
-    name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet)$", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet|yxmd|yxmc)$", "", name, flags=re.IGNORECASE)
     cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", name or "").strip("_")
     return _shorten_identifier(cleaned or _dbt_source_name(source, index), 120)
 
@@ -2100,6 +2100,34 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "    for name, frame in outputs.items():\n"
         "        safe_name = Path(str(name)).stem or 'output'\n"
         "        frame.to_csv(target_dir / f'{safe_name}.csv', index=False)\n\n"
+        "def _bigquery_type_for_series(series: pd.Series) -> str:\n"
+        "    if pd.api.types.is_bool_dtype(series):\n"
+        "        return 'BOOL'\n"
+        "    if pd.api.types.is_integer_dtype(series):\n"
+        "        return 'INT64'\n"
+        "    if pd.api.types.is_float_dtype(series):\n"
+        "        return 'FLOAT64'\n"
+        "    if pd.api.types.is_datetime64_any_dtype(series):\n"
+        "        return 'TIMESTAMP'\n"
+        "    return 'STRING'\n\n"
+        "def _prepare_frame_for_bigquery(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[Any]]:\n"
+        "    if len(frame.columns) == 0:\n"
+        "        return pd.DataFrame({'placeholder': []}), [bigquery.SchemaField('placeholder', 'STRING')]\n"
+        "    prepared = frame.copy()\n"
+        "    schema = []\n"
+        "    for column in prepared.columns:\n"
+        "        field_name = str(column)\n"
+        "        field_type = _bigquery_type_for_series(prepared[column])\n"
+        "        if field_type == 'STRING':\n"
+        "            prepared[column] = prepared[column].where(prepared[column].notna(), None).astype('string')\n"
+        "        elif field_type in {'INT64', 'FLOAT64'}:\n"
+        "            prepared[column] = pd.to_numeric(prepared[column], errors='coerce')\n"
+        "        elif field_type == 'BOOL':\n"
+        "            prepared[column] = prepared[column].astype('boolean')\n"
+        "        elif field_type == 'TIMESTAMP':\n"
+        "            prepared[column] = pd.to_datetime(prepared[column], errors='coerce')\n"
+        "        schema.append(bigquery.SchemaField(field_name, field_type))\n"
+        "    return prepared, schema\n\n"
         "def publish_outputs_to_bigquery(outputs: dict[str, pd.DataFrame], dataset: str, project_id: str = '') -> None:\n"
         "    if bigquery is None:\n"
         "        raise RuntimeError('google-cloud-bigquery is required for BigQuery publishing.')\n"
@@ -2107,10 +2135,18 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "    if not project or not dataset:\n"
         "        raise RuntimeError('Set GCP_PROJECT_ID and BQ_DATASET/GCP_BIGQUERY_DATASET before publishing.')\n"
         "    client = bigquery.Client(project=project)\n"
-        "    job_config = bigquery.LoadJobConfig(write_disposition=env('BQ_WRITE_DISPOSITION', 'WRITE_TRUNCATE'), autodetect=True)\n"
         "    for name, frame in outputs.items():\n"
+        "        # Skip empty DataFrames with no columns\n"
+        "        if frame.empty and len(frame.columns) == 0:\n"
+        "            print(f'Skipped {name}: empty result with no columns')\n"
+        "            continue\n"
         "        table_name = __import__('re').sub(r'[^A-Za-z0-9_]+', '_', Path(str(name)).stem).strip('_').lower() or PROJECT_NAME\n"
         "        table_id = f'{project}.{dataset}.{table_name}'\n"
+        "        frame, schema = _prepare_frame_for_bigquery(frame)\n"
+        "        job_config = bigquery.LoadJobConfig(\n"
+        "            schema=schema,\n"
+        "            write_disposition=env('BQ_WRITE_DISPOSITION', 'WRITE_TRUNCATE')\n"
+        "        )\n"
         "        client.load_table_from_dataframe(frame, table_id, job_config=job_config).result()\n"
         "        print(f'Published {len(frame):,} rows to {table_id}')\n\n"
         "def main() -> None:\n"

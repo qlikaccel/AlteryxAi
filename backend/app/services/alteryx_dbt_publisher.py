@@ -664,7 +664,7 @@ def _extract_dbt_stdout_row_count(command_results: list[dict[str, Any]], project
 
 def _safe_table_name(value: str, fallback: str) -> str:
     raw = str(value or fallback).split("\\")[-1].split("/")[-1]
-    raw = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet|yxdb)$", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet|yxdb|yxmd|yxmc)$", "", raw, flags=re.IGNORECASE)
     safe = re.sub(r"[^A-Za-z0-9_]+", "_", raw).strip("_").lower()
     return safe or fallback
 

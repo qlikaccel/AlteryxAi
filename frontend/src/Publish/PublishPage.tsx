@@ -578,54 +578,9 @@ export default function PublishPage() {
   const bigQueryExpectedRows = isBigQueryPublish ? bigQueryAlteryxRecordCount ?? "Pending" : expectedRows;
   const displayedColumnCount = columnCount ?? 0;
   const displayedTargetColumnCount = isBigQueryPublish ? bigQueryColumnCount : columnCount;
-  const publishSummarySourceColumnCount = isBigQueryPublish
-    ? firstPositiveNumber(
-        publishResult?.source_column_count,
-        publishResult?.alteryx_column_count,
-        mainPublishedTable?.source_column_count,
-        arrayLength(publishResult?.source_columns),
-        arrayLength(storedMigrationColumns),
-        publishedTableColumnCountFromTables,
-        publishedTableColumnCount,
-        targetColumnCount,
-        sourceColumnCount,
-      )
-    : displayedColumnCount;
-  const publishSummaryTargetColumnCount = isBigQueryPublish
-    ? firstPositiveNumber(
-        publishResult?.bigquery_column_count,
-        publishResult?.column_count,
-        publishResult?.total_columns,
-        bigQueryMetadata?.column_count,
-        bigQueryMetadata?.total_columns,
-        publishedTableColumnCountFromTables,
-        publishedTableColumnCount,
-        targetColumnCount,
-      )
-    : displayedTargetColumnCount;
-  const publishSummarySourceRows = isBigQueryPublish
-    ? asNumber(publishResult?.expected_row_count) ??
-      asNumber(publishResult?.alteryx_row_count) ??
-      asNumber(publishResult?.source_row_count) ??
-      asNumber(publishResult?.total_records) ??
-      asNumber(publishResult?.record_count) ??
-      publishedTableRowCount ??
-      bigQueryAlteryxRecordCount
-    : expectedRows;
-  const publishSummaryTargetRows = isBigQueryPublish
-    ? asNumber(publishResult?.total_records) ??
-      asNumber(publishResult?.record_count) ??
-      asNumber(publishResult?.total_rows) ??
-      asNumber(publishResult?.row_count) ??
-      publishedTableRowCount ??
-      bigQueryRowCount
-    : displayedPowerBiTargetRows;
-  const sourceNullCount = sumProfileColumnMetric(sourceProfile, "null_count");
-  const targetNullCount = sumProfileColumnMetric(targetProfile, "null_count");
-  const nullCountVariance =
-    sourceNullCount !== null && targetNullCount !== null
-      ? targetNullCount - sourceNullCount
-      : "Not applicable";
+  const sourceNullCount = sumProfileColumnMetric(sourceProfile, "null_count") ?? 0;
+  const targetNullCount = sumProfileColumnMetric(targetProfile, "null_count") ?? 0;
+  const nullCountVariance = targetNullCount - sourceNullCount;
 
   const validationMetrics = [
     {
@@ -636,22 +591,20 @@ export default function PublishPage() {
     },
     {
       metric: "Column Count",
-      alteryx: publishSummarySourceColumnCount,
-      powerbi: publishSummaryTargetColumnCount ?? "Not available",
-      variance: publishSummaryTargetColumnCount !== null && publishSummarySourceColumnCount !== null
-        ? publishSummaryTargetColumnCount - publishSummarySourceColumnCount
-        : "Not available",
+      alteryx: displayedColumnCount,
+      powerbi: displayedTargetColumnCount ?? "Not available",
+      variance: displayedTargetColumnCount !== null && columnCount !== null ? displayedTargetColumnCount - columnCount : "Not available",
     },
     {
       metric: "Total Records",
-      alteryx: publishSummarySourceRows,
-      powerbi: publishSummaryTargetRows,
-      variance: publishSummaryTargetRows !== null && publishSummarySourceRows !== null ? publishSummaryTargetRows - publishSummarySourceRows : null,
+      alteryx: expectedRows,
+      powerbi: displayedPowerBiTargetRows,
+      variance: displayedPowerBiTargetRows !== null && expectedRows !== null ? displayedPowerBiTargetRows - expectedRows : null,
     },
     {
       metric: "Null Column Count",
-      alteryx: sourceNullCount ?? "Not available",
-      powerbi: targetNullCount ?? "Not available",
+      alteryx: sourceNullCount,
+      powerbi: targetNullCount,
       variance: nullCountVariance,
     },
     {
@@ -673,24 +626,20 @@ export default function PublishPage() {
     },
     {
       metric: "Column Count",
-      alteryx: publishSummarySourceColumnCount,
-      bigquery: publishSummaryTargetColumnCount ?? "Not available",
-      variance: publishSummaryTargetColumnCount !== null && publishSummarySourceColumnCount !== null
-        ? publishSummaryTargetColumnCount - publishSummarySourceColumnCount
-        : null,
+      alteryx: displayedColumnCount,
+      bigquery: bigQueryColumnCount ?? "Not available",
+      variance: bigQueryColumnCount !== null && columnCount !== null ? bigQueryColumnCount - columnCount : null,
     },
     {
       metric: "Total Records",
-      alteryx: publishSummarySourceRows ?? bigQueryExpectedRows,
-      bigquery: publishSummaryTargetRows ?? bigQueryRowCount,
-      variance: publishSummaryTargetRows !== null && publishSummarySourceRows !== null
-        ? publishSummaryTargetRows - publishSummarySourceRows
-        : null,
+      alteryx: bigQueryExpectedRows,
+      bigquery: bigQueryRowCount,
+      variance: bigQueryRowCount !== null && bigQueryAlteryxRecordCount !== null ? bigQueryRowCount - bigQueryAlteryxRecordCount : null,
     },
     {
       metric: "Null Column Count",
-      alteryx: sourceNullCount ?? "Not available",
-      bigquery: targetNullCount ?? "Not available",
+      alteryx: sourceNullCount,
+      bigquery: targetNullCount,
       variance: nullCountVariance,
     },
     {
@@ -790,10 +739,6 @@ export default function PublishPage() {
               : "Numeric sum and average values were calculated from the published target model to validate transformed data quality.",
           },
         ];
-  const reconciliationSourceColumnCount = isBigQueryPublish ? publishSummarySourceColumnCount : columnCount;
-  const reconciliationTargetColumnCount = isBigQueryPublish ? publishSummaryTargetColumnCount : displayedTargetColumnCount;
-  const reconciliationSourceRows = isBigQueryPublish ? publishSummarySourceRows : expectedRows;
-  const reconciliationTargetRows = isBigQueryPublish ? publishSummaryTargetRows : displayedPowerBiTargetRows;
   const baseReconciliationChecks = [
     {
       name: "table_count",
@@ -816,30 +761,40 @@ export default function PublishPage() {
     {
       name: "column_count",
       status:
-        reconciliationSourceColumnCount !== null && reconciliationTargetColumnCount !== null
-          ? reconciliationTargetColumnCount !== reconciliationSourceColumnCount
+        columnCount !== null && (isBigQueryPublish ? bigQueryColumnCount !== null : displayedTargetColumnCount !== null)
+          ? isBigQueryPublish && bigQueryColumnCount !== columnCount
             ? "fail"
             : "pass"
           : "pending",
       severity: "critical",
-      source_value: reconciliationSourceColumnCount ?? "Not available",
-      target_value: reconciliationTargetColumnCount ?? "Not available",
+      source_value: columnCount ?? "Not available",
+      target_value: isBigQueryPublish ? bigQueryColumnCount ?? "Not available" : displayedTargetColumnCount ?? "Not available",
       details: "Compare source output column count to target model column count.",
     },
     {
       name: "total_record_count",
       status:
-        reconciliationSourceRows !== null && reconciliationTargetRows !== null
-          ? reconciliationTargetRows === reconciliationSourceRows
+        isBigQueryPublish
+          ? bigQueryRowCount !== null && bigQueryAlteryxRecordCount !== null
+            ? bigQueryRowCount === bigQueryAlteryxRecordCount
               ? "pass"
               : "fail"
-          : "pending",
+            : "pending"
+          : displayedPowerBiTargetRows !== null && expectedRows !== null
+            ? displayedPowerBiTargetRows === expectedRows
+              ? "pass"
+              : "fail"
+            : "pending",
       severity: "critical",
-      source_value: reconciliationSourceRows ?? "Not available",
-      target_value: reconciliationTargetRows ?? "Not available",
+      source_value: isBigQueryPublish ? bigQueryAlteryxRecordCount ?? "Not available" : expectedRows ?? "Not available",
+      target_value: isBigQueryPublish ? bigQueryRowCount ?? "Not available" : displayedPowerBiTargetRows ?? "Not available",
       details: `Variance: ${formatMetricValue(
-        reconciliationSourceRows !== null && reconciliationTargetRows !== null
-          ? reconciliationTargetRows - reconciliationSourceRows
+        isBigQueryPublish
+          ? bigQueryRowCount !== null && bigQueryAlteryxRecordCount !== null
+            ? bigQueryRowCount - bigQueryAlteryxRecordCount
+            : null
+          : displayedPowerBiTargetRows !== null && expectedRows !== null
+            ? displayedPowerBiTargetRows - expectedRows
             : null
       )}.`,
     },
@@ -872,9 +827,7 @@ export default function PublishPage() {
       return;
     }
     const validationTables = [bigQueryFinalModel].filter(Boolean);
-    const publishedOutputTables = targetBigQueryTables.length > 0 ? targetBigQueryTables : validationTables;
-    const tablesForValidation = publishedOutputTables.length > 0 ? publishedOutputTables : validationTables;
-    const requestKey = tablesForValidation.join("|") || finalValidationTableName || bigQueryTarget.table || datasetName;
+    const requestKey = validationTables.join("|") || finalValidationTableName || bigQueryTarget.table || datasetName;
     if (!force && bigQueryAlteryxRecordCountRequestedRef.current === requestKey) {
       return;
     }
@@ -886,7 +839,7 @@ export default function PublishPage() {
         workflow_id: workflowId,
         dataset_id: "",
         table_name: finalValidationTableName || bigQueryTarget.table || datasetName,
-        target_tables: tablesForValidation,
+        target_tables: validationTables,
         workspace_id: "",
         expected_row_count: null,
       });
