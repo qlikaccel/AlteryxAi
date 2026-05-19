@@ -684,7 +684,7 @@ export async function publishAlteryxPythonToBigQuery(
   sharePointUrl = "",
   fileName = ""
 ): Promise<any> {
-  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName, async: "true" });
   const res = await fetch(
     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/python/publish-bigquery?${params.toString()}`,
     { method: "POST" }
@@ -695,7 +695,30 @@ export async function publishAlteryxPythonToBigQuery(
     throw new Error(apiErrorMessage(data.detail, `Failed to publish Python pipeline to BigQuery (${res.status})`));
   }
 
+  if (data?.job_id) {
+    return pollAlteryxPublishJob(data.job_id);
+  }
+
   return data;
+}
+
+async function pollAlteryxPublishJob(jobId: string): Promise<any> {
+  const deadline = Date.now() + 30 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const res = await fetch(`${BASE_URL}/api/alteryx/publish-jobs/${encodeURIComponent(jobId)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(apiErrorMessage(data.detail, `Failed to read publish job (${res.status})`));
+    }
+    if (data.status === "completed") {
+      return data.result || data;
+    }
+    if (data.status === "failed") {
+      throw new Error(apiErrorMessage(data.error || data.detail, "Failed to publish Python pipeline to BigQuery"));
+    }
+  }
+  throw new Error("Python publish is still running after 30 minutes. Check DigitalOcean logs and BigQuery job history.");
 }
 
 export async function fetchAlteryxBrdHtml(

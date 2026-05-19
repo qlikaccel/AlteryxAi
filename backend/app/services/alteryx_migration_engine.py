@@ -173,15 +173,31 @@ def _dbt_identifier(value: str, fallback: str = "alteryx_model", max_length: int
     return _shorten_identifier(cleaned or fallback, max_length)
 
 
+def _source_basename(value: str) -> str:
+    raw = str(value or "").strip().replace("\\", "/")
+    return raw.rsplit("/", 1)[-1] if raw else ""
+
+
+def _source_display_name(source: dict[str, Any], index: int) -> str:
+    for key in ("name", "path", "table", "bq_table"):
+        basename = _source_basename(str(source.get(key) or ""))
+        if basename:
+            return basename
+    return f"source_{index}"
+
+
+def _yaml_single_quoted(value: str) -> str:
+    return "'" + str(value or "").replace("'", "''") + "'"
+
+
 def _dbt_source_name(source: dict[str, Any], index: int) -> str:
-    name = str(source.get("name") or source.get("path") or f"source_{index}")
+    name = _source_display_name(source, index)
     name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet)$", "", name, flags=re.IGNORECASE)
     return _dbt_identifier(name, f"source_{index}")
 
 
 def _dbt_source_identifier(source: dict[str, Any], index: int) -> str:
-    name = str(source.get("name") or source.get("path") or f"source_{index}")
-    name = name.replace("\\", "/").rsplit("/", 1)[-1]
+    name = _source_display_name(source, index)
     name = re.sub(r"\.(csv|xlsx?|json|xml|txt|parquet)$", "", name, flags=re.IGNORECASE)
     cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", name or "").strip("_")
     return _shorten_identifier(cleaned or _dbt_source_name(source, index), 120)
@@ -1151,7 +1167,7 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
     deduped_sources: list[dict[str, Any]] = []
     seen_source_names: set[str] = set()
     for index, source in enumerate(sources, start=1):
-        source_key = _dbt_source_name(source, index)
+        source_key = _dbt_source_identifier(source, index).lower()
         if source_key in seen_source_names:
             continue
         seen_source_names.add(source_key)
@@ -1165,12 +1181,14 @@ def generate_dbt_project(workflow: dict[str, Any], sharepoint_url: str = "", fil
         source_name = _dbt_source_name(source, index)
         source_identifier = _dbt_source_identifier(source, index)
         source_model_names.append(source_name)
-        description = str(source.get("path") or source.get("type") or "")
+        original_path = str(source.get("path") or source.get("type") or "").replace("\\", "/")
+        display_name = _source_display_name(source, index)
+        description = _yaml_single_quoted(f"Landed source for {display_name}. Original path: {original_path}")
         identifier_line = f"        identifier: {source_identifier}\n" if source_identifier != source_name else ""
         source_rows.append(
             f"      - name: {source_name}\n"
             f"{identifier_line}"
-            f"        description: \"Landed source for {str(source.get('name') or source_name).replace(chr(34), '')}. Original path: {description.replace(chr(34), '').replace(chr(92), '/')}\""
+            f"        description: {description}"
         )
         staging_files[f"models/staging/stg_{source_name}.sql"] = (
             "{{ config(materialized='view') }}\n\n"
