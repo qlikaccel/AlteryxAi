@@ -35,6 +35,10 @@ services:
     rootDirectory: /
     buildCommand: cd qlik_app/converter/csv && npm install && npm run build
     staticPublishPath: qlik_app/converter/csv/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: VITE_API_URL
         fromService:
