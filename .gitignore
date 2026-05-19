@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ===============================
 # Global (entire repo)
 # ===============================
@@ -24,11 +25,29 @@ npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 lerna-debug.log*
+=======
+# Python
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# Node
+node_modules/
+
+# Build
+dist/
+build/
+
+# Environment
+.env
+>>>>>>> f19848a7fc7bad1b7e7679688ea3b79fcaf90cf4
 
 # OS
 .DS_Store
 Thumbs.db
 
+<<<<<<< HEAD
 # Editor
 .vscode/
 .idea/
@@ -44,3 +63,22 @@ qlik_app/qlik/qlik-fastapi-backend/.env
 *.env
 .powerbi_token_cache.json
 .env.example
+=======
+# Logs
+*.log
+
+# Cache
+.pytest_cache/
+
+
+_alteryx_upload_batches/
+.env
+.env.local
+
+backend/_alteryx_upload_batches/
+.env
+.env.local
+
+
+backend/- Copy.env
+>>>>>>> f19848a7fc7bad1b7e7679688ea3b79fcaf90cf4
