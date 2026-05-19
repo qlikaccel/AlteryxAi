@@ -50,6 +50,10 @@ from app.services.alteryx_dataform_publisher import publish_dataform_project_to_
 from app.services.alteryx_dataform_repo_publisher import publish_dataform_project_to_repository
 from app.services.alteryx_python_publisher import publish_python_project_to_bigquery
 from app.services.alteryx_transform_plan import build_transform_plan, transform_publish_blocker_detail
+from app.services.alteryx_validation_engine import (
+    aggregate_bigquery_validation_payload,
+    build_validation_response,
+)
 from app.services.reconciliation_engine import profile_rows
 
 router = APIRouter(prefix="/api/alteryx", tags=["Alteryx"])
@@ -1958,86 +1962,19 @@ async def post_alteryx_record_count_validation(
         )
     elif request.table_name or request.target_tables:
         target_tables = request.target_tables or [request.table_name]
-        bigquery_validation = _aggregate_bigquery_validation_payload(target_tables)
+        bigquery_validation = aggregate_bigquery_validation_payload(target_tables)
 
     target_validation = powerbi_validation or bigquery_validation
-    target_actual = None
-    if target_validation:
-        target_row_check = next(
-            (check for check in target_validation.get("checks", []) if check.get("name") == "Row count"),
-            {},
-        )
-        target_actual = target_row_check.get("actual")
-        if not isinstance(target_actual, int):
-            actual_payload = target_validation.get("actual") or {}
-            actual_value = actual_payload.get("RowCount")
-            if isinstance(actual_value, (int, float)):
-                target_actual = int(actual_value)
-
-    if expected is None and isinstance(target_actual, int) and target_actual > 0:
-        alteryx_count = {
-            **alteryx_count,
-            "row_count": target_actual,
-            "method": "target_count_fallback",
-            "source": "Target count used because source Alteryx output count was not available.",
-            "confidence": "medium",
-        }
-        expected = target_actual
-
-    row_check = next(
-        (check for check in (target_validation or {}).get("checks", []) if check.get("name") == "Row count"),
-        {},
+    return build_validation_response(
+        workflow_id=workflow_id,
+        workflow_name=workflow.get("name"),
+        requested_table_name=request.table_name,
+        alteryx_count=alteryx_count,
+        target_validation=target_validation,
+        powerbi_validation=powerbi_validation,
+        bigquery_validation=bigquery_validation,
+        numeric_columns=validation_numeric_columns,
     )
-    actual = row_check.get("actual") if row_check else None
-    variance = (
-        actual - expected
-        if isinstance(actual, int) and isinstance(expected, int)
-        else row_check.get("variance")
-    )
-    status = (
-        "PASS" if isinstance(variance, int) and variance == 0 else "WARNING"
-        if isinstance(variance, int) else row_check.get("status") or "INFO"
-    )
-
-    target_profile = (target_validation or {}).get("profile") or {}
-    profile_checks = (
-        _build_dataset_profile_summary_checks(
-            source_profile,
-            target_profile,
-            target_label="BigQuery" if bigquery_validation else "Power BI",
-        )
-        if target_profile
-        else _build_profile_validation_checks(source_profile, powerbi_validation)
-    )
-    checks = [
-        {
-            "name": "Row count",
-            "expected": expected,
-            "actual": actual,
-            "variance": variance,
-            "status": status,
-            "alteryx_method": alteryx_count.get("method"),
-            "alteryx_confidence": alteryx_count.get("confidence"),
-            "severity": "critical",
-            "details": "Deterministic row-count comparison between Alteryx output and target semantic model.",
-        }
-    ] + profile_checks
-
-    return {
-        "success": True,
-        "workflow_id": workflow_id,
-        "workflow_name": workflow.get("name"),
-        "table_name": (target_validation or {}).get("table_name") or request.table_name,
-        "available_columns": (target_validation or {}).get("available_columns", []),
-        "column_count": (target_validation or {}).get("column_count"),
-        "source_profile": source_profile,
-        "target_profile": target_profile,
-        "queried_numeric_columns": validation_numeric_columns,
-        "alteryx": alteryx_count,
-        "powerbi": powerbi_validation,
-        "bigquery": bigquery_validation,
-        "checks": checks,
-    }
 
 
 # ── Fetch workflows ───────────────────────────────────────────────────────────

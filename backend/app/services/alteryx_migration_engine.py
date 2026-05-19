@@ -1339,6 +1339,46 @@ def _python_identifier(value: str, fallback: str = "alteryx_pipeline") -> str:
     return _dbt_identifier(value, fallback).replace("-", "_")
 
 
+def _clean_alteryx_python_code(value: str) -> str:
+    """Return executable code from Alteryx Python/Jupyter node metadata."""
+    code = str(value or "").strip()
+    if not code:
+        return ""
+    markers = (
+        "from ayx import",
+        "import ayx",
+        "from ayx",
+        "import alteryx",
+        "from alteryx",
+        "Alteryx.read",
+        "Alteryx.write",
+        "alteryx.read",
+        "alteryx.write",
+    )
+    line_starts = [match.start() for marker in markers for match in re.finditer(re.escape(marker), code)]
+    if line_starts:
+        code = code[min(line_starts):].strip()
+    tail_match = re.search(
+        r"(?m)^(?:pandas|numpy|scipy|sklearn|matplotlib|seaborn)\s*$",
+        code,
+    )
+    if tail_match:
+        code = code[:tail_match.start()].strip()
+    lines = code.splitlines()
+    while lines:
+        while lines and lines[-1].strip() in {"0", "True", "False"}:
+            lines.pop()
+        candidate = "\n".join(lines).strip()
+        try:
+            compile(candidate, "<alteryx-python-tool>", "exec")
+            return candidate
+        except SyntaxError as exc:
+            if exc.lineno is None or exc.lineno < max(len(lines) - 3, 1):
+                return code
+            lines.pop()
+    return code
+
+
 def _python_tool_steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
     steps: list[dict[str, Any]] = []
     for node in workflow.get("workflowNodes") or []:
@@ -1349,7 +1389,7 @@ def _python_tool_steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
         steps.append({
             "id": str(node.get("id") or len(steps) + 1),
             "plugin": plugin or "Python",
-            "code": str(config.get("pythonCode") or node.get("configurationText") or "").strip(),
+            "code": _clean_alteryx_python_code(config.get("pythonCode") or node.get("configurationText") or ""),
         })
     return steps
 
@@ -1365,7 +1405,12 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
     if sharepoint_url or file_name:
         sources = [_source_from_override(sharepoint_url, file_name)]
     else:
-        sources = [source for source in (workflow.get("dataSources") or []) if _is_warehouse_landed_source(source)]
+        sources = [
+            source
+            for source in (workflow.get("dataSources") or [])
+            if _is_warehouse_landed_source(source)
+            and "python" not in str(source.get("tool") or "").lower()
+        ]
     outputs = workflow.get("outputTargets") or []
     output_specs = outputs or [{"name": project_name, "path": f"output/{project_name}.csv", "type": "csv"}]
     macro_plan = generate_macro_conversion_plan(workflow)
@@ -1439,10 +1484,10 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "import pandas as pd\n\n"
         "import requests\n\n"
         "try:\n"
-        "    from alteryx_python_steps import apply_python_tool_steps\n"
+        "    from alteryx_python_steps import apply_python_tool_node\n"
         "except Exception:\n"
-        "    def apply_python_tool_steps(frames: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n"
-        "        return frames\n\n"
+        "    def apply_python_tool_node(upstream: list[pd.DataFrame], step: dict[str, Any]) -> dict[str, pd.DataFrame]:\n"
+        "        return {'Output1': upstream[0].copy() if upstream else pd.DataFrame()}\n\n"
         f"PROJECT_NAME = \"{project_name}\"\n"
         f"SOURCES = {source_list}\n"
         f"OUTPUTS = {output_list}\n\n"
@@ -1461,6 +1506,60 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "        raise RuntimeError('google-cloud-bigquery is required to read BigQuery sources.')\n"
         "    client = bigquery.Client(project=env('GCP_PROJECT_ID') or None)\n"
         "    return client.query(f'SELECT * FROM `{table_id}`').to_dataframe()\n\n"
+        "def _safe_bq_table_name(value: str) -> str:\n"
+        "    import re\n"
+        "    stem = Path(str(value or '')).stem\n"
+        "    return re.sub(r'[^A-Za-z0-9_]+', '_', stem).strip('_').lower()\n\n"
+        "def _bq_source_table_candidates(source: dict) -> list[str]:\n"
+        "    import re\n"
+        "    raw_values = [\n"
+        "        str(source.get('bq_table') or ''),\n"
+        "        str(source.get('table') or ''),\n"
+        "        str(source.get('path') or ''),\n"
+        "        str(source.get('name') or ''),\n"
+        "    ]\n"
+        "    source_key = _safe_bq_table_name(source.get('path') or source.get('name') or '')\n"
+        "    env_override = env(f'BQ_SOURCE_TABLE_{source_key.upper()}') or env(f'GCP_BIGQUERY_SOURCE_TABLE_{source_key.upper()}')\n"
+        "    if env_override:\n"
+        "        raw_values.insert(0, env_override)\n"
+        "    candidates: list[str] = []\n"
+        "    for value in raw_values:\n"
+        "        if not value:\n"
+        "            continue\n"
+        "        table = value.split('.')[-1] if value.count('.') >= 2 else value\n"
+        "        exact = Path(str(table)).stem.strip().strip('`')\n"
+        "        safe = _safe_bq_table_name(table)\n"
+        "        exact_safe = __import__('re').sub(r'[^A-Za-z0-9_]+', '_', exact).strip('_')\n"
+        "        variants = [exact_safe, safe]\n"
+        "        # Python tool comments such as '#   #1  customers.csv' previously produced '1_customers'.\n"
+        "        variants.append(re.sub(r'^\\d+_+', '', safe))\n"
+        "        variants.append(re.sub(r'^(input|source)_?\\d+_+', '', safe))\n"
+        "        variants.append(re.sub(r'_csv$', '', safe))\n"
+        "        for variant in variants:\n"
+        "            if variant and variant not in candidates:\n"
+        "                candidates.append(variant)\n"
+        "    return candidates\n\n"
+        "def read_bigquery_source_fallback(source: dict) -> pd.DataFrame:\n"
+        "    project = env('GCP_PROJECT_ID')\n"
+        "    dataset = env('GCP_BIGQUERY_SOURCE_DATASET') or env('BQ_SOURCE_DATASET') or env('GCP_BIGQUERY_DATASET') or env('BQ_DATASET')\n"
+        "    candidates = _bq_source_table_candidates(source)\n"
+        "    if not project or not dataset or not candidates:\n"
+        "        raise FileNotFoundError(\n"
+        "            f\"Source file not found: {source.get('path') or source.get('name')}. \"\n"
+        "            'Copy it beside pipeline.py, upload it with the workflow, or configure GCP_PROJECT_ID and GCP_BIGQUERY_SOURCE_DATASET.'\n"
+        "        )\n"
+        "    errors: list[str] = []\n"
+        "    for table in candidates:\n"
+        "        table_id = f'{project}.{dataset}.{table}'\n"
+        "        try:\n"
+        "            return read_bigquery_table(table_id)\n"
+        "        except Exception as exc:\n"
+        "            errors.append(f'{table_id}: {exc}')\n"
+        "    raise FileNotFoundError(\n"
+        "        f\"Source file not found locally and no BigQuery fallback table matched for {source.get('path') or source.get('name')}. \"\n"
+        "        f\"Tried: {', '.join(candidates)}. \"\n"
+        "        'Set BQ_SOURCE_TABLE_<SOURCE_NAME> to the exact BigQuery table name if the landed source name differs.'\n"
+        "    )\n\n"
         "def read_http_csv(source: dict) -> pd.DataFrame:\n"
         "    url = str(source.get('path') or source.get('url') or '')\n"
         "    if not url:\n"
@@ -1499,7 +1598,7 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "        if fallback_path.exists():\n"
         "            source_path = fallback_path\n"
         "        else:\n"
-        "            raise FileNotFoundError(f\"Source file not found: {path}. Copy it beside pipeline.py or update SOURCES.\")\n"
+        "            return read_bigquery_source_fallback(source)\n"
         "    if str(path).lower().endswith('.csv'):\n"
         "        return pd.read_csv(source_path)\n"
         "    raise NotImplementedError(f\"Add reader for source: {source}\")\n\n"
@@ -1744,6 +1843,13 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "        if source and target:\n"
         "            preds.setdefault(target, []).append(source)\n"
         "    return preds\n\n"
+        "def _incoming_edges() -> dict[str, list[dict[str, Any]]]:\n"
+        "    incoming: dict[str, list[dict[str, Any]]] = {}\n"
+        "    for edge in WORKFLOW_EDGES:\n"
+        "        target = str(edge.get('to') or edge.get('target') or '')\n"
+        "        if target:\n"
+        "            incoming.setdefault(target, []).append(edge)\n"
+        "    return incoming\n\n"
         "def _topological_node_ids() -> list[str]:\n"
         "    nodes = _node_by_id()\n"
         "    preds = _predecessors()\n"
@@ -1903,19 +2009,21 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "        return _apply_sample(frame, config)\n"
         "    return frame\n\n"
         "def execute_workflow_graph(dataframes: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n"
-        "    dataframes = apply_python_tool_steps(dataframes)\n"
         "    if not WORKFLOW_NODES or not WORKFLOW_EDGES:\n"
         "        first = apply_transform_steps(next(iter(dataframes.values()), pd.DataFrame()))\n"
         "        return {output.get('name') or f'output_{index}': first.copy() for index, output in enumerate(OUTPUTS, start=1)}\n"
         "    nodes = _node_by_id()\n"
         "    preds = _predecessors()\n"
+        "    incoming = _incoming_edges()\n"
         "    frames_by_node: dict[str, pd.DataFrame] = {}\n"
+        "    frames_by_anchor: dict[str, pd.DataFrame] = {}\n"
         "    fallback_frame = next(iter(dataframes.values()), pd.DataFrame())\n"
         "    source_by_tool = {str(source.get('toolId')): source for source in SOURCES if source.get('toolId')}\n"
         "    for source in SOURCES:\n"
         "        key = source.get('name') or source.get('path')\n"
         "        if source.get('toolId') and key in dataframes:\n"
         "            frames_by_node[str(source.get('toolId'))] = dataframes[key]\n"
+        "            frames_by_anchor[f\"{source.get('toolId')}:Output\"] = dataframes[key]\n"
         "    for node_id in _topological_node_ids():\n"
         "        node = nodes[node_id]\n"
         "        plugin = str(node.get('plugin') or '')\n"
@@ -1925,23 +2033,55 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "            if frame is None:\n"
         "                frame = dataframes.get(source.get('path'))\n"
         "            frames_by_node[node_id] = frame.copy() if frame is not None else fallback_frame.copy()\n"
+        "            frames_by_anchor[f'{node_id}:Output'] = frames_by_node[node_id]\n"
         "            continue\n"
-        "        upstream = [frames_by_node[pred] for pred in preds.get(node_id, []) if pred in frames_by_node]\n"
+        "        upstream = []\n"
+        "        for edge in incoming.get(node_id, []):\n"
+        "            from_id = str(edge.get('from') or edge.get('source') or '')\n"
+        "            from_anchor = str(edge.get('fromAnchor') or edge.get('from_connection') or 'Output')\n"
+        "            anchored = frames_by_anchor.get(f'{from_id}:{from_anchor}')\n"
+        "            if anchored is not None:\n"
+        "                upstream.append(anchored)\n"
+        "            elif from_id in frames_by_node:\n"
+        "                upstream.append(frames_by_node[from_id])\n"
         "        base = upstream[0].copy() if upstream else frames_by_node.get(node_id, fallback_frame).copy()\n"
         "        if _is_input_plugin(plugin):\n"
         "            frames_by_node.setdefault(node_id, base)\n"
         "        elif _is_output_plugin(plugin):\n"
         "            frames_by_node[node_id] = base\n"
+        "            frames_by_anchor[f'{node_id}:Output'] = base\n"
+        "        elif 'python' in plugin.lower():\n"
+        "            python_outputs = apply_python_tool_node(upstream or [base], node)\n"
+        "            if not python_outputs:\n"
+        "                python_outputs = {'Output1': base}\n"
+        "            first_output = next(iter(python_outputs.values())).copy()\n"
+        "            frames_by_node[node_id] = first_output\n"
+        "            frames_by_anchor[f'{node_id}:Output'] = first_output\n"
+        "            for anchor, frame in python_outputs.items():\n"
+        "                output_frame = frame.copy()\n"
+        "                frames_by_anchor[f'{node_id}:{anchor}'] = output_frame\n"
+        "                anchor_text = str(anchor or '')\n"
+        "                anchor_number = ''.join(ch for ch in anchor_text if ch.isdigit())\n"
+        "                if anchor_number:\n"
+        "                    frames_by_anchor[f'{node_id}:#{anchor_number}'] = output_frame\n"
+        "                    frames_by_anchor[f'{node_id}:Output{anchor_number}'] = output_frame\n"
+        "                    frames_by_anchor[f'{node_id}:Output {anchor_number}'] = output_frame\n"
         "        else:\n"
         "            frames_by_node[node_id] = _apply_node_tool(upstream or [base], node)\n"
+        "            frames_by_anchor[f'{node_id}:Output'] = frames_by_node[node_id]\n"
         "    outputs: dict[str, pd.DataFrame] = {}\n"
         "    for index, output in enumerate(OUTPUTS, start=1):\n"
         "        output_id = str(output.get('toolId') or '')\n"
-        "        upstream_ids = preds.get(output_id, []) if output_id else []\n"
         "        frame = None\n"
-        "        for upstream_id in upstream_ids:\n"
-        "            if upstream_id in frames_by_node:\n"
-        "                frame = frames_by_node[upstream_id]\n"
+        "        for edge in incoming.get(output_id, []) if output_id else []:\n"
+        "            from_id = str(edge.get('from') or edge.get('source') or '')\n"
+        "            from_anchor = str(edge.get('fromAnchor') or edge.get('from_connection') or 'Output')\n"
+        "            anchored = frames_by_anchor.get(f'{from_id}:{from_anchor}')\n"
+        "            if anchored is not None:\n"
+        "                frame = anchored\n"
+        "                break\n"
+        "            if from_id in frames_by_node:\n"
+        "                frame = frames_by_node[from_id]\n"
         "                break\n"
         "        if frame is None and output_id in frames_by_node:\n"
         "            frame = frames_by_node[output_id]\n"
@@ -1990,32 +2130,111 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
     python_steps_py = (
         '"""Extracted Alteryx Python tool code and integration hooks.\n\n'
         "The original Alteryx Python tool code is preserved below for review. The\n"
-        "apply_python_tool_steps function is the integration point used by pipeline.py.\n"
+        "apply_python_tool_node function is the integration point used by pipeline.py.\n"
         '"""\n\n'
         "from __future__ import annotations\n\n"
         "import os\n\n"
+        "import sys\n"
+        "import types\n\n"
         "import pandas as pd\n\n"
+        "try:\n"
+        "    import numpy as np\n"
+        "except Exception:\n"
+        "    np = None\n\n"
         f"PYTHON_TOOL_STEPS = {python_steps_json}\n\n"
-        "def apply_python_tool_steps(frames: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n"
-        "    # Python tool code is preserved and can be enabled after review.\n"
-        "    # Set ALLOW_ALTERYX_PYTHON_EXEC=1 to execute extracted snippets with `frames` and `pd` in scope.\n"
-        "    if os.getenv('ALLOW_ALTERYX_PYTHON_EXEC', '').strip() != '1':\n"
-        "        return frames\n"
-        "    scope = {'pd': pd, 'frames': frames, 'dataframes': frames}\n"
-        "    for step in PYTHON_TOOL_STEPS:\n"
-        "        code = str(step.get('code') or '').strip()\n"
-        "        if not code:\n"
+        "def _step_for_node(step: dict) -> dict:\n"
+        "    step_id = str(step.get('id') or '')\n"
+        "    for candidate in PYTHON_TOOL_STEPS:\n"
+        "        if str(candidate.get('id') or '') == step_id:\n"
+        "            return candidate\n"
+        "    return step\n\n"
+        "def _normalized_column_token(value: str) -> str:\n"
+        "    import re\n"
+        "    text = str(value or '').strip()\n"
+        "    text = re.sub(r'([a-z0-9])([A-Z])', r'\\1_\\2', text)\n"
+        "    text = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\\1_\\2', text)\n"
+        "    return re.sub(r'[^A-Za-z0-9]+', '_', text).strip('_').lower()\n\n"
+        "def _python_string_identifiers(code: str) -> set[str]:\n"
+        "    import re\n"
+        "    return {\n"
+        "        match.group(1)\n"
+        "        for match in re.finditer(r'''[\\\"']([A-Za-z_][A-Za-z0-9_]*)[\\\"']''', str(code or ''))\n"
+        "    }\n\n"
+        "def _align_frame_columns_for_python_code(frame: pd.DataFrame, code: str) -> pd.DataFrame:\n"
+        "    if frame.empty:\n"
+        "        return frame.copy()\n"
+        "    expected = _python_string_identifiers(code)\n"
+        "    if not expected:\n"
+        "        return frame.copy()\n"
+        "    result = frame.copy()\n"
+        "    existing = {str(col) for col in result.columns}\n"
+        "    by_normalized = {_normalized_column_token(str(col)): str(col) for col in result.columns}\n"
+        "    rename_map: dict[str, str] = {}\n"
+        "    for wanted in expected:\n"
+        "        if wanted in existing:\n"
         "            continue\n"
-        "        try:\n"
-        "            exec(code, scope, scope)\n"
-        "            updated = scope.get('frames') or scope.get('dataframes')\n"
-        "            if isinstance(updated, dict):\n"
-        "                frames = updated\n"
-        "                scope['frames'] = frames\n"
-        "                scope['dataframes'] = frames\n"
-        "        except Exception as exc:\n"
-        "            print(f\"Warning: Alteryx Python tool {step.get('id')} failed and was skipped: {exc}\")\n"
-        "    return frames\n"
+        "        actual = by_normalized.get(_normalized_column_token(wanted))\n"
+        "        if actual and actual not in rename_map and wanted not in existing:\n"
+        "            rename_map[actual] = wanted\n"
+        "    if rename_map:\n"
+        "        result = result.rename(columns=rename_map)\n"
+        "    return result\n\n"
+        "def apply_python_tool_node(upstream: list[pd.DataFrame], step: dict) -> dict[str, pd.DataFrame]:\n"
+        "    tool_step = _step_for_node(step)\n"
+        "    code = str(tool_step.get('code') or '').strip()\n"
+        "    if not code:\n"
+        "        return {'Output1': upstream[0].copy() if upstream else pd.DataFrame()}\n"
+        "    outputs: dict[str, pd.DataFrame] = {}\n\n"
+        "    class _AlteryxShim:\n"
+        "        @staticmethod\n"
+        "        def read(anchor='#1'):\n"
+        "            text = str(anchor or '#1').replace('#', '').replace('Input', '').strip()\n"
+        "            try:\n"
+        "                index = max(int(text) - 1, 0)\n"
+        "            except Exception:\n"
+        "                index = 0\n"
+        "            if index >= len(upstream):\n"
+        "                return pd.DataFrame()\n"
+        "            return _align_frame_columns_for_python_code(upstream[index], code)\n\n"
+        "        @staticmethod\n"
+        "        def write(frame, anchor=1):\n"
+        "            try:\n"
+        "                output_index = int(anchor)\n"
+        "            except Exception:\n"
+        "                output_index = 1\n"
+        "            if isinstance(frame, pd.DataFrame):\n"
+        "                outputs[f'Output{output_index}'] = frame.copy()\n"
+        "            else:\n"
+        "                outputs[f'Output{output_index}'] = pd.DataFrame(frame)\n\n"
+        "    ayx_module = types.ModuleType('ayx')\n"
+        "    ayx_module.Alteryx = _AlteryxShim\n"
+        "    alteryx_module = types.ModuleType('alteryx')\n"
+        "    alteryx_module.read = _AlteryxShim.read\n"
+        "    alteryx_module.write = _AlteryxShim.write\n"
+        "    previous_ayx = sys.modules.get('ayx')\n"
+        "    previous_alteryx = sys.modules.get('alteryx')\n"
+        "    sys.modules['ayx'] = ayx_module\n"
+        "    sys.modules['alteryx'] = alteryx_module\n"
+        "    scope = {'pd': pd, 'np': np, 'Alteryx': _AlteryxShim, 'alteryx': alteryx_module}\n"
+        "    try:\n"
+        "        exec(code, scope, scope)\n"
+        "    except Exception as exc:\n"
+        "        raise RuntimeError(f\"Alteryx Python tool {tool_step.get('id')} failed during execution: {exc}\") from exc\n"
+        "    finally:\n"
+        "        if previous_ayx is not None:\n"
+        "            sys.modules['ayx'] = previous_ayx\n"
+        "        else:\n"
+        "            sys.modules.pop('ayx', None)\n"
+        "        if previous_alteryx is not None:\n"
+        "            sys.modules['alteryx'] = previous_alteryx\n"
+        "        else:\n"
+        "            sys.modules.pop('alteryx', None)\n"
+        "    if outputs:\n"
+        "        return outputs\n"
+        "    df = scope.get('df')\n"
+        "    if isinstance(df, pd.DataFrame):\n"
+        "        return {'Output1': df.copy()}\n"
+        "    return {'Output1': upstream[0].copy() if upstream else pd.DataFrame()}\n"
     )
     env_example = (
         f"GCP_PROJECT_ID=\n"
@@ -2064,7 +2283,7 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
             "Use `airflow_dag.py` as a starter DAG and package `pipeline.py` with the DAG or container image.\n\n"
             f"Detected Alteryx Python tool steps: {len(python_steps)}.\n"
         ),
-        "requirements.txt": "pandas>=2.2.0\nrequests>=2.31.0\ngoogle-cloud-bigquery>=3.0.0\npyarrow>=14.0.0\npython-dotenv>=1.0.0\n",
+        "requirements.txt": "pandas>=2.2.0\nnumpy>=1.26.0\nrequests>=2.31.0\ngoogle-cloud-bigquery>=3.0.0\npyarrow>=14.0.0\npython-dotenv>=1.0.0\n",
         "pipeline.py": pipeline_py,
         "alteryx_python_steps.py": python_steps_py,
         ".env.example": env_example,

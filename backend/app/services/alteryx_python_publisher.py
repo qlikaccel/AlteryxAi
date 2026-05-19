@@ -42,9 +42,22 @@ def _copy_accessible_source_files(project_dir: Path, sources: list[dict[str, Any
         if not source_path.exists() or not source_path.is_file():
             matched = None
             for root in search_roots:
-                candidate = root / source_path.name
-                if candidate.exists() and candidate.is_file():
-                    matched = candidate
+                candidates = [
+                    root / source_path,
+                    root / source_path.name,
+                ]
+                for candidate in candidates:
+                    if candidate.exists() and candidate.is_file():
+                        matched = candidate
+                        break
+                if matched is not None:
+                    break
+                try:
+                    matches = list(root.rglob(source_path.name))
+                except Exception:
+                    matches = []
+                if matches:
+                    matched = matches[0]
                     break
             if matched is None:
                 continue

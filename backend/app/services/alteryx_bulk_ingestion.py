@@ -108,6 +108,12 @@ def _config_text(config: ET.Element | None, tag_name: str) -> str:
     return ""
 
 
+def _configuration_text_limit(plugin: str) -> int:
+    if "python" in str(plugin or "").lower():
+        return 100_000
+    return 20_000
+
+
 def _extract_macro_dependencies(root: ET.Element) -> list[dict[str, Any]]:
     dependencies: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -458,6 +464,16 @@ def _extract_node_config(node: ET.Element, plugin: str) -> dict[str, Any]:
                 formulas.append({"field": field, "expression": expression.strip(), "type": field_type})
         if formulas:
             parsed["formulas"] = formulas
+
+    if "python" in lowered:
+        python_code = (
+            _config_text(config, "JupyterCode")
+            or _config_text(config, "PythonCode")
+            or _config_text(config, "Script")
+            or _config_text(config, "Code")
+        )
+        if python_code:
+            parsed["pythonCode"] = python_code
 
     if "join" in lowered and "joinmultiple" not in lowered:
         left_fields = [
@@ -942,7 +958,7 @@ def parse_workflow_xml(filename: str, content: bytes, package_file: str | None =
             "plugin": plugin,
             "supported": True,
             "expression": _node_expression(node),
-            "configurationText": _node_text_blob(node)[:4000],
+            "configurationText": _node_text_blob(node)[:_configuration_text_limit(plugin)],
             "config": _extract_node_config(node, plugin),
         })
         node_sources = _extract_sources(node, plugin)
@@ -1043,7 +1059,7 @@ def parse_workflow_json(filename: str, content: bytes, package_file: str | None 
             "plugin": plugin,
             "supported": True,
             "expression": _json_node_expression(node),
-            "configurationText": _json_text_blob(node)[:4000],
+            "configurationText": _json_text_blob(node)[:_configuration_text_limit(plugin)],
             "config": _extract_json_node_config(node, plugin),
         })
         data_sources.extend(_extract_json_sources(node, plugin))
@@ -1212,6 +1228,7 @@ def _resolve_macro_dependencies(workflows: list[dict[str, Any]]) -> None:
 
 def ingest_uploaded_files(files: list[tuple[str, bytes]]) -> dict[str, Any]:
     workflows: list[WorkflowInventoryItem] = []
+    source_assets: list[dict[str, Any]] = []
     rejected: list[dict[str, str]] = []
 
     for filename, content in files:
@@ -1223,6 +1240,8 @@ def ingest_uploaded_files(files: list[tuple[str, bytes]]) -> dict[str, Any]:
                 workflows.append(parse_workflow_json(filename, content))
             elif ext in SUPPORTED_ARCHIVE_EXTENSIONS:
                 workflows.extend(_extract_from_archive(filename, content))
+            elif ext in SUPPORTED_SOURCE_ASSET_EXTENSIONS:
+                source_assets.append(_asset_payload(filename, content))
             else:
                 rejected.append({
                     "file": filename,
@@ -1235,6 +1254,11 @@ def ingest_uploaded_files(files: list[tuple[str, bytes]]) -> dict[str, Any]:
 
     batch_id = _stable_id(str(time.time()), *[name for name, _ in files])
     workflow_dicts = [asdict(workflow) for workflow in workflows]
+    if source_assets:
+        source_assets = _dedupe_assets(source_assets)
+        for workflow in workflow_dicts:
+            existing = list(workflow.get("packageAssets") or [])
+            workflow["packageAssets"] = _dedupe_assets([*existing, *source_assets])
     _resolve_macro_dependencies(workflow_dicts)
     summary = _summarize(workflow_dicts, rejected)
     payload = {
