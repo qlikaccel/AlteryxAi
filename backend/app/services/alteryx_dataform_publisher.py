@@ -78,19 +78,28 @@ def _write_service_account_json(work_dir: Path, env: dict[str, str]) -> None:
 
 
 def _resolve_dataform_command(dataform_executable: str) -> list[str] | None:
-    command = shlex.split(dataform_executable)
-    if command and shutil.which(command[0]):
-        return command
+    command_parts = shlex.split(dataform_executable)
+    if not command_parts:
+        return None
 
-    if dataform_executable.strip().lower() in {"dataform", "dataform.exe"}:
-        for fallback in (
-            ["npx", "--yes", "dataform"],
-            ["npx", "--yes", "@dataform/cli"],
-            ["npm", "exec", "--yes", "dataform"],
-            ["npm", "exec", "--yes", "@dataform/cli"],
-        ):
-            if shutil.which(fallback[0]):
-                return fallback
+    if shutil.which(command_parts[0]):
+        return command_parts
+
+    if len(command_parts) == 1:
+        executable_name = command_parts[0].strip().lower()
+        if executable_name in {"dataform", "dataform.exe", "@dataform/cli"}:
+            for fallback in (
+                ["npx", "--yes", "@dataform/cli"],
+                ["npx", "--yes", "dataform"],
+                ["npm", "exec", "--yes", "@dataform/cli"],
+                ["npm", "exec", "--yes", "dataform"],
+            ):
+                if shutil.which(fallback[0]):
+                    return fallback
+        if shutil.which("npx"):
+            return ["npx", "--yes", command_parts[0]]
+        if shutil.which("npm"):
+            return ["npm", "exec", "--yes", command_parts[0]]
 
     return None
 
@@ -255,9 +264,8 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
         if fallback is not None:
             return fallback
         raise RuntimeError(
-            f"Dataform executable '{dataform_executable}' was not found and no GCP Dataform repository fallback is configured. "
-            "Install @dataform/cli, set DATAFORM_EXECUTABLE to a valid command (for example 'npx --yes dataform'), "
-            "or configure GCP_DATAFORM_LOCATION and GCP_DATAFORM_REPOSITORY."
+            f"Dataform executable '{dataform_executable}' was not found and no GCP_DATAFORM_REPOSITORY and GCP_DATAFORM_LOCATION are configured. "
+            "Set DATAFORM_EXECUTABLE to a valid command, install @dataform/cli, or configure GCP_DATAFORM_LOCATION and GCP_DATAFORM_REPOSITORY."
         )
 
     with tempfile.TemporaryDirectory(prefix="alteryx_dataform_publish_") as temp_root:
