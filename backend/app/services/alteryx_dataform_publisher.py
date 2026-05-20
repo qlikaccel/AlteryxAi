@@ -77,12 +77,24 @@ def _write_service_account_json(work_dir: Path, env: dict[str, str]) -> None:
     write_service_account_file_from_env(work_dir, env)
 
 
+def _format_duration(value: str, default_seconds: int) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return f"{default_seconds}s"
+    if cleaned.isdigit():
+        return f"{int(cleaned)}s"
+    return cleaned
+
+
 def _resolve_dataform_command(dataform_executable: str) -> list[str] | None:
     command_parts = shlex.split(dataform_executable)
     if not command_parts:
         return None
 
-    if shutil.which(command_parts[0]):
+    resolved = shutil.which(command_parts[0])
+    if resolved:
+        if os.name == "nt" and resolved.lower().endswith(".cmd"):
+            return ["cmd", "/c", *command_parts]
         return command_parts
 
     if len(command_parts) == 1:
@@ -95,10 +107,16 @@ def _resolve_dataform_command(dataform_executable: str) -> list[str] | None:
                 ["npm", "exec", "--yes", "dataform"],
             ):
                 if shutil.which(fallback[0]):
+                    if os.name == "nt":
+                        return ["cmd", "/c", *fallback]
                     return fallback
         if shutil.which("npx"):
+            if os.name == "nt":
+                return ["cmd", "/c", "npx", "--yes", command_parts[0]]
             return ["npx", "--yes", command_parts[0]]
         if shutil.which("npm"):
+            if os.name == "nt":
+                return ["cmd", "/c", "npm", "exec", "--yes", command_parts[0]]
             return ["npm", "exec", "--yes", command_parts[0]]
 
     return None
@@ -230,6 +248,7 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
     location = _env("GCP_BIGQUERY_LOCATION", "US")
     dataform_executable = _env("DATAFORM_EXECUTABLE", "dataform")
     timeout_seconds = int(_env("DATAFORM_COMMAND_TIMEOUT_SECONDS", "600") or "600")
+    dataform_cli_timeout = _format_duration(_env("DATAFORM_CLI_TIMEOUT_SECONDS", "1200"), 1200)
     project_name = str(project.get("project_name") or "alteryx_dataform_project")
     final_table_name = str(project.get("final_table_name") or project_name.removesuffix("_dataform"))
     final_model = f"{project_id}.{target_dataset}.{final_table_name}"
@@ -283,8 +302,8 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
 
         commands = []
         if _env_flag("DATAFORM_RUN_COMPILE", True):
-            commands.append([*resolved_dataform_command, "compile", str(project_dir)])
-        commands.append([*resolved_dataform_command, "run", str(project_dir)])
+            commands.append([*resolved_dataform_command, "compile", str(project_dir), "--timeout", dataform_cli_timeout])
+        commands.append([*resolved_dataform_command, "run", str(project_dir), "--timeout", dataform_cli_timeout])
         command_results: list[dict[str, Any]] = []
         for command in commands:
             result = _run_dataform_command(command, project_dir, run_env, timeout_seconds)
