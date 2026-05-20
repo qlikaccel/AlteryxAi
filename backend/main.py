@@ -1614,7 +1614,7 @@ async def get_table_data_simple(
     ws_client: QlikWebSocketClient = Depends(get_qlik_websocket_client)
 ):
     """
-    Simple endpoint that
+    Simple endpoint that returns table structure and metadata without complex hypercube creation
     Great for showing table summaries/previews
     """
     try:
@@ -2211,7 +2211,7 @@ def _generate_summary_from_rows(rows: list, table_name: str) -> dict:
         "Table": table_name,
         "Total Rows": len(rows),
         "Columns": list(first_row.keys()),
-        "Column Count": len(set(first_row.keys())),
+        "Column Count": len(first_row.keys()),
         "Numeric Analysis": {},
         "Category Counts": {}
     }
@@ -3338,9 +3338,9 @@ async def powerbi_advanced(
         if dax_content:
             try:
                 dax_text = dax_content.decode('utf-8')
-                dax_measures = parse_dax(dax_text)
-                print(f"✅ Parsed {len(dax_measures)} measures from DAX file:")
-                for m in dax_measures:
+                measures_list = parse_dax(dax_text)
+                print(f"✅ Parsed {len(measures_list)} measures from DAX file:")
+                for m in measures_list:
                     print(f"   - {m['name']}")
             except Exception as e:
                 print(f"⚠️ DAX parsing error: {str(e)}")
@@ -3943,10 +3943,6 @@ if __name__ == "__main__":
         print("  [+] Script data extraction (INLINE data)")
     else:
         print("  [!] Script data extraction DISABLED (qlik_script_parser.py not found)")
-    if PUBLISHER_AVAILABLE:
-        print("  [+] Power BI dataset publisher (powerbi_dataset_publisher.py)")
-    else:
-        print("  [!] Dataset publisher DISABLED (powerbi_dataset_publisher.py not found)")
     print("\nStarting server...")
     print("="*80 + "\n")
     
