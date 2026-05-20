@@ -835,10 +835,7 @@ def _normalize_tables_m_fields(
         table_copy = dict(table)
         table_name = str(table_copy.get("name", "") or "")
         existing_fields = table_copy.get("fields") or []
-        map_fields = qlik_fields_map.get(table_name, []) or next(
-            (v for k, v in qlik_fields_map.items() if k.lower() == table_name.lower()),
-            [],
-        )
+        map_fields = _lookup_map_fields(table_name, qlik_fields_map)
         canonical_by_lower = {str(col).strip().lower(): str(col).strip() for col in map_fields if str(col).strip()}
 
         normalized_fields: List[Dict[str, Any]] = []
@@ -1252,14 +1249,31 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
 
             # Resolution order:
             # 1. Exact match in source_fields_map
-            # 2. Case-insensitive match
-            map_entry: List[Any] = (
-                alteryx_source_fields.get(tname)
-                or _asf_lower.get(tname.lower())
-                or []
-            )
+            # 2. Case-insensitive / normalized exact match
+            # 3. Loose source-file key match for table names derived from raw sources
+            map_entry: List[Any] = _lookup_map_fields(tname, alteryx_source_fields)
             if not map_entry:
-                continue
+                source_path = str(t.get("source_path") or "").strip()
+                source_file = ""
+                if source_path:
+                    source_file = os.path.splitext(os.path.basename(source_path))[0].strip()
+                if not source_file:
+                    source_file = _extract_source_file_name(str(t.get("m_expression") or ""))
+                if source_file:
+                    map_entry = _lookup_map_fields(source_file, alteryx_source_fields)
+                    if not map_entry:
+                        source_key = _table_match_key(source_file)
+                        if source_key:
+                            for key, entry in alteryx_source_fields.items():
+                                if source_key in _table_match_key(key):
+                                    map_entry = entry
+                                    logger.info(
+                                        "[publish_mquery] alteryx_source_fields: matched '%s' to source file '%s' via loose key '%s'",
+                                        tname, source_file, key,
+                                    )
+                                    break
+                if not map_entry:
+                    continue
 
             # Normalise: accept both {"name":...,"type":...} dicts and plain strings
             normalised: List[Dict[str, Any]] = []
@@ -1317,7 +1331,7 @@ async def publish_mquery_endpoint(request: PublishMQueryRequest):
     if qlik_fields_map:
         for t in tables_m:
             table_name = t.get("name", "")
-            map_fields = qlik_fields_map.get(table_name, [])
+            map_fields = _lookup_map_fields(table_name, qlik_fields_map)
             if not map_fields:
                 continue
 
@@ -1484,6 +1498,24 @@ def _normalize_execute_query_row(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def _table_match_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _lookup_map_fields(table_name: str, field_map: Dict[str, Any]) -> List[Any]:
+    if not table_name or not field_map:
+        return []
+    exact_match = field_map.get(table_name)
+    if exact_match:
+        return exact_match
+    lower_table_name = table_name.lower()
+    for key, value in field_map.items():
+        if key.lower() == lower_table_name:
+            return value
+    normalized_key = _table_match_key(table_name)
+    if normalized_key:
+        for key, value in field_map.items():
+            if _table_match_key(key) == normalized_key:
+                return value
+    return []
 
 
 def _get_powerbi_table_metadata(workspace_id: str, dataset_id: str, headers: Dict[str, str]) -> List[Dict[str, Any]]:

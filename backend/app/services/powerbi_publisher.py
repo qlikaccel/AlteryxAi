@@ -2272,6 +2272,10 @@ def _extract_sharepoint_file_name(expr: str) -> str:
     return ""
 
 
+def _normalize_table_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
 def _infer_alteryx_csv_fields(table_name: str, expr: str = "") -> List[Dict[str, Any]]:
     """
     Last-resort schema hints for Alteryx CSV raw source tables whose generated
@@ -2283,11 +2287,11 @@ def _infer_alteryx_csv_fields(table_name: str, expr: str = "") -> List[Dict[str,
     key = re.sub(r"[^a-z0-9]+", "_", key).strip("_")
 
     columns: List[str] = []
-    if "sales" in key:
+    if any(x in key for x in ["sales", "transaction", "transactions", "order", "orders"]):
         columns = ["CustomerID", "Region", "Sales", "Product", "OrderDate"]
-    elif "customer" in key:
+    elif any(x in key for x in ["customer", "customers", "client", "clients", "account", "accounts"]):
         columns = ["CustomerID", "CustomerName", "Country"]
-    elif "product" in key:
+    elif any(x in key for x in ["product", "products", "catalog", "item", "items"]):
         columns = ["Product", "Category", "Price"]
 
     return [
@@ -2460,9 +2464,9 @@ def _resolve_schema_universal(
     # Previously this map was stored on _Publisher but never consumed here — so LOAD * tables
     # with dynamic M schema always fell through to the empty return below.
     if qlik_fields_map:
-        # Try exact name match first, then case-insensitive
+        # Try exact name match first, then normalized name match for spaces/hyphens/case
         real_cols = qlik_fields_map.get(table_name) or next(
-            (v for k, v in qlik_fields_map.items() if k.lower() == table_name.lower()),
+            (v for k, v in qlik_fields_map.items() if _normalize_table_key(k) == _normalize_table_key(table_name)),
             None
         )
         if real_cols:
@@ -2803,7 +2807,7 @@ class _Publisher:
                 )
                 columns.extend(resolved)
 
-            if not columns and table_name.lower().endswith("_raw"):
+            if not columns and (is_file or "csv.document" in expr_str.lower() or "sharepoint.files" in expr_str.lower()):
                 inferred_fields = _infer_alteryx_csv_fields(table_name, expr_str)
                 for f in inferred_fields:
                     col_name = (f.get("name") or "").strip()
