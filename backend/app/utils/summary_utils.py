@@ -46,7 +46,7 @@ def extract_metrics(df: pd.DataFrame) -> Dict[str, Any]:
     categorical_cols = df.select_dtypes(include="object").columns.tolist()
 
     # Basic metrics
-    metrics["Total Records"] = len(df)
+    metrics["Total Records"] = df.shape[0]  # Use shape for accurate row count
     
     # Numeric metrics
     if numeric_cols:

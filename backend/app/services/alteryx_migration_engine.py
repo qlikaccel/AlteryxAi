@@ -1789,1140 +1789,502 @@ def generate_python_project(workflow: dict[str, Any], sharepoint_url: str = "", 
         "    return 'sum'\n\n"
         "def _apply_summarize(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:\n"
         "    group_by = [col for col in (config.get('groupBy') or []) if _resolve_column(frame, col)]\n"
-        "    aggregations = config.get('aggregations') or []\n"
-        "    if not group_by or not aggregations:\n"
-        "        return frame\n"
-        "    actual_groups = [_resolve_column(frame, col) or col for col in group_by]\n"
-        "    named_aggs: dict[str, tuple[str, str]] = {}\n"
-        "    for agg in aggregations:\n"
-        "        actual = _resolve_column(frame, agg.get('field'))\n"
-        "        if not actual:\n"
-        "            continue\n"
-        "        rename = str(agg.get('rename') or agg.get('field'))\n"
-        "        named_aggs[rename] = (actual, _agg_func(agg.get('action')))\n"
-        "    if not named_aggs:\n"
-        "        return frame\n"
-        "    return frame.groupby(actual_groups, dropna=False).agg(**named_aggs).reset_index()\n\n"
-        "def _eval_alteryx_expression(frame: pd.DataFrame, expression: str) -> Any:\n"
-        "    import re\n"
-        "    expr = str(expression or '').strip()\n"
-        "    for col in sorted(frame.columns, key=lambda item: len(str(item)), reverse=True):\n"
-        "        expr = expr.replace(f'[{col}]', f'`{col}`')\n"
-        "    expr = expr.replace('<>', '!=')\n"
-        "    expr = re.sub(r'(?<![!<>=])=(?!=)', '==', expr)\n"
-        "    expr = re.sub(r'\\bAND\\b', 'and', expr, flags=re.IGNORECASE)\n"
-        "    expr = re.sub(r'\\bOR\\b', 'or', expr, flags=re.IGNORECASE)\n"
-        "    return frame.eval(expr, engine='python')\n\n"
-        "def _split_top_level_args(value: str) -> list[str]:\n"
-        "    args: list[str] = []\n"
-        "    current: list[str] = []\n"
-        "    depth = 0\n"
-        "    quote = ''\n"
-        "    for char in str(value):\n"
-        "        if quote:\n"
-        "            current.append(char)\n"
-        "            if char == quote:\n"
-        "                quote = ''\n"
-        "            continue\n"
-        "        if char in ('\\\"', \"'\"):\n"
-        "            quote = char\n"
-        "            current.append(char)\n"
-        "            continue\n"
-        "        if char == '(':\n"
-        "            depth += 1\n"
-        "        elif char == ')':\n"
-        "            depth = max(depth - 1, 0)\n"
-        "        if char == ',' and depth == 0:\n"
-        "            args.append(''.join(current).strip())\n"
-        "            current = []\n"
-        "        else:\n"
-        "            current.append(char)\n"
-        "    if current:\n"
-        "        args.append(''.join(current).strip())\n"
-        "    return args\n\n"
-        "def _series_literal(frame: pd.DataFrame, value: Any) -> pd.Series:\n"
-        "    return pd.Series(value, index=frame.index)\n\n"
-        "def _eval_formula_value(frame: pd.DataFrame, expression: str) -> Any:\n"
-        "    import re\n"
-        "    expr = str(expression or '').strip()\n"
-        "    if re.fullmatch(r'NULL\\(\\)|NULL|null', expr, flags=re.IGNORECASE):\n"
-        "        return _series_literal(frame, pd.NA)\n"
-        "    if re.fullmatch(r'\\\"[^\\\"]*\\\"|\\'[^\\']*\\'', expr):\n"
-        "        return _series_literal(frame, expr[1:-1])\n"
-        "    if re.fullmatch(r'-?\\d+(\\.\\d+)?', expr):\n"
-        "        return _series_literal(frame, float(expr) if '.' in expr else int(expr))\n"
-        "    if expr.upper().startswith('IIF(') and expr.endswith(')'):\n"
-        "        args = _split_top_level_args(expr[4:-1])\n"
-        "        if len(args) == 3:\n"
-        "            condition = _eval_alteryx_expression(frame, args[0]).astype(bool)\n"
-        "            true_value = _eval_formula_value(frame, args[1])\n"
-        "            false_value = _eval_formula_value(frame, args[2])\n"
-        "            if not isinstance(true_value, pd.Series):\n"
-        "                true_value = _series_literal(frame, true_value)\n"
-        "            if not isinstance(false_value, pd.Series):\n"
-        "                false_value = _series_literal(frame, false_value)\n"
-        "            return false_value.where(~condition, true_value)\n"
-        "    contains = re.match(r'Contains\\s*\\((.+),\\s*[\\\"\\']([^\\\"\\']+)[\\\"\\']\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
-        "    if contains:\n"
-        "        haystack = _eval_formula_value(frame, contains.group(1))\n"
-        "        if not isinstance(haystack, pd.Series):\n"
-        "            haystack = _series_literal(frame, haystack)\n"
-        "        return haystack.astype('string').str.contains(contains.group(2), case=False, na=False, regex=False)\n"
-        "    lower = re.match(r'LowerCase\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
-        "    if lower:\n"
-        "        value = _eval_formula_value(frame, lower.group(1))\n"
-        "        return value.astype('string').str.lower() if isinstance(value, pd.Series) else str(value).lower()\n"
-        "    upper = re.match(r'Uppercase\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
-        "    if upper:\n"
-        "        value = _eval_formula_value(frame, upper.group(1))\n"
-        "        return value.astype('string').str.upper() if isinstance(value, pd.Series) else str(value).upper()\n"
-        "    trim = re.match(r'Trim(?:Left|Right)?\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
-        "    if trim:\n"
-        "        value = _eval_formula_value(frame, trim.group(1))\n"
-        "        return value.astype('string').str.strip() if isinstance(value, pd.Series) else str(value).strip()\n"
-        "    year = re.match(r'DateTimeYear\\s*\\(\\s*\\[([^\\]]+)\\]\\s*\\)', expr, flags=re.IGNORECASE)\n"
-        "    if year:\n"
-        "        col = _resolve_column(frame, year.group(1))\n"
-        "        return pd.to_datetime(frame[col], errors='coerce').dt.year if col else _series_literal(frame, pd.NA)\n"
-        "    month = re.match(r'DateTimeMonth\\s*\\(\\s*\\[([^\\]]+)\\]\\s*\\)', expr, flags=re.IGNORECASE)\n"
-        "    if month:\n"
-        "        col = _resolve_column(frame, month.group(1))\n"
-        "        return pd.to_datetime(frame[col], errors='coerce').dt.month if col else _series_literal(frame, pd.NA)\n"
-        "    diff = re.match(r'DateTimeDiff\\s*\\(\\s*DateTimeNow\\(\\)\\s*,\\s*\\[([^\\]]+)\\]\\s*,\\s*[\\\"\\']days[\\\"\\']\\s*\\)', expr, flags=re.IGNORECASE)\n"
-        "    if diff:\n"
-        "        col = _resolve_column(frame, diff.group(1))\n"
-        "        return (pd.Timestamp.now() - pd.to_datetime(frame[col], errors='coerce')).dt.days if col else _series_literal(frame, pd.NA)\n"
-        "    tostring = re.match(r'ToString\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
-        "    if tostring:\n"
-        "        value = _eval_formula_value(frame, tostring.group(1))\n"
-        "        return value.astype('string') if isinstance(value, pd.Series) else str(value)\n"
-        "    ceil = re.match(r'CEIL\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)\n"
-        "    if ceil:\n"
-        "        value = _eval_formula_value(frame, ceil.group(1))\n"
-        "        return pd.to_numeric(value, errors='coerce').apply(__import__('math').ceil) if isinstance(value, pd.Series) else __import__('math').ceil(float(value))\n"
-        "    return _eval_alteryx_expression(frame, expr)\n\n"
-        "def _apply_formula(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:\n"
-        "    result = frame.copy()\n"
-        "    for formula in config.get('formulas') or []:\n"
-        "        field = str(formula.get('field') or formula.get('name') or '')\n"
-        "        expression = str(formula.get('expression') or '')\n"
-        "        if not field or not expression:\n"
-        "            continue\n"
-        "        lowered = expression.lower().strip()\n"
-        "        try:\n"
-        "            result[field] = _eval_formula_value(result, expression)\n"
-        "            continue\n"
-        "        except Exception:\n"
-        "            pass\n"
-        "        # Common Alteryx pattern: if [Denominator] = 0 then null else [Numerator] / [Denominator]\n"
-        "        match = __import__('re').match(r'if\\s+\\[([^\\]]+)\\]\\s*=\\s*0\\s+then\\s+null\\s+else\\s+\\[([^\\]]+)\\]\\s*/\\s*\\[([^\\]]+)\\]', lowered, flags=__import__('re').I)\n"
-        "        if match:\n"
-        "            denominator = _resolve_column(result, match.group(1))\n"
-        "            numerator = _resolve_column(result, match.group(2))\n"
-        "            denominator_again = _resolve_column(result, match.group(3))\n"
-        "            if numerator and denominator and denominator_again:\n"
-        "                denom = pd.to_numeric(result[denominator], errors='coerce')\n"
-        "                numer = pd.to_numeric(result[numerator], errors='coerce')\n"
-        "                result[field] = numer.divide(denom).where(denom != 0)\n"
-        "                continue\n"
-        "        if_match = __import__('re').match(r'if\\s+(.+?)\\s+then\\s+(.+?)\\s+else\\s+(.+)$', expression.strip(), flags=__import__('re').I)\n"
-        "        if if_match:\n"
-        "            try:\n"
-        "                condition = _eval_alteryx_expression(result, if_match.group(1)).astype(bool)\n"
-        "                true_value = if_match.group(2).strip().strip('\"\\'')\n"
-        "                false_value = if_match.group(3).strip().strip('\"\\'')\n"
-        "                result[field] = pd.Series(false_value, index=result.index).where(~condition, true_value)\n"
-        "                continue\n"
-        "            except Exception as exc:\n"
-        "                print(f'Warning: IF formula for {field!r} requires manual review: {exc}')\n"
-        "        try:\n"
-        "            result[field] = _eval_alteryx_expression(result, expression)\n"
-        "            continue\n"
-        "        except Exception:\n"
-        "            pass\n"
-        "        print(f'Warning: formula for {field!r} requires manual translation: {expression}')\n"
-        "    return result\n\n"
-        "def apply_transform_steps(frame: pd.DataFrame) -> pd.DataFrame:\n"
-        "    current = frame\n"
-        "    for step in TRANSFORM_STEPS:\n"
-        "        tool = step.get('tool')\n"
-        "        config = step.get('config') or {}\n"
-        "        if tool == 'select':\n"
-        "            current = _apply_select(current, config)\n"
-        "        elif tool == 'filter':\n"
-        "            current = _apply_filter(current, config)\n"
-        "        elif tool == 'summarize':\n"
-        "            current = _apply_summarize(current, config)\n"
-        "        elif tool == 'formula':\n"
-        "            current = _apply_formula(current, config)\n"
-        "    return current\n\n"
-        "def _node_by_id() -> dict[str, dict[str, Any]]:\n"
-        "    return {str(node.get('id')): node for node in WORKFLOW_NODES if node.get('id')}\n\n"
-        "def _predecessors() -> dict[str, list[str]]:\n"
-        "    preds: dict[str, list[str]] = {}\n"
-        "    for edge in WORKFLOW_EDGES:\n"
-        "        source = str(edge.get('from') or edge.get('source') or '')\n"
-        "        target = str(edge.get('to') or edge.get('target') or '')\n"
-        "        if source and target:\n"
-        "            preds.setdefault(target, []).append(source)\n"
-        "    return preds\n\n"
-        "def _incoming_edges() -> dict[str, list[dict[str, Any]]]:\n"
-        "    incoming: dict[str, list[dict[str, Any]]] = {}\n"
-        "    for edge in WORKFLOW_EDGES:\n"
-        "        target = str(edge.get('to') or edge.get('target') or '')\n"
-        "        if target:\n"
-        "            incoming.setdefault(target, []).append(edge)\n"
-        "    return incoming\n\n"
-        "def _topological_node_ids() -> list[str]:\n"
-        "    nodes = _node_by_id()\n"
-        "    preds = _predecessors()\n"
-        "    remaining = set(nodes)\n"
-        "    ordered: list[str] = []\n"
-        "    while remaining:\n"
-        "        ready = sorted(node_id for node_id in remaining if all(pred not in remaining for pred in preds.get(node_id, [])))\n"
-        "        if not ready:\n"
-        "            ordered.extend(sorted(remaining))\n"
-        "            break\n"
-        "        ordered.extend(ready)\n"
-        "        remaining.difference_update(ready)\n"
-        "    return ordered\n\n"
-        "def _is_input_plugin(plugin: str) -> bool:\n"
-        "    lowered = plugin.lower()\n"
-        "    return any(token in lowered for token in ('input', 'dbfileinput', 'textinput')) and 'macro' not in lowered\n\n"
-        "def _is_output_plugin(plugin: str) -> bool:\n"
-        "    lowered = plugin.lower()\n"
-        "    return any(token in lowered for token in ('output', 'dbfileoutput', 'outputdata')) and 'macro' not in lowered\n\n"
-        "def _join_keys(left: pd.DataFrame, right: pd.DataFrame, config: dict[str, Any]) -> list[str]:\n"
-        "    configured = config.get('joinBy') or config.get('joinFields') or config.get('keys') or []\n"
-        "    keys: list[str] = []\n"
-        "    if isinstance(configured, dict):\n"
-        "        configured = [configured]\n"
-        "    for item in configured:\n"
-        "        if isinstance(item, dict):\n"
-        "            candidate = item.get('left') or item.get('field') or item.get('name') or item.get('leftField')\n"
-        "        else:\n"
-        "            candidate = item\n"
-        "        actual = _resolve_column(left, str(candidate)) if candidate else None\n"
-        "        if actual and _resolve_column(right, actual):\n"
-        "            keys.append(actual)\n"
-        "    if keys:\n"
-        "        return keys\n"
-        "    common = [col for col in left.columns if _resolve_column(right, str(col))]\n"
-        "    return common[:1]\n\n"
-        "def _apply_join(upstream: list[pd.DataFrame], config: dict[str, Any]) -> pd.DataFrame:\n"
-        "    if len(upstream) < 2:\n"
-        "        return upstream[0].copy() if upstream else pd.DataFrame()\n"
-        "    current = upstream[0].copy()\n"
-        "    for right in upstream[1:]:\n"
-        "        keys = _join_keys(current, right, config)\n"
-        "        if not keys:\n"
-        "            print('Warning: join has no detected keys; preserving left input.')\n"
-        "            continue\n"
-        "        current = current.merge(right, on=keys, how=str(config.get('joinType') or 'inner').lower(), suffixes=('', '_right'))\n"
-        "    return current\n\n"
-        "def _apply_union(upstream: list[pd.DataFrame]) -> pd.DataFrame:\n"
-        "    frames = [frame.copy() for frame in upstream if frame is not None]\n"
-        "    return pd.concat(frames, ignore_index=True, sort=False) if frames else pd.DataFrame()\n\n"
-        "def _apply_sort(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:\n"
-        "    fields = config.get('sortFields') or config.get('fields') or []\n"
-        "    if isinstance(fields, dict):\n"
-        "        fields = [fields]\n"
-        "    columns: list[str] = []\n"
-        "    ascending: list[bool] = []\n"
-        "    for item in fields:\n"
-        "        name = item.get('field') or item.get('name') if isinstance(item, dict) else item\n"
-        "        actual = _resolve_column(frame, str(name)) if name else None\n"
-        "        if actual:\n"
-        "            columns.append(actual)\n"
-        "            order = str(item.get('order') or item.get('direction') or 'asc').lower() if isinstance(item, dict) else 'asc'\n"
-        "            ascending.append(order not in {'desc', 'descending', '-1'})\n"
-        "    return frame.sort_values(columns, ascending=ascending).reset_index(drop=True) if columns else frame\n\n"
-        "def _apply_sample(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:\n"
-        "    count = config.get('count') or config.get('n') or config.get('sampleSize')\n"
-        "    try:\n"
-        "        return frame.head(int(count)).copy() if count else frame\n"
-        "    except Exception:\n"
-        "        return frame\n\n"
-        "def _salary_equalizer_outputs(dataframes: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame] | None:\n"
-        "    output_names = [str(output.get('name') or '').lower() for output in OUTPUTS]\n"
-        "    if not any('resolved' in name for name in output_names):\n"
-        "        return None\n"
-        "    if not any('summary' in name for name in output_names):\n"
-        "        return None\n"
-        "    source = next(iter(dataframes.values()), pd.DataFrame()).copy()\n"
-        "    salary_col = _resolve_column(source, 'BaseSalary')\n"
-        "    dept_col = _resolve_column(source, 'Department')\n"
-        "    if not salary_col:\n"
-        "        return None\n"
-        "    threshold = float(env('SALARY_EQUALIZER_THRESHOLD', '120000') or '120000')\n"
-        "    raise_factor = float(env('SALARY_EQUALIZER_RAISE_FACTOR', '1.05') or '1.05')\n"
-        "    max_iterations = int(env('SALARY_EQUALIZER_MAX_ITERATIONS', '20') or '20')\n"
-        "    salary = pd.to_numeric(source[salary_col], errors='coerce')\n"
-        "    already_above = source[salary >= threshold].copy()\n"
-        "    to_resolve = source[salary < threshold].copy()\n"
-        "    adjusted = pd.to_numeric(to_resolve[salary_col], errors='coerce')\n"
-        "    iterations = pd.Series(0, index=to_resolve.index, dtype='int64')\n"
-        "    for _ in range(max_iterations):\n"
-        "        mask = adjusted < threshold\n"
-        "        if not bool(mask.any()):\n"
-        "            break\n"
-        "        adjusted.loc[mask] = adjusted.loc[mask] * raise_factor\n"
-        "        iterations.loc[mask] = iterations.loc[mask] + 1\n"
-        "    resolved = to_resolve.copy()\n"
-        "    resolved['OriginalBaseSalary'] = pd.to_numeric(to_resolve[salary_col], errors='coerce')\n"
-        "    resolved['ResolvedBaseSalary'] = adjusted.round(2)\n"
-        "    resolved['SalaryIncrease'] = (resolved['ResolvedBaseSalary'] - resolved['OriginalBaseSalary']).round(2)\n"
-        "    resolved['IterationCount'] = iterations\n"
-        "    resolved['ResolvedByIterativeMacro'] = True\n"
-        "    already_above['OriginalBaseSalary'] = pd.to_numeric(already_above[salary_col], errors='coerce')\n"
-        "    already_above['ResolvedBaseSalary'] = already_above['OriginalBaseSalary']\n"
-        "    already_above['SalaryIncrease'] = 0.0\n"
-        "    already_above['IterationCount'] = 0\n"
-        "    already_above['ResolvedByIterativeMacro'] = False\n"
-        "    if dept_col and not resolved.empty:\n"
-        "        summary = resolved.groupby(dept_col, dropna=False).agg(\n"
-        "            EmployeeCount=('EmployeeID', 'count') if 'EmployeeID' in resolved.columns else (salary_col, 'count'),\n"
-        "            AvgOriginalBaseSalary=('OriginalBaseSalary', 'mean'),\n"
-        "            AvgResolvedBaseSalary=('ResolvedBaseSalary', 'mean'),\n"
-        "            TotalSalaryIncrease=('SalaryIncrease', 'sum'),\n"
-        "            MaxIterationCount=('IterationCount', 'max'),\n"
-        "        ).reset_index()\n"
-        "        for column in ['AvgOriginalBaseSalary', 'AvgResolvedBaseSalary', 'TotalSalaryIncrease']:\n"
-        "            summary[column] = summary[column].round(2)\n"
-        "    else:\n"
-        "        summary = pd.DataFrame({\n"
-        "            'EmployeeCount': [len(resolved)],\n"
-        "            'AvgOriginalBaseSalary': [round(float(resolved['OriginalBaseSalary'].mean() or 0), 2) if not resolved.empty else 0],\n"
-        "            'AvgResolvedBaseSalary': [round(float(resolved['ResolvedBaseSalary'].mean() or 0), 2) if not resolved.empty else 0],\n"
-        "            'TotalSalaryIncrease': [round(float(resolved['SalaryIncrease'].sum() or 0), 2) if not resolved.empty else 0],\n"
-        "            'MaxIterationCount': [int(resolved['IterationCount'].max() or 0) if not resolved.empty else 0],\n"
-        "        })\n"
-        "    mapped: dict[str, pd.DataFrame] = {}\n"
-        "    for index, output in enumerate(OUTPUTS, start=1):\n"
-        "        name = output.get('name') or f'output_{index}'\n"
-        "        key = str(name).lower()\n"
-        "        if 'summary' in key:\n"
-        "            mapped[name] = summary.copy()\n"
-        "        elif 'above' in key or 'threshold' in key:\n"
-        "            mapped[name] = already_above.copy()\n"
-        "        else:\n"
-        "            mapped[name] = resolved.copy()\n"
-        "    return mapped\n\n"
-        "def _apply_node_tool(upstream: list[pd.DataFrame], node: dict[str, Any]) -> pd.DataFrame:\n"
-        "    plugin = str(node.get('plugin') or '').lower()\n"
-        "    config = node.get('config') or {}\n"
-        "    frame = upstream[0].copy() if upstream else pd.DataFrame()\n"
-        "    if 'join' in plugin and 'joinmultiple' not in plugin:\n"
-        "        return _apply_join(upstream, config)\n"
-        "    if 'union' in plugin or 'joinmultiple' in plugin:\n"
-        "        return _apply_union(upstream)\n"
-        "    if 'select' in plugin:\n"
-        "        return _apply_select(frame, config)\n"
-        "    if 'filter' in plugin and 'summarize' not in plugin:\n"
-        "        return _apply_filter(frame, config)\n"
-        "    if 'summarize' in plugin:\n"
-        "        return _apply_summarize(frame, config)\n"
-        "    if 'formula' in plugin:\n"
-        "        return _apply_formula(frame, config)\n"
-        "    if 'unique' in plugin:\n"
-        "        return frame.drop_duplicates().reset_index(drop=True)\n"
-        "    if 'sort' in plugin:\n"
-        "        return _apply_sort(frame, config)\n"
-        "    if 'sample' in plugin:\n"
-        "        return _apply_sample(frame, config)\n"
-        "    return frame\n\n"
-        "def execute_workflow_graph(dataframes: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n"
-        "    if not WORKFLOW_NODES or not WORKFLOW_EDGES:\n"
-        "        first = apply_transform_steps(next(iter(dataframes.values()), pd.DataFrame()))\n"
-        "        return {output.get('name') or f'output_{index}': first.copy() for index, output in enumerate(OUTPUTS, start=1)}\n"
-        "    nodes = _node_by_id()\n"
-        "    preds = _predecessors()\n"
-        "    incoming = _incoming_edges()\n"
-        "    frames_by_node: dict[str, pd.DataFrame] = {}\n"
-        "    frames_by_anchor: dict[str, pd.DataFrame] = {}\n"
-        "    fallback_frame = next(iter(dataframes.values()), pd.DataFrame())\n"
-        "    source_by_tool = {str(source.get('toolId')): source for source in SOURCES if source.get('toolId')}\n"
-        "    for source in SOURCES:\n"
-        "        key = source.get('name') or source.get('path')\n"
-        "        if source.get('toolId') and key in dataframes:\n"
-        "            frames_by_node[str(source.get('toolId'))] = dataframes[key]\n"
-        "            frames_by_anchor[f\"{source.get('toolId')}:Output\"] = dataframes[key]\n"
-        "    for node_id in _topological_node_ids():\n"
-        "        node = nodes[node_id]\n"
-        "        plugin = str(node.get('plugin') or '')\n"
-        "        if node_id in source_by_tool and node_id not in frames_by_node:\n"
-        "            source = source_by_tool[node_id]\n"
-        "            frame = dataframes.get(source.get('name'))\n"
-        "            if frame is None:\n"
-        "                frame = dataframes.get(source.get('path'))\n"
-        "            frames_by_node[node_id] = frame.copy() if frame is not None else fallback_frame.copy()\n"
-        "            frames_by_anchor[f'{node_id}:Output'] = frames_by_node[node_id]\n"
-        "            continue\n"
-        "        upstream = []\n"
-        "        for edge in incoming.get(node_id, []):\n"
-        "            from_id = str(edge.get('from') or edge.get('source') or '')\n"
-        "            from_anchor = str(edge.get('fromAnchor') or edge.get('from_connection') or 'Output')\n"
-        "            anchored = frames_by_anchor.get(f'{from_id}:{from_anchor}')\n"
-        "            if anchored is not None:\n"
-        "                upstream.append(anchored)\n"
-        "            elif from_id in frames_by_node:\n"
-        "                upstream.append(frames_by_node[from_id])\n"
-        "        base = upstream[0].copy() if upstream else frames_by_node.get(node_id, fallback_frame).copy()\n"
-        "        if _is_input_plugin(plugin):\n"
-        "            frames_by_node.setdefault(node_id, base)\n"
-        "        elif _is_output_plugin(plugin):\n"
-        "            frames_by_node[node_id] = base\n"
-        "            frames_by_anchor[f'{node_id}:Output'] = base\n"
-        "        elif 'python' in plugin.lower():\n"
-        "            python_outputs = apply_python_tool_node(upstream or [base], node)\n"
-        "            if not python_outputs:\n"
-        "                python_outputs = {'Output1': base}\n"
-        "            first_output = next(iter(python_outputs.values())).copy()\n"
-        "            frames_by_node[node_id] = first_output\n"
-        "            frames_by_anchor[f'{node_id}:Output'] = first_output\n"
-        "            for anchor, frame in python_outputs.items():\n"
-        "                output_frame = frame.copy()\n"
-        "                frames_by_anchor[f'{node_id}:{anchor}'] = output_frame\n"
-        "                anchor_text = str(anchor or '')\n"
-        "                anchor_number = ''.join(ch for ch in anchor_text if ch.isdigit())\n"
-        "                if anchor_number:\n"
-        "                    frames_by_anchor[f'{node_id}:#{anchor_number}'] = output_frame\n"
-        "                    frames_by_anchor[f'{node_id}:Output{anchor_number}'] = output_frame\n"
-        "                    frames_by_anchor[f'{node_id}:Output {anchor_number}'] = output_frame\n"
-        "        else:\n"
-        "            frames_by_node[node_id] = _apply_node_tool(upstream or [base], node)\n"
-        "            frames_by_anchor[f'{node_id}:Output'] = frames_by_node[node_id]\n"
-        "    outputs: dict[str, pd.DataFrame] = {}\n"
-        "    for index, output in enumerate(OUTPUTS, start=1):\n"
-        "        output_id = str(output.get('toolId') or '')\n"
-        "        frame = None\n"
-        "        for edge in incoming.get(output_id, []) if output_id else []:\n"
-        "            from_id = str(edge.get('from') or edge.get('source') or '')\n"
-        "            from_anchor = str(edge.get('fromAnchor') or edge.get('from_connection') or 'Output')\n"
-        "            anchored = frames_by_anchor.get(f'{from_id}:{from_anchor}')\n"
-        "            if anchored is not None:\n"
-        "                frame = anchored\n"
-        "                break\n"
-        "            if from_id in frames_by_node:\n"
-        "                frame = frames_by_node[from_id]\n"
-        "                break\n"
-        "        if frame is None and output_id in frames_by_node:\n"
-        "            frame = frames_by_node[output_id]\n"
-        "        if frame is None:\n"
-        "            frame = apply_transform_steps(fallback_frame)\n"
-        "        outputs[output.get('name') or f'output_{index}'] = frame.copy()\n"
-        "    return outputs\n\n"
-        "def transform(dataframes: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n"
-        "    salary_outputs = _salary_equalizer_outputs(dataframes)\n"
-        "    if salary_outputs is not None:\n"
-        "        return salary_outputs\n"
-        "    return execute_workflow_graph(dataframes)\n\n"
-        "def write_local_outputs(outputs: dict[str, pd.DataFrame], output_dir: str = 'output') -> None:\n"
-        "    target_dir = Path(output_dir)\n"
-        "    target_dir.mkdir(parents=True, exist_ok=True)\n"
-        "    for name, frame in outputs.items():\n"
-        "        safe_name = Path(str(name)).stem or 'output'\n"
-        "        frame.to_csv(target_dir / f'{safe_name}.csv', index=False)\n\n"
-        "def _validate_bigquery_output_frame(name: str, frame: pd.DataFrame) -> None:\n"
-        "    if not isinstance(frame, pd.DataFrame):\n"
-        "        raise RuntimeError(f\"Output {name!r} is not a pandas DataFrame and cannot be published to BigQuery.\")\n"
-        "    if len(frame.columns) == 0:\n"
-        "        raise RuntimeError(\n"
-        "            f\"Output {name!r} has zero columns, so BigQuery cannot create a schema. \"\n"
-        "            \"This usually means an upstream Python tool did not write tabular output for the connected anchor, \"\n"
-        "            \"or the Alteryx output is connected to an anchor that the Python code did not produce.\"\n"
-        "        )\n\n"
-        "def publish_outputs_to_bigquery(outputs: dict[str, pd.DataFrame], dataset: str, project_id: str = '') -> None:\n"
-        "    if bigquery is None:\n"
-        "        raise RuntimeError('google-cloud-bigquery is required for BigQuery publishing.')\n"
-        "    project = project_id or env('GCP_PROJECT_ID')\n"
-        "    if not project or not dataset:\n"
-        "        raise RuntimeError('Set GCP_PROJECT_ID and BQ_DATASET/GCP_BIGQUERY_DATASET before publishing.')\n"
-        "    client = bigquery.Client(project=project)\n"
-        "    job_config = bigquery.LoadJobConfig(write_disposition=env('BQ_WRITE_DISPOSITION', 'WRITE_TRUNCATE'), autodetect=True)\n"
-        "    for name, frame in outputs.items():\n"
-        "        _validate_bigquery_output_frame(name, frame)\n"
-        "        table_name = __import__('re').sub(r'[^A-Za-z0-9_]+', '_', Path(str(name)).stem).strip('_').lower() or PROJECT_NAME\n"
-        "        table_id = f'{project}.{dataset}.{table_name}'\n"
-        "        client.load_table_from_dataframe(frame, table_id, job_config=job_config).result()\n"
-        "        print(f'Published {len(frame):,} rows to {table_id}')\n\n"
-        "def main() -> None:\n"
-        "    parser = argparse.ArgumentParser(description='Run generated Alteryx Python pipeline.')\n"
-        "    parser.add_argument('--publish-bq', action='store_true', help='Publish outputs to BigQuery.')\n"
-        "    parser.add_argument('--local-output', default='output', help='Local CSV output folder.')\n"
-        "    args = parser.parse_args()\n"
-        "    dataframes = {source.get('name') or f'source_{index}': read_source(source) for index, source in enumerate(SOURCES, start=1)}\n"
-        "    outputs = transform(dataframes)\n"
-        "    write_local_outputs(outputs, args.local_output)\n"
-        "    print(f'Wrote {len(outputs)} output file(s) to {args.local_output}/')\n"
-        "    if args.publish_bq:\n"
-        "        publish_outputs_to_bigquery(outputs, env('BQ_DATASET') or env('GCP_BIGQUERY_DATASET'), env('GCP_PROJECT_ID'))\n\n"
-        "if __name__ == '__main__':\n"
-        "    main()\n"
-    )
-    python_steps_py = (
-        '"""Extracted Alteryx Python tool code and integration hooks.\n\n'
-        "The original Alteryx Python tool code is preserved below for review. The\n"
-        "apply_python_tool_node function is the integration point used by pipeline.py.\n"
-        '"""\n\n'
-        "from __future__ import annotations\n\n"
-        "import os\n\n"
-        "import sys\n"
-        "import types\n\n"
-        "import pandas as pd\n\n"
-        "try:\n"
-        "    import numpy as np\n"
-        "except Exception:\n"
-        "    np = None\n\n"
-        f"PYTHON_TOOL_STEPS = {python_steps_json}\n\n"
-        "def _step_for_node(step: dict) -> dict:\n"
-        "    step_id = str(step.get('id') or '')\n"
-        "    for candidate in PYTHON_TOOL_STEPS:\n"
-        "        if str(candidate.get('id') or '') == step_id:\n"
-        "            return candidate\n"
-        "    return step\n\n"
-        "def _normalized_column_token(value: str) -> str:\n"
-        "    import re\n"
-        "    text = str(value or '').strip()\n"
-        "    text = re.sub(r'([a-z0-9])([A-Z])', r'\\1_\\2', text)\n"
-        "    text = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\\1_\\2', text)\n"
-        "    return re.sub(r'[^A-Za-z0-9]+', '_', text).strip('_').lower()\n\n"
-        "def _python_string_identifiers(code: str) -> set[str]:\n"
-        "    import re\n"
-        "    return {\n"
-        "        match.group(1)\n"
-        "        for match in re.finditer(r'''[\\\"']([A-Za-z_][A-Za-z0-9_]*)[\\\"']''', str(code or ''))\n"
-        "    }\n\n"
-        "def _align_frame_columns_for_python_code(frame: pd.DataFrame, code: str) -> pd.DataFrame:\n"
-        "    if frame.empty:\n"
-        "        return frame.copy()\n"
-        "    expected = _python_string_identifiers(code)\n"
-        "    if not expected:\n"
-        "        return frame.copy()\n"
-        "    result = frame.copy()\n"
-        "    existing = {str(col) for col in result.columns}\n"
-        "    by_normalized = {_normalized_column_token(str(col)): str(col) for col in result.columns}\n"
-        "    rename_map: dict[str, str] = {}\n"
-        "    for wanted in expected:\n"
-        "        if wanted in existing:\n"
-        "            continue\n"
-        "        actual = by_normalized.get(_normalized_column_token(wanted))\n"
-        "        if actual and actual not in rename_map and wanted not in existing:\n"
-        "            rename_map[actual] = wanted\n"
-        "    if rename_map:\n"
-        "        result = result.rename(columns=rename_map)\n"
-        "    return result\n\n"
-        "def apply_python_tool_node(upstream: list[pd.DataFrame], step: dict) -> dict[str, pd.DataFrame]:\n"
-        "    tool_step = _step_for_node(step)\n"
-        "    code = str(tool_step.get('code') or '').strip()\n"
-        "    if not code:\n"
-        "        return {'Output1': upstream[0].copy() if upstream else pd.DataFrame()}\n"
-        "    outputs: dict[str, pd.DataFrame] = {}\n\n"
-        "    class _AlteryxShim:\n"
-        "        @staticmethod\n"
-        "        def read(anchor='#1'):\n"
-        "            text = str(anchor or '#1').replace('#', '').replace('Input', '').strip()\n"
-        "            try:\n"
-        "                index = max(int(text) - 1, 0)\n"
-        "            except Exception:\n"
-        "                index = 0\n"
-        "            if index >= len(upstream):\n"
-        "                return pd.DataFrame()\n"
-        "            return _align_frame_columns_for_python_code(upstream[index], code)\n\n"
-        "        @staticmethod\n"
-        "        def write(frame, anchor=1):\n"
-        "            try:\n"
-        "                output_index = int(anchor)\n"
-        "            except Exception:\n"
-        "                output_index = 1\n"
-        "            if isinstance(frame, pd.DataFrame):\n"
-        "                outputs[f'Output{output_index}'] = frame.copy()\n"
-        "            else:\n"
-        "                outputs[f'Output{output_index}'] = pd.DataFrame(frame)\n\n"
-        "    ayx_module = types.ModuleType('ayx')\n"
-        "    ayx_module.Alteryx = _AlteryxShim\n"
-        "    alteryx_module = types.ModuleType('alteryx')\n"
-        "    alteryx_module.read = _AlteryxShim.read\n"
-        "    alteryx_module.write = _AlteryxShim.write\n"
-        "    previous_ayx = sys.modules.get('ayx')\n"
-        "    previous_alteryx = sys.modules.get('alteryx')\n"
-        "    sys.modules['ayx'] = ayx_module\n"
-        "    sys.modules['alteryx'] = alteryx_module\n"
-        "    scope = {'pd': pd, 'np': np, 'Alteryx': _AlteryxShim, 'alteryx': alteryx_module}\n"
-        "    try:\n"
-        "        exec(code, scope, scope)\n"
-        "    except Exception as exc:\n"
-        "        raise RuntimeError(f\"Alteryx Python tool {tool_step.get('id')} failed during execution: {exc}\") from exc\n"
-        "    finally:\n"
-        "        if previous_ayx is not None:\n"
-        "            sys.modules['ayx'] = previous_ayx\n"
-        "        else:\n"
-        "            sys.modules.pop('ayx', None)\n"
-        "        if previous_alteryx is not None:\n"
-        "            sys.modules['alteryx'] = previous_alteryx\n"
-        "        else:\n"
-        "            sys.modules.pop('alteryx', None)\n"
-        "    if outputs:\n"
-        "        return outputs\n"
-        "    df = scope.get('df')\n"
-        "    if isinstance(df, pd.DataFrame):\n"
-        "        return {'Output1': df.copy()}\n"
-        "    return {'Output1': upstream[0].copy() if upstream else pd.DataFrame()}\n"
-    )
-    env_example = (
-        f"GCP_PROJECT_ID=\n"
-        "GCP_BIGQUERY_DATASET=\n"
-        "BQ_DATASET=\n"
-        "BQ_WRITE_DISPOSITION=WRITE_TRUNCATE\n"
-        "GOOGLE_APPLICATION_CREDENTIALS=\n"
-    )
-    dockerfile = (
-        "FROM python:3.11-slim\n"
-        "WORKDIR /app\n"
-        "COPY requirements.txt .\n"
-        "RUN pip install --no-cache-dir -r requirements.txt\n"
-        "COPY . .\n"
-        "CMD [\"python\", \"pipeline.py\", \"--publish-bq\"]\n"
-    )
-    airflow_dag = (
-        '"""Airflow/Cloud Composer DAG for the generated Alteryx Python pipeline."""\n\n'
-        "from __future__ import annotations\n\n"
-        "from datetime import datetime\n"
-        "from airflow import DAG\n"
-        "from airflow.operators.bash import BashOperator\n\n"
-        f"with DAG(\n"
-        f"    dag_id='{project_name}_pipeline',\n"
-        "    start_date=datetime(2026, 1, 1),\n"
-        "    schedule=None,\n"
-        "    catchup=False,\n"
-        ") as dag:\n"
-        "    run_pipeline = BashOperator(\n"
-        "        task_id='run_pipeline_publish_bigquery',\n"
-        "        bash_command='python /opt/airflow/dags/pipeline.py --publish-bq',\n"
-        "    )\n"
-    )
-    files = {
-        "README.md": (
-            f"# {workflow.get('name', 'Alteryx Workflow')} Python Pipeline\n\n"
-            "Generated for workflows that need Python execution, BigQuery publishing, Cloud Run, Airflow/Composer, API orchestration, or manual remediation.\n\n"
-            "## Local test\n"
-            "`python pipeline.py`\n\n"
-            "## Publish to BigQuery\n"
-            "Set `GCP_PROJECT_ID`, `BQ_DATASET` or `GCP_BIGQUERY_DATASET`, and credentials, then run:\n"
-            "`python pipeline.py --publish-bq`\n\n"
-            "## Cloud Run\n"
-            "Build the included Dockerfile and deploy the container with the same environment variables.\n\n"
-            "## Airflow / Composer\n"
-            "Use `airflow_dag.py` as a starter DAG and package `pipeline.py` with the DAG or container image.\n\n"
-            f"Detected Alteryx Python tool steps: {len(python_steps)}.\n"
-        ),
-        "requirements.txt": "pandas>=2.2.0\nnumpy>=1.26.0\nrequests>=2.31.0\ngoogle-cloud-bigquery>=3.0.0\npyarrow>=14.0.0\npython-dotenv>=1.0.0\n",
-        "pipeline.py": pipeline_py,
-        "alteryx_python_steps.py": python_steps_py,
-        ".env.example": env_example,
-        "Dockerfile": dockerfile,
-        "airflow_dag.py": airflow_dag,
-        "macro_remediation_plan.json": json.dumps(macro_plan, indent=2),
-    }
-    return {
-        "success": True,
-        "project_name": project_name,
-        "target": "python",
-        "files": files,
-        "file_count": len(files),
-        "source_count": len(sources),
-        "sources": sources,
-        "source_assets": workflow.get("packageAssets") or [],
-        "output_count": len(output_specs),
-        "output_targets": outputs,
-        "macro_plan": macro_plan,
-        "transform_plan": transform_plan,
-        "transformation_coverage": transform_plan.get("coverage") or {},
-        "dbt_project": dbt_project,
-    }
+        "    aggregations = config.get('aggregations') or []
+        if not group_by or not aggregations:
+            return frame
+        actual_groups = [_resolve_column(frame, col) or col for col in group_by]
+        named_aggs: dict[str, tuple[str, str]] = {}
+        for agg in aggregations:
+            actual = _resolve_column(frame, agg.get('field'))
+            if not actual:
+                continue
+            rename = str(agg.get('rename') or agg.get('field'))
+            named_aggs[rename] = (actual, _agg_func(agg.get('action')))
 
+        if not named_aggs:
+            return frame
+        return frame.groupby(actual_groups, dropna=False).agg(**named_aggs).reset_index()
 
-def generate_executive_summary(workflow: dict[str, Any], use_llm: bool | None = None) -> dict[str, Any]:
-    name = workflow.get("name", "Selected workflow")
-    tool_count = workflow.get("toolCount", 0)
-    unsupported_count = workflow.get("unsupportedToolCount", 0)
-    supported_count = workflow.get("supportedToolCount", max(tool_count - unsupported_count, 0))
-    automation_score = round((supported_count / max(tool_count, 1)) * 100) if tool_count else 0
-    sources = workflow.get("dataSources") or []
-    source_labels = ", ".join(sorted({s.get("type", "unknown") for s in sources})) or "user supplied source metadata"
-    fit = workflow.get("convertibility", "manual_review")
-    complexity = workflow.get("complexity", "manual_review")
-    mapped_names = sorted({
-        (tool.rsplit(".", 1)[-1] if "." in tool else tool)
-        for tool in (workflow.get("toolTypes") or [])
-    })[:8]
+    def _eval_alteryx_expression(frame: pd.DataFrame, expression: str) -> Any:
+        import re
+        expr = str(expression or '').strip()
+        for col in sorted(frame.columns, key=lambda item: len(str(item)), reverse=True):
+            expr = expr.replace(f'[{col}]', f'`{col}`')
+        expr = expr.replace('<>', '!=')
+        expr = re.sub(r'(?<![!<>=])=(?!=)', '==', expr)
+        expr = re.sub(r'\\bAND\\b', 'and', expr, flags=re.IGNORECASE)
+        expr = re.sub(r'\\bOR\\b', 'or', expr, flags=re.IGNORECASE)
+        return frame.eval(expr, engine='python')
 
-    bullets = [
-        f"{name} contains {tool_count} Alteryx tool(s) and {workflow.get('connectionCount', 0)} workflow connection(s).",
-        f"Detected source type coverage: {source_labels}.",
-        f"Automated conversion fit is classified as {fit} with {complexity} complexity and an estimated {automation_score}% mapping score.",
-        f"Primary mapped tool families include {', '.join(mapped_names) if mapped_names else 'Input, Select, Filter, Summarize, Formula, and Browse'}.",
-        f"{unsupported_count} tool instance(s) require remediation before a fully automated Power BI implementation.",
-        "The migration approach converts Alteryx input and transformation intent into Power Query M for Power BI/Fabric.",
-        "Power BI should fetch business data directly from governed sources such as SharePoint, databases, Excel, or APIs.",
-        "Validation should compare source row counts, target refresh status, schema coverage, and unsupported-tool remediation closure.",
-    ]
-    model = "deterministic_fallback"
-    provider = "deterministic"
-    llm_status = "fallback"
+    def _split_top_level_args(value: str) -> list[str]:
+        args: list[str] = []
+        current: list[str] = []
+        depth = 0
+        quote = ''
+        for char in str(value):
+            if quote:
+                current.append(char)
+                if char == quote:
+                    quote = ''
+                continue
+            if char in ('\\\"', \"'\"):
+                quote = char
+                current.append(char)
+                continue
+            if char == '(':
+                depth += 1
+            elif char == ')':
+                depth = max(depth - 1, 0)
+            if char == ',' and depth == 0:
+                args.append(''.join(current).strip())
+                current = []
+            else:
+                current.append(char)
+        if current:
+            args.append(''.join(current).strip())
+        return args
 
-    if use_llm is None:
-        use_llm = (os.getenv("ALTERYX_DOC_LLM_ENABLED") or "true").strip().lower() in {"1", "true", "yes", "on"}
+    def _series_literal(frame: pd.DataFrame, value: Any) -> pd.Series:
+        return pd.Series(value, index=frame.index)
 
-    if use_llm and (os.getenv("ALTERYX_DOC_LLM_PROVIDER") or "huggingface").strip().lower() in {"huggingface", "hf"}:
-        node_context = [
-            {
-                "id": node.get("id"),
-                "tool": str(node.get("plugin") or "").split(".")[-1],
-                "annotation": str(node.get("annotation") or "")[:240],
-                "configuration": str(node.get("configurationText") or "")[:360],
-            }
-            for node in (workflow.get("workflowNodes") or [])[:40]
-        ]
-        source_context = [
-            {
-                "name": item.get("name"),
-                "type": item.get("type"),
-                "path": item.get("path"),
-            }
-            for item in (workflow.get("dataSources") or [])[:12]
-        ]
-        output_context = [
-            {
-                "name": item.get("name"),
-                "type": item.get("type"),
-                "path": item.get("path"),
-                "tool": item.get("tool"),
-            }
-            for item in (workflow.get("outputTargets") or [])[:12]
-        ]
-        macro_context = [
-            {
-                "name": item.get("name"),
-                "macroType": item.get("macroType"),
-                "path": item.get("path"),
-                "status": item.get("status"),
-            }
-            for item in (workflow.get("macroDependencies") or [])[:12]
-        ]
+    def _eval_formula_value(frame: pd.DataFrame, expression: str) -> Any:
+        import re
+        expr = str(expression or '').strip()
+        if re.fullmatch(r'NULL\\(\\)|NULL|null', expr, flags=re.IGNORECASE):
+            return _series_literal(frame, pd.NA)
+        if re.fullmatch(r'\\\"[^\\\"]*\\\"|\\'[^\\']*\\'', expr):
+            return _series_literal(frame, expr[1:-1])
+        if re.fullmatch(r'-?\\d+(\\.\\d+)?', expr):
+            return _series_literal(frame, float(expr) if '.' in expr else int(expr))
+        if expr.upper().startswith('IIF(') and expr.endswith(')'):
+
+            args = _split_top_level_args(expr[4:-1])
+            if len(args) == 3:
+                condition = _eval_alteryx_expression(frame, args[0]).astype(bool)
+                true_value = _eval_formula_value(frame, args[1])
+                false_value = _eval_formula_value(frame, args[2])
+                if not isinstance(true_value, pd.Series):
+                    true_value = _series_literal(frame, true_value)
+                if not isinstance(false_value, pd.Series):
+                    false_value = _series_literal(frame, false_value)
+                return false_value.where(~condition, true_value)
+        contains = re.match(r'Contains\\s*\\((.+),\\s*[\\\"\\']([^\\\"\\']+)[\\\"\\']\\)', expr, flags=re.IGNORECASE | re.DOTALL)
+        if contains:
+            haystack = _eval_formula_value(frame, contains.group(1))
+            if not isinstance(haystack, pd.Series):
+                haystack = _series_literal(frame, haystack)
+            return haystack.astype('string').str.contains(contains.group(2), case=False, na=False, regex=False)
+        lower = re.match(r'LowerCase\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)
+        if lower:
+            value = _eval_formula_value(frame, lower.group(1))
+            return value.astype('string').str.lower() if isinstance(value, pd.Series) else str(value).lower()
+        upper = re.match(r'Uppercase\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)
+        if upper:
+            value = _eval_formula_value(frame, upper.group(1))
+            return value.astype('string').str.upper() if isinstance(value, pd.Series) else str(value).upper()
+        trim = re.match(r'Trim(?:Left|Right)?\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)
+        if trim:
+            value = _eval_formula_value(frame, trim.group(1))
+            return value.astype('string').str.strip() if isinstance(value, pd.Series) else str(value).strip()
+        year = re.match(r'DateTimeYear\\s*\\(\\s*\\[([^\\]]+)\\]\\s*\\)', expr, flags=re.IGNORECASE)
+        if year:
+            col = _resolve_column(frame, year.group(1))
+            return pd.to_datetime(frame[col], errors='coerce').dt.year if col else _series_literal(frame, pd.NA)
+        month = re.match(r'DateTimeMonth\\s*\\(\\s*\\[([^\\]]+)\\]\\s*\\)', expr, flags=re.IGNORECASE)
+        if month:
+            col = _resolve_column(frame, month.group(1))
+            return pd.to_datetime(frame[col], errors='coerce').dt.month if col else _series_literal(frame, pd.NA)
+        diff = re.match(r'DateTimeDiff\\s*\\(\\s*DateTimeNow\\(\\)\\s*,\\s*\\[([^\\]]+)\\]\\s*,\\s*[\\\"\\']days[\\\"\\']\\s*\\)', expr, flags=re.IGNORECASE)
+        if diff:
+            col = _resolve_column(frame, diff.group(1))
+            return (pd.Timestamp.now() - pd.to_datetime(frame[col], errors='coerce')).dt.days if col else _series_literal(frame, pd.NA)
+        tostring = re.match(r'ToString\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)
+        if tostring:
+            value = _eval_formula_value(frame, tostring.group(1))
+            return value.astype('string') if isinstance(value, pd.Series) else str(value)
+        ceil = re.match(r'CEIL\\s*\\((.+)\\)', expr, flags=re.IGNORECASE | re.DOTALL)
+        if ceil:
+            value = _eval_formula_value(frame, ceil.group(1))
+            return pd.to_numeric(value, errors='coerce').apply(__import__('math').ceil) if isinstance(value, pd.Series) else __import__('math').ceil(float(value))
+        return _eval_alteryx_expression(frame, expr)
+
+    def _apply_formula(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
+        result = frame.copy()
+        for formula in config.get('formulas') or []:
+            field = str(formula.get('field') or formula.get('name') or '')\n"
+            expression = str(formula.get('expression') or '')\n"
+            if not field or not expression:\n"
+            continue\n"
+            lowered = expression.lower().strip()\n"
+            try:\n"
+            result[field] = _eval_formula_value(result, expression)\n"
+            continue\n"
+            except Exception:\n"
+            pass\n"
+            # Common Alteryx pattern: if [Denominator] = 0 then null else [Numerator] / [Denominator]\n"
+            match = __import__('re').match(r'if\\s+\\[([^\\]]+)\\]\\s*=\\s*0\\s+then\\s+null\\s+else\\s+\\[([^\\]]+)\\]\\s*/\\s*\\[([^\\]]+)\\]', lowered, flags=__import__('re').I)\n"
+            if match:\n"
+            denominator = _resolve_column(result, match.group(1))\n"
+            numerator = _resolve_column(result, match.group(2))\n"
+            denominator_again = _resolve_column(result, match.group(3))\n"
+            if numerator and denominator and denominator_again:\n"
+            denom = pd.to_numeric(result[denominator], errors='coerce')\n"
+            numer = pd.to_numeric(result[numerator], errors='coerce')\n"
+            result[field] = numer.divide(denom).where(denom != 0)\n"
+            continue\n"
+            if_match = __import__('re').match(r'if\\s+(.+?)\\s+then\\s+(.+?)\\s+else\\s+(.+)$', expression.strip(), flags=__import__('re').I)\n"
+            if if_match:\n"
+            try:\n"
+            condition = _eval_alteryx_expression(result, if_match.group(1)).astype(bool)\n"
+            true_value = if_match.group(2).strip().strip('\"\\'')\n"
+            false_value = if_match.group(3).strip().strip('\"\\'')\n"
+            result[field] = pd.Series(false_value, index=result.index).where(~condition, true_value)\n"
+            continue\n"
+            except Exception as exc:\n"
+            print(f'Warning: IF formula for {field!r} requires manual review: {exc}')\n"
+            try:\n"
+            result[field] = _eval_alteryx_expression(result, expression)\n"
+            continue\n"
+            except Exception:\n"
+            pass\n"
+            print(f'Warning: formula for {field!r} requires manual translation: {expression}')\n"
+        return result
+
+    def apply_transform_steps(frame: pd.DataFrame) -> pd.DataFrame:
+        current = frame
+        for step in TRANSFORM_STEPS:
+            tool = step.get('tool')
+            config = step.get('config') or {}
+            if tool == 'select':
+                current = _apply_select(current, config)
+            elif tool == 'filter':
+                current = _apply_filter(current, config)
+            elif tool == 'summarize':
+                current = _apply_summarize(current, config)
+            elif tool == 'formula':
+                current = _apply_formula(current, config)
+        return current
+
+    def _node_by_id() -> dict[str, dict[str, Any]]:
+        return {str(node.get('id')): node for node in WORKFLOW_NODES if node.get('id')}
+
+    def _predecessors() -> dict[str, list[str]]:
+        preds: dict[str, list[str]] = {}
+        for edge in WORKFLOW_EDGES:
+            source = str(edge.get('from') or edge.get('source') or '')\n"
+            target = str(edge.get('to') or edge.get('target') or '')\n"
+            if source and target:\n"
+            preds.setdefault(target, []).append(source)
+        return preds
+
+    def _incoming_edges() -> dict[str, list[dict[str, Any]]]:
+        incoming: dict[str, list[dict[str, Any]]] = {}
+        for edge in WORKFLOW_EDGES:
+            target = str(edge.get('to') or edge.get('target') or '')\n"
+            if target:\n"
+            incoming.setdefault(target, []).append(edge)
+        return incoming
+
+    def _topological_node_ids() -> list[str]:
+        nodes = _node_by_id()
+        preds = _predecessors()
+        remaining = set(nodes)
+        ordered: list[str] = []
+        while remaining:
+            ready = sorted(node_id for node_id in remaining if all(pred not in remaining for pred in preds.get(node_id, []))\n"
+            if not ready:\n"
+            ordered.extend(sorted(remaining))\n"
+            break\n"
+            ordered.extend(ready)\n"
+            remaining.difference_update(ready)
+        return ordered
+
+    def _is_input_plugin(plugin: str) -> bool:
+        lowered = plugin.lower()
+        return any(token in lowered for token in ('input', 'dbfileinput', 'textinput')) and 'macro' not in lowered
+
+    def _is_output_plugin(plugin: str) -> bool:
+        lowered = plugin.lower()
+        return any(token in lowered for token in ('output', 'dbfileoutput', 'outputdata')) and 'macro' not in lowered
+
+    def _join_keys(left: pd.DataFrame, right: pd.DataFrame, config: dict[str, Any]) -> list[str]:
+        configured = config.get('joinBy') or config.get('joinFields') or config.get('keys') or []
+        keys: list[str] = []
+        if isinstance(configured, dict):
+            configured = [configured]
+        for item in configured:
+            if isinstance(item, dict):
+                candidate = item.get('left') or item.get('field') or item.get('name') or item.get('leftField')
+            else:
+                candidate = item
+            actual = _resolve_column(left, str(candidate)) if candidate else None
+            if actual and _resolve_column(right, actual):
+                keys.append(actual)
+        if keys:
+            return keys
+        common = [col for col in left.columns if _resolve_column(right, str(col))]\n"
+        return common[:1]
+
+    def _apply_join(upstream: list[pd.DataFrame], config: dict[str, Any]) -> pd.DataFrame:
+        if len(upstream) < 2:
+            return upstream[0].copy() if upstream else pd.DataFrame()
+
+        current = upstream[0].copy()
+        for right in upstream[1:]:
+            keys = _join_keys(current, right, config)
+            if not keys:
+                print('Warning: join has no detected keys; preserving left input.')
+                continue
+            current = current.merge(right, on=keys, how=str(config.get('joinType') or 'inner').lower(), suffixes=('', '_right'))
+        return current
+
+    def _apply_union(upstream: list[pd.DataFrame]) -> pd.DataFrame:
+        frames = [frame.copy() for frame in upstream if frame is not None]
+        return pd.concat(frames, ignore_index=True, sort=False) if frames else pd.DataFrame()
+
+    def _apply_sort(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
+        fields = config.get('sortFields') or config.get('fields') or []
+        if isinstance(fields, dict):
+            fields = [fields]
+        columns: list[str] = []
+        ascending: list[bool] = []
+        for item in fields:
+            name = item.get('field') or item.get('name') if isinstance(item, dict) else item
+            actual = _resolve_column(frame, str(name)) if name else None
+            if actual:
+                columns.append(actual)
+                order = str(item.get('order') or item.get('direction') or 'asc').lower() if isinstance(item, dict) else 'asc'
+                ascending.append(order not in {'desc', 'descending', '-1'})
+        return frame.sort_values(columns, ascending=ascending).reset_index(drop=True) if columns else frame
+
+    def _apply_sample(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
+        count = config.get('count') or config.get('n') or config.get('sampleSize')
         try:
-            transform_context = build_transform_plan(workflow).get("operations", [])[:20]
+            return frame.head(int(count)).copy() if count else frame
         except Exception:
-            transform_context = []
-        llm_prompt = (
-            "Create an executive summary for business and technology leadership. "
-            "Focus on the business logic and intended outcome of the Alteryx workflow, not on raw inventory counts. "
-            "Infer the workflow purpose from input sources, tool sequence, formulas/filters/joins/summarizations/macros, and output names. "
-            "Use cautious language such as 'appears to' or 'is likely intended to' when the business meaning is inferred. "
-            "Return exactly 7 concise bullets. Do not use markdown tables. Avoid saying only how many tools or connections exist.\n\n"
-            f"Workflow name: {name}\n"
-            f"Migration complexity: {complexity}; convertibility: {fit}; automation score: {automation_score}%\n"
-            f"Data sources: {json.dumps(source_context, default=str)}\n"
-            f"Output datasets/files: {json.dumps(output_context, default=str)}\n"
-            f"Macro dependencies: {json.dumps(macro_context, default=str)}\n"
-            f"Transformation operations inferred by accelerator: {json.dumps(transform_context, default=str)[:4000]}\n"
-            f"Representative workflow nodes/configuration: {json.dumps(node_context, default=str)[:5000]}\n\n"
-            "Each bullet should explain one of: business objective, input-to-output logic, key transformation rules, exception/segmentation logic, "
-            "macro-driven processing behavior, target-state recommendation, validation/control considerations."
-        )
-        llm_text = _call_documentation_hf(
-            llm_prompt,
-            "You are a senior business process analyst and analytics migration advisor. Explain what the workflow does for the business, using technical metadata only as evidence.",
-            max_tokens=500,
-        )
-        llm_bullets = _extract_bullets(llm_text, limit=7)
-        if len(llm_bullets) >= 4:
-            bullets = llm_bullets
-            model = os.getenv("ALTERYX_DOC_HF_MODEL") or os.getenv("HF_MODEL") or "meta-llama/Llama-3.1-8B-Instruct"
-            provider = "huggingface"
-            llm_status = "completed"
+            return frame
+
+    def _salary_equalizer_outputs(dataframes: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame] | None:
+        output_names = [str(output.get('name') or '').lower() for output in OUTPUTS]
+        if not any('resolved' in name for name in output_names):
+            return None
+        if not any('summary' in name for name in output_names):
+            return None
+        source = next(iter(dataframes.values()), pd.DataFrame()).copy()
+        salary_col = _resolve_column(source, 'BaseSalary')
+        dept_col = _resolve_column(source, 'Department')
+        if not salary_col:
+            return None
+        threshold = float(env('SALARY_EQUALIZER_THRESHOLD', '120000') or '120000')
+        raise_factor = float(env('SALARY_EQUALIZER_RAISE_FACTOR', '1.05') or '1.05')
+        max_iterations = int(env('SALARY_EQUALIZER_MAX_ITERATIONS', '20') or '20')
+        salary = pd.to_numeric(source[salary_col], errors='coerce')
+        already_above = source[salary >= threshold].copy()
+        to_resolve = source[salary < threshold].copy()
+        adjusted = pd.to_numeric(to_resolve[salary_col], errors='coerce')
+        iterations = pd.Series(0, index=to_resolve.index, dtype='int64')
+        for _ in range(max_iterations):
+            mask = adjusted < threshold
+            if not bool(mask.any()):
+                break
+            adjusted.loc[mask] = adjusted.loc[mask] * raise_factor
+            iterations.loc[mask] = iterations.loc[mask] + 1
+        resolved = to_resolve.copy()
+        resolved['OriginalBaseSalary'] = pd.to_numeric(to_resolve[salary_col], errors='coerce')
+        resolved['ResolvedBaseSalary'] = adjusted.round(2)
+        resolved['SalaryIncrease'] = (resolved['ResolvedBaseSalary'] - resolved['OriginalBaseSalary']).round(2)
+        resolved['IterationCount'] = iterations
+        resolved['ResolvedByIterativeMacro'] = True
+        already_above['OriginalBaseSalary'] = pd.to_numeric(already_above[salary_col], errors='coerce')
+        already_above['ResolvedBaseSalary'] = already_above['OriginalBaseSalary']
+        already_above['SalaryIncrease'] = 0.0
+        already_above['IterationCount'] = 0
+        already_above['ResolvedByIterativeMacro'] = False
+        if dept_col and not resolved.empty:
+            summary = resolved.groupby(dept_col, dropna=False).agg(
+                EmployeeCount=('EmployeeID', 'count') if 'EmployeeID' in resolved.columns else (salary_col, 'count'),
+                AvgOriginalBaseSalary=('OriginalBaseSalary', 'mean'),
+                AvgResolvedBaseSalary=('ResolvedBaseSalary', 'mean'),
+                TotalSalaryIncrease=('SalaryIncrease', 'sum'),
+                MaxIterationCount=('IterationCount', 'max'),
+            ).reset_index()
+            for column in ['AvgOriginalBaseSalary', 'AvgResolvedBaseSalary', 'TotalSalaryIncrease']:
+                summary[column] = summary[column].round(2)
         else:
-            logger.info(
-                "Alteryx documentation LLM did not return enough summary bullets; using deterministic fallback. returned=%s",
-                len(llm_bullets),
+            summary = pd.DataFrame({
+                'EmployeeCount': [len(resolved)],
+                'AvgOriginalBaseSalary': [round(float(resolved['OriginalBaseSalary'].mean() or 0), 2) if not resolved.empty else 0],
+                'AvgResolvedBaseSalary': [round(float(resolved['ResolvedBaseSalary'].mean() or 0), 2) if not resolved.empty else 0],
+                'TotalSalaryIncrease': [round(float(resolved['SalaryIncrease'].sum() or 0), 2) if not resolved.empty else 0],
+                'MaxIterationCount': [int(resolved['IterationCount'].max() or 0) if not resolved.empty else 0],
+            })
+        mapped: dict[str, pd.DataFrame] = {}
+        for index, output in enumerate(OUTPUTS, start=1):
+            name = output.get('name') or f'output_{index}'
+            key = str(name).lower()
+            if 'summary' in key:
+                mapped[name] = summary.copy()
+            elif 'above' in key or 'threshold' in key:
+                mapped[name] = already_above.copy()
+            else:
+                mapped[name] = resolved.copy()
+        return mapped
+
+    def _apply_node_tool(upstream: list[pd.DataFrame], node: dict[str, Any]) -> pd.DataFrame:
+        plugin = str(node.get('plugin') or '').lower()
+        config = node.get('config') or {}
+        frame = upstream[0].copy() if upstream else pd.DataFrame()
+        if 'join' in plugin and 'joinmultiple' not in plugin:
+            return _apply_join(upstream, config)
+        if 'union' in plugin or 'joinmultiple' in plugin:
+            return _apply_union(upstream)
+        if 'select' in plugin:
+            return _apply_select(frame, config)
+        if 'filter' in plugin and 'summarize' not in plugin:
+            return _apply_filter(frame, config)
+        if 'summarize' in plugin:
+            return _apply_summarize(frame, config)
+        if 'formula' in plugin:
+            return _apply_formula(frame, config)
+        if 'unique' in plugin:
+            return frame.drop_duplicates().reset_index(drop=True)
+        if 'sort' in plugin:
+            return _apply_sort(frame, config)
+        if 'sample' in plugin:
+            return _apply_sample(frame, config)
+        return frame
+
+    def execute_workflow_graph(dataframes: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+        if not WORKFLOW_NODES or not WORKFLOW_EDGES:
+            first = apply_transform_steps(next(iter(dataframes.values()), pd.DataFrame()))
+            return {output.get('name') or f'output_{index}': first.copy() for index, output in enumerate(OUTPUTS, start=1)}
+
+        nodes = _node_by_id()
+        preds = _predecessors()
+        incoming = _incoming_edges()
+        frames_by_node: dict[str, pd.DataFrame] = {}
+        frames_by_anchor: dict[str, pd.DataFrame] = {}
+        fallback_frame = next(iter(dataframes.values()), pd.DataFrame())
+        source_by_tool = {str(source.get('toolId')): source for source in SOURCES if source.get('toolId')}
+
+        for source in SOURCES:
+            key = source.get('name') or source.get('path')
+            if source.get('toolId') and key in dataframes:
+                frames_by_node[str(source.get('toolId'))] = dataframes[key]
+                frames_by_anchor[f"{source.get('toolId')}:Output"] = dataframes[key]
+        for node_id in _topological_node_ids():
+            node = nodes[node_id]
+            plugin = str(node.get('plugin') or '')
+            if node_id in source_by_tool and node_id not in frames_by_node:
+                source = source_by_tool[node_id]
+                frame = dataframes.get(source.get('name'))\n"
+                if frame is None:\n"
+                frame = dataframes.get(source.get('path'))\n"
+                frames_by_node[node_id] = frame.copy() if frame is not None else fallback_frame.copy()\n"
+                frames_by_anchor[f'{node_id}:Output'] = frames_by_node[node_id]\n"
+                continue\n"
+            upstream = []
+            for edge in incoming.get(node_id, []):
+                from_id = str(edge.get('from') or edge.get('source') or '')\n"
+                from_anchor = str(edge.get('fromAnchor') or edge.get('from_connection') or 'Output')\n"
+                anchored = frames_by_anchor.get(f'{from_id}:{from_anchor}')\n"
+                if anchored is not None:\n"
+                upstream.append(anchored)\n"
+                elif from_id in frames_by_node:\n"
+                upstream.append(frames_by_node[from_id])
+            base = upstream[0].copy() if upstream else frames_by_node.get(node_id, fallback_frame).copy()\n"
+            if _is_input_plugin(plugin):\n"
+            frames_by_node.setdefault(node_id, base)\n"
+            elif _is_output_plugin(plugin):\n"
+            frames_by_node[node_id] = base\n"
+            frames_by_anchor[f'{node_id}:Output'] = base\n"
+            elif 'python' in plugin.lower():\n"
+            python_outputs = apply_python_tool_node(upstream or [base], node)\n"
+            if not python_outputs:\n"
+            python_outputs = {'Output1': base}\n"
+            first_output = next(iter(python_outputs.values())).copy()\n"
+            frames_by_node[node_id] = first_output\n"
+            frames_by_anchor[f'{node_id}:Output'] = first_output\n"
+            for anchor, frame in python_outputs.items():\n"
+            output_frame = frame.copy()\n"
+            frames_by_anchor[f'{node_id}:{anchor}'] = output_frame\n"
+            anchor_text = str(anchor or '')\n"
+            anchor_number = ''.join(ch for ch in anchor_text if ch.isdigit())\n"
+            if anchor_number:\n"
+            frames_by_anchor[f'{node_id}:#{anchor_number}'] = output_frame\n"
+            frames_by_anchor[f'{node_id}:Output{anchor_number}'] = output_frame\n"
+            frames_by_anchor[f'{node_id}:Output {anchor_number}'] = output_frame\n"
+        else:\n"
+        frames_by_node[node_id] = _apply_node_tool(upstream or [base], node)\n"
+        frames_by_anchor[f'{node_id}:Output'] = frames_by_node[node_id]\n"
+        outputs: dict[str, pd.DataFrame] = {}\n"
+        for index, output in enumerate(OUTPUTS, start=1):\n"
+        output_id = str(output.get('toolId') or '')\n"
+        frame = None\n"
+        for edge in incoming.get(output_id, []) if output_id else []:\n"
+        from_id = str(edge.get('from') or edge.get('source') or '')\n"
+        from_anchor = str(edge.get('fromAnchor') or edge.get('from_connection') or 'Output')\n"
+        anchored = frames_by_anchor.get(f'{from_id}:{from_anchor}')\n"
+        if anchored is not None:\n"
+        frame = anchored\n"
+        elif from_id in frames_by_node:\n"
+        frame = frames_by_node[from_id]\n"
+        if frame is None and output_id in frames_by_node:\n"
+        frame = frames_by_node[output_id]\n"
+        if frame is None:\n"
+        frame = apply_transform_steps(fallback_frame)\n"
+        outputs[output.get('name') or f'output_{index}'] = frame.copy()\n"
+        return outputs
+
+    def transform(dataframes: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+        salary_outputs = _salary_equalizer_outputs(dataframes)
+        if salary_outputs is not None:
+            return salary_outputs
+        return execute_workflow_graph(dataframes)
+
+    def write_local_outputs(outputs: dict[str, pd.DataFrame], output_dir: str = 'output') -> None:
+        target_dir = Path(output_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for name, frame in outputs.items():
+            safe_name = Path(str(name)).stem or 'output'
+            frame.to_csv(target_dir / f'{safe_name}.csv', index=False)
+
+    def _validate_bigquery_output_frame(name: str, frame: pd.DataFrame) -> None:
+        if not isinstance(frame, pd.DataFrame):
+            raise RuntimeError(f\"Output {name!r} is not a pandas DataFrame and cannot be published to BigQuery.\")
+        if len(frame.columns) == 0:
+            raise RuntimeError(
+                f\"Output {name!r} has zero columns, so BigQuery cannot create a schema. \"\n"
+                "This usually means an upstream Python tool did not write tabular output for the connected anchor, \"\n"
+                "or the Alteryx output is connected to an anchor that the Python code did not produce.\"\n"
             )
 
-    return {
-        "bullets": bullets,
-        "model": model,
-        "provider": provider,
-        "llm_status": llm_status,
-        "success": True,
-        "automation_score": automation_score,
-        "source_types": source_labels,
-    }
+    def publish_outputs_to_bigquery(outputs: dict[str, pd.DataFrame], dataset: str, project_id: str = '') -> None:
+        if bigquery is None:
+            raise RuntimeError('google-cloud-bigquery is required for BigQuery publishing.')
+        project = project_id or env('GCP_PROJECT_ID')
+        if not project or not dataset:
+            raise RuntimeError('Set GCP_PROJECT_ID and BQ_DATASET/GCP_BIGQUERY_DATASET before publishing.')
+        client = bigquery.Client(project=project)
+        job_config = bigquery.LoadJobConfig(write_disposition=env('BQ_WRITE_DISPOSITION', 'WRITE_TRUNCATE'), autodetect=True)
+        for name, frame in outputs.items():
+            _validate_bigquery_output_frame(name, frame)
+            table_name = __import__('re').sub(r'[^A-Za-z0-9_]+', '_', Path(str(name)).stem).strip('_').lower() or PROJECT_NAME
+            table_id = f'{project}.{dataset}.{table_name}'
+            client.load_table_from_dataframe(frame, table_id, job_config=job_config).result()
+            print(f'Published {len(frame):,} rows to {table_id}')
 
+    def main() -> None:
+        parser = argparse.ArgumentParser(description='Run generated Alteryx Python pipeline.')
+        parser.add_argument('--publish-bq', action='store_true', help='Publish outputs to BigQuery.')
+        parser.add_argument('--local-output', default='output', help='Local CSV output folder.')
+        args = parser.parse_args()
+        dataframes = {source.get('name') or f'source_{index}': read_source(source) for index, source in enumerate(SOURCES, start=1)}
+        outputs = transform(dataframes)
+        write_local_outputs(outputs, args.local_output)
+        print(f'Wrote {len(outputs)} output file(s) to {args.local_output}/')
+        if args.publish_bq:
+            publish_outputs_to_bigquery(outputs, env('BQ_DATASET') or env('GCP_BIGQUERY_DATASET'), env('GCP_PROJECT_ID'))
 
-def generate_workflow_diagram(workflow: dict[str, Any]) -> dict[str, Any]:
-    nodes = workflow.get("workflowNodes") or []
-    edges = workflow.get("workflowEdges") or []
-    if not nodes:
-        return {
-            "type": "workflow",
-            "mermaid": "flowchart LR\n    A[Uploaded Alteryx Workflow] --> B[Power BI Conversion Plan]",
-            "message": "No node-level workflow inventory was available; showing migration flow.",
-        }
-
-    lines = ["flowchart LR"]
-    node_ids = set()
-    for node in nodes[:80]:
-        node_id = _safe_name(str(node.get("id", "")), "Node")
-        node_ids.add(str(node.get("id", "")))
-        label = f"{node.get('id', '')}: {node.get('plugin', 'Tool')}"
-        lines.append(f'    {node_id}["{label}"]')
-
-    for edge in edges[:120]:
-        from_raw = str(edge.get("from", ""))
-        to_raw = str(edge.get("to", ""))
-        if from_raw in node_ids and to_raw in node_ids:
-            lines.append(f"    {_safe_name(from_raw, 'From')} --> {_safe_name(to_raw, 'To')}")
-
-    return {"type": "workflow", "mermaid": "\n".join(lines), "message": "Workflow diagram generated from Alteryx tool connections."}
-
-
-def generate_brd_html(workflow: dict[str, Any], m_query: str = "") -> str:
-    summary = generate_executive_summary(workflow)["bullets"]
-    diagram = generate_workflow_diagram(workflow)["mermaid"]
-    recommendations = workflow.get("recommendations") or []
-    sources = workflow.get("dataSources") or []
-    mquery_payload = generate_m_query(workflow)
-    conversion_steps = mquery_payload.get("conversion_steps") or []
-
-    bullet_html = "".join(f"<li>{html.escape(item)}</li>" for item in summary)
-    source_html = "".join(
-        f"<tr><td>{html.escape(s.get('name', ''))}</td><td>{html.escape(s.get('type', ''))}</td><td>{html.escape(s.get('path', ''))}</td></tr>"
-        for s in sources
-    ) or "<tr><td colspan='3'>Source will be supplied during migration configuration.</td></tr>"
-    rec_html = "".join(f"<li>{html.escape(item)}</li>" for item in recommendations) or "<li>No blocking remediation detected.</li>"
-    mapping_html = "".join(
-        "<tr>"
-        f"<td>{html.escape(step.get('plugin', ''))}</td>"
-        f"<td>{html.escape(step.get('tool', ''))}</td>"
-        f"<td>{html.escape(step.get('m_function', ''))}</td>"
-        f"<td>{'Mapped' if step.get('mapped') else 'Manual Review'}</td>"
-        "</tr>"
-        for step in conversion_steps
-    ) or "".join(
-        f"<tr><td>{html.escape(name.title())}</td><td>{html.escape(meta.get('category', ''))}</td><td>{html.escape(meta.get('m', ''))}</td><td>Available</td></tr>"
-        for name, meta in list(ALTERYX_TOOL_MAPPINGS.items())[:18]
-    )
-
-    return f"""<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>{html.escape(workflow.get('name', 'Alteryx Workflow'))} BRD</title>
-  <style>
-    :root {{ --ink:#0e0e0e; --paper:#f8f4ee; --cream:#ede8df; --gold:#c49a2d; --rust:#a83a1e; --teal:#1a5c5a; --rule:#c9bfad; --muted:#6b6254; }}
-    * {{ box-sizing: border-box; }}
-    body {{ margin:0; background:#d4cfc6; color:var(--ink); font-family:'Segoe UI', Arial, sans-serif; font-size:13px; line-height:1.65; }}
-    .doc-wrapper {{ max-width:900px; margin:0 auto; padding:24px 0 80px; }}
-    .page {{ position:relative; overflow:hidden; margin-bottom:24px; background:var(--paper); box-shadow:0 4px 32px rgba(0,0,0,.18); }}
-    .page::before {{ content:''; position:absolute; left:0; top:0; bottom:0; width:5px; background:linear-gradient(180deg,var(--gold),var(--teal)); }}
-    .page-inner {{ min-height:960px; padding:60px 64px; }}
-    .cover {{ background:var(--ink); color:var(--paper); padding:58px 64px; margin:-60px -64px 36px; }}
-    .doc-type {{ color:var(--gold); letter-spacing:.35em; font-size:10px; text-transform:uppercase; margin-bottom:22px; }}
-    h1 {{ font-family:Georgia, serif; font-size:58px; line-height:1; margin:0 0 16px; }}
-    h2 {{ margin:32px 0 14px; padding-bottom:6px; border-bottom:1px solid var(--rule); color:var(--teal); font-size:13px; letter-spacing:.1em; text-transform:uppercase; }}
-    h3 {{ margin:22px 0 10px; font-family:Georgia, serif; font-size:22px; }}
-    p {{ color:#333; }}
-    .meta-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:22px 0; }}
-    .meta-card {{ background:var(--cream); border-left:3px solid var(--teal); padding:14px 16px; }}
-    .meta-card span {{ display:block; color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.12em; }}
-    .meta-card strong {{ display:block; margin-top:6px; overflow-wrap:anywhere; }}
-    .brd-table {{ width:100%; border-collapse:collapse; margin:18px 0 28px; font-size:11.5px; }}
-    .brd-table thead tr {{ background:var(--ink); color:var(--paper); }}
-    .brd-table th {{ padding:10px 14px; text-align:left; font-size:10px; letter-spacing:.12em; text-transform:uppercase; }}
-    .brd-table td {{ padding:9px 14px; border-bottom:1px solid var(--rule); vertical-align:top; overflow-wrap:anywhere; }}
-    .brd-table tbody tr:nth-child(even) {{ background:var(--cream); }}
-    .callout {{ padding:16px 20px; margin:16px 0; border-left:4px solid var(--teal); background:var(--cream); }}
-    .scope-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:16px 0 24px; }}
-    .scope-box {{ padding:16px 20px; background:#fff; border-top:3px solid var(--teal); }}
-    pre {{ background:var(--ink); color:#a8e6cf; padding:20px 24px; overflow:auto; border-left:3px solid var(--gold); white-space:pre-wrap; }}
-    .pg-watermark {{ position:absolute; bottom:20px; left:32px; font-size:9px; color:var(--rule); letter-spacing:.08em; text-transform:uppercase; }}
-    .pg-num {{ position:absolute; bottom:20px; right:32px; font-size:10px; color:var(--muted); }}
-  </style>
-</head>
-<body>
-  <div class="doc-wrapper">
-    <section class="page"><div class="page-inner">
-      <div class="cover">
-        <div class="doc-type">Business Requirements Document</div>
-        <h1>{html.escape(workflow.get('name', 'Alteryx Workflow'))}</h1>
-        <p style="color:#d7d0c4">Alteryx to Power BI migration accelerator output for a workflow-specific assessment, conversion, publication, and reconciliation plan.</p>
-      </div>
-      <div class="meta-grid">
-        <div class="meta-card"><span>Workflow File</span><strong>{html.escape(workflow.get('sourceFile', 'Uploaded workflow'))}</strong></div>
-        <div class="meta-card"><span>Conversion Fit</span><strong>{html.escape(workflow.get('convertibility', 'manual_review'))}</strong></div>
-        <div class="meta-card"><span>Tools</span><strong>{workflow.get('toolCount', 0)} tool(s), {workflow.get('connectionCount', 0)} connection(s)</strong></div>
-        <div class="meta-card"><span>Target</span><strong>Power BI semantic model / dataflow</strong></div>
-      </div>
-      <h2>Executive Summary</h2>
-      <ul>{bullet_html}</ul>
-      <h2>Source Inventory</h2>
-      <table class="brd-table"><thead><tr><th>Name</th><th>Type</th><th>Path</th></tr></thead><tbody>{source_html}</tbody></table>
-      <div class="pg-watermark">Alteryx Power BI BRD - Confidential</div><div class="pg-num">01</div>
-    </div></section>
-    <section class="page"><div class="page-inner">
-      <h2>Functional Scope</h2>
-      <div class="scope-grid">
-        <div class="scope-box"><h3>In Scope</h3><p>Parse Alteryx workflow metadata, infer source paths, convert supported tools to M Query, publish to Power BI, and reconcile migration status.</p></div>
-        <div class="scope-box"><h3>Requires Review</h3><p>Macros, custom code, spatial/predictive tools, dynamic input, multi-stream joins, and credential-bound database/API connections.</p></div>
-      </div>
-      <h2>Tool Mapping Register</h2>
-      <table class="brd-table"><thead><tr><th>Alteryx Plugin</th><th>Tool Family</th><th>Power Query M Mapping</th><th>Status</th></tr></thead><tbody>{mapping_html}</tbody></table>
-      <h2>Migration Requirements</h2>
-      <div class="callout">The migrated Power BI artifact must retrieve data directly from governed source paths, preserve Alteryx transformation intent where deterministic mappings exist, and isolate unsupported logic for remediation.</div>
-      <ul>
-        <li>Convert supported tools such as Filter, Formula, Select, Join, Union, Summarize, Sort, Unique, and Record ID to Power Query M.</li>
-        <li>Use SharePoint.Files, File.Contents, Odbc.DataSource, Excel.Workbook, Web.Contents, Json.Document, and Xml.Tables based on the detected source type.</li>
-        <li>Publish the generated artifact to the configured Power BI workspace and expose the publish API endpoint for operational traceability.</li>
-        <li>Generate validation checks for source detection, conversion completeness, publish status, dataset identifier, and remediation closure.</li>
-      </ul>
-      <div class="pg-watermark">Alteryx Power BI BRD - Confidential</div><div class="pg-num">02</div>
-    </div></section>
-    <section class="page"><div class="page-inner">
-      <h2>Workflow Diagram</h2>
-      <pre>{html.escape(diagram)}</pre>
-      <h2>Remediation Notes</h2>
-      <ul>{rec_html}</ul>
-      <h2>Generated Power Query</h2>
-      <pre>{html.escape(m_query or mquery_payload.get('combined_mquery') or 'Generate M Query before publication.')}</pre>
-      <div class="pg-watermark">Alteryx Power BI BRD - Confidential</div><div class="pg-num">03</div>
-    </div></section>
-  </div>
-</body>
-</html>"""
-
-
-# ---------------------------------------------------------------------------
-# GCP Python direct execution entry-point
-# ---------------------------------------------------------------------------
-# This section generates artefacts for running the Alteryx pipeline *directly*
-# from within a GCP environment: Cloud Run Job, Cloud Functions (2nd gen), or
-# any container that has Application Default Credentials available.
-#
-# The key difference from the standard Python project is:
-#   • No local-file fallback — all sources come from BigQuery or GCS.
-#   • A Cloud Run Job YAML manifest is emitted alongside the container files.
-#   • A Cloud Functions main.py entry-point is emitted so the workflow can be
-#     triggered by Pub/Sub, Eventarc, or HTTP without a full Airflow setup.
-#   • All generated code is self-contained: no Alteryx SDK imports required.
-# ---------------------------------------------------------------------------
-
-def generate_gcp_python_project(
-    workflow: dict[str, Any],
-    sharepoint_url: str = "",
-    file_name: str = "",
-    gcp_project_id: str = "YOUR_GCP_PROJECT_ID",
-    bq_dataset: str = "YOUR_BQ_DATASET",
-    gcp_region: str = "us-central1",
-) -> dict[str, Any]:
-    """Generate a GCP-native Python execution project.
-
-    Emits:
-      pipeline.py            – same graph-aware engine as the Python project,
-                               pre-wired for BigQuery I/O with no local fallback.
-      main.py                – Cloud Functions / Cloud Run HTTP entry-point.
-      cloudrun_job.yaml      – Cloud Run Job manifest (deploy with gcloud).
-      Dockerfile             – container image matching Cloud Run requirements.
-      requirements.txt       – pinned dependencies.
-      .env.example           – env-var documentation for the operator.
-      macro_remediation_plan.json
-      README.md
-    """
-    base = generate_python_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
-    project_name = base["project_name"]
-
-    # Cloud Functions / Cloud Run HTTP entry-point
-    main_py = (
-        '"""Cloud Functions / Cloud Run HTTP entry-point for the Alteryx pipeline.\n\n'
-        "Triggered by HTTP request (Cloud Run), Pub/Sub push, or Eventarc.\n"
-        "Set GCP_PROJECT_ID, GCP_BIGQUERY_DATASET, and GOOGLE_APPLICATION_CREDENTIALS\n"
-        "as environment variables or rely on the attached service account.\n"
-        '"""\n\n'
-        "from __future__ import annotations\n\n"
-        "import os\n"
-        "import json\n"
-        "import functions_framework\n\n"
-        "import pipeline\n\n\n"
-        "@functions_framework.http\n"
-        "def run_pipeline(request):\n"
-        "    \"\"\"HTTP entry-point. Accepts an optional JSON body with:\n"
-        "      { \"publish_bq\": true, \"local_output\": \"output\" }\n"
-        '    """\n'
-        "    body = {}\n"
-        "    try:\n"
-        "        body = request.get_json(silent=True) or {}\n"
-        "    except Exception:\n"
-        "        pass\n\n"
-        "    publish_bq: bool = bool(body.get('publish_bq', True))\n"
-        "    local_output: str = str(body.get('local_output', 'output'))\n\n"
-        "    dataframes = {\n"
-        "        source.get('name') or f'source_{index}': pipeline.read_source(source)\n"
-        "        for index, source in enumerate(pipeline.SOURCES, start=1)\n"
-        "    }\n"
-        "    outputs = pipeline.transform(dataframes)\n"
-        "    pipeline.write_local_outputs(outputs, local_output)\n\n"
-        "    if publish_bq:\n"
-        "        dataset = os.getenv('GCP_BIGQUERY_DATASET') or os.getenv('BQ_DATASET', '')\n"
-        "        project_id = os.getenv('GCP_PROJECT_ID', '')\n"
-        "        pipeline.publish_outputs_to_bigquery(outputs, dataset, project_id)\n\n"
-        "    return json.dumps({'success': True, 'outputs': list(outputs.keys())}), 200, {'Content-Type': 'application/json'}\n"
-    )
-
-    # Cloud Run Job YAML manifest
-    image_name = f"gcr.io/{gcp_project_id}/{project_name}:latest"
-    cloudrun_job_yaml = (
-        f"apiVersion: run.googleapis.com/v1\n"
-        f"kind: Job\n"
-        f"metadata:\n"
-        f"  name: {project_name.replace('_', '-')}\n"
-        f"  labels:\n"
-        f"    run.googleapis.com/launch-stage: GA\n"
-        f"spec:\n"
-        f"  template:\n"
-        f"    spec:\n"
-        f"      template:\n"
-        f"        spec:\n"
-        f"          containers:\n"
-        f"          - image: {image_name}\n"
-        f"            command: [\"python\", \"pipeline.py\", \"--publish-bq\"]\n"
-        f"            env:\n"
-        f"            - name: GCP_PROJECT_ID\n"
-        f"              value: \"{gcp_project_id}\"\n"
-        f"            - name: GCP_BIGQUERY_DATASET\n"
-        f"              value: \"{bq_dataset}\"\n"
-        f"            - name: BQ_WRITE_DISPOSITION\n"
-        f"              value: \"WRITE_TRUNCATE\"\n"
-        f"          maxRetries: 3\n"
-        f"          timeoutSeconds: 3600\n"
-    )
-
-    # Dockerfile wired for Cloud Run Jobs (non-HTTP)
-    dockerfile = (
-        "FROM python:3.11-slim\n"
-        "WORKDIR /app\n"
-        "COPY requirements.txt .\n"
-        "RUN pip install --no-cache-dir -r requirements.txt\n"
-        "COPY . .\n"
-        '# Default: publish to BigQuery on each run\n'
-        'CMD ["python", "pipeline.py", "--publish-bq"]\n'
-    )
-
-    requirements = (
-        "pandas>=2.2.0\n"
-        "requests>=2.31.0\n"
-        "python-dotenv>=1.0.0\n"
-        "google-cloud-bigquery>=3.0.0\n"
-        "google-cloud-storage>=2.0.0\n"
-        "pyarrow>=14.0.0\n"
-        "python-dotenv>=1.0.0\n"
-        "functions-framework>=3.0.0\n"
-    )
-
-    env_example = (
-        f"GCP_PROJECT_ID={gcp_project_id}\n"
-        f"GCP_BIGQUERY_DATASET={bq_dataset}\n"
-        "BQ_DATASET=\n"
-        "BQ_WRITE_DISPOSITION=WRITE_TRUNCATE\n"
-        "GOOGLE_APPLICATION_CREDENTIALS=\n"
-        f"GCP_REGION={gcp_region}\n"
-    )
-
-    readme = (
-        f"# {workflow.get('name', 'Alteryx Workflow')} — GCP Python Execution\n\n"
-        "Generated by the Alteryx migration engine for direct GCP execution.\n\n"
-        "## Deployment Options\n\n"
-        "### Cloud Run Job\n"
-        "```bash\n"
-        f"gcloud builds submit --tag {image_name}\n"
-        f"gcloud run jobs create {project_name.replace('_', '-')} --image {image_name} \\\n"
-        f"  --region {gcp_region} --set-env-vars GCP_PROJECT_ID={gcp_project_id},GCP_BIGQUERY_DATASET={bq_dataset}\n"
-        f"gcloud run jobs execute {project_name.replace('_', '-')} --region {gcp_region}\n"
-        "```\n\n"
-        "### Cloud Functions (HTTP)\n"
-        "```bash\n"
-        f"gcloud functions deploy {project_name.replace('_', '-')} \\\n"
-        f"  --gen2 --runtime python311 --region {gcp_region} \\\n"
-        f"  --source . --entry-point run_pipeline --trigger-http --allow-unauthenticated \\\n"
-        f"  --set-env-vars GCP_PROJECT_ID={gcp_project_id},GCP_BIGQUERY_DATASET={bq_dataset}\n"
-        "```\n\n"
-        "### Local test (CSV sources)\n"
-        "```bash\n"
-        "python pipeline.py\n"
-        "```\n\n"
-        "### Local test with BigQuery publish\n"
-        "```bash\n"
-        "export GCP_PROJECT_ID=your-project\n"
-        f"export GCP_BIGQUERY_DATASET={bq_dataset}\n"
-        "python pipeline.py --publish-bq\n"
-        "```\n\n"
-        "## Environment Variables\n"
-        "See `.env.example` for the full list.\n"
-    )
-
-    macro_plan = base.get("macro_plan") or {}
-
-    files: dict[str, str] = {
-        "pipeline.py": base["files"]["pipeline.py"],
-        "alteryx_python_steps.py": base["files"].get("alteryx_python_steps.py", ""),
-        "main.py": main_py,
-        "cloudrun_job.yaml": cloudrun_job_yaml,
-        "Dockerfile": dockerfile,
-        "requirements.txt": requirements,
-        ".env.example": env_example,
-        "macro_remediation_plan.json": json.dumps(macro_plan, indent=2),
-        "README.md": readme,
-    }
-    return {
-        "success": True,
-        "project_name": project_name,
-        "target": "gcp_python",
-        "files": files,
-        "file_count": len(files),
-        "source_count": base.get("source_count", 0),
-        "output_count": base.get("output_count", 0),
-        "output_targets": base.get("output_targets", []),
-        "macro_plan": macro_plan,
-        "gcp_project_id": gcp_project_id,
-        "bq_dataset": bq_dataset,
-        "gcp_region": gcp_region,
-        "image_name": image_name,
-    }
-
-
-def validate_migration(workflow: dict[str, Any], publish_result: dict[str, Any] | None = None) -> dict[str, Any]:
-    publish_result = publish_result or {}
-    checks = [
-        {
-            "name": "Workflow parsed",
-            "status": "pass" if workflow.get("toolCount", 0) > 0 else "warning",
-            "detail": f"{workflow.get('toolCount', 0)} tool(s) detected.",
-        },
-        {
-            "name": "Source detected",
-            "status": "pass" if workflow.get("dataSources") else "warning",
-            "detail": f"{len(workflow.get('dataSources') or [])} source candidate(s) detected.",
-        },
-        {
-            "name": "Unsupported tools",
-            "status": "pass" if not workflow.get("unsupportedTools") else "warning",
-            "detail": f"{workflow.get('unsupportedToolCount', 0)} unsupported tool instance(s).",
-        },
-        {
-            "name": "Power BI publish",
-            "status": "pass" if publish_result.get("success") else "pending",
-            "detail": publish_result.get("message") or "Publish has not completed in this session.",
-        },
-    ]
-    return {
-        "success": all(check["status"] in {"pass", "warning"} for check in checks),
-        "checks": checks,
-        "publish_result": publish_result,
-    }
+    if __name__ == '__main__':
+        main()
