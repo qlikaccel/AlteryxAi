@@ -1,5 +1,6 @@
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -74,6 +75,24 @@ def _normalize_dataform_project_for_cli(project_dir: Path) -> None:
 
 def _write_service_account_json(work_dir: Path, env: dict[str, str]) -> None:
     write_service_account_file_from_env(work_dir, env)
+
+
+def _resolve_dataform_command(dataform_executable: str) -> list[str] | None:
+    command = shlex.split(dataform_executable)
+    if command and shutil.which(command[0]):
+        return command
+
+    if dataform_executable.strip().lower() in {"dataform", "dataform.exe"}:
+        for fallback in (
+            ["npx", "--yes", "dataform"],
+            ["npx", "--yes", "@dataform/cli"],
+            ["npm", "exec", "--yes", "dataform"],
+            ["npm", "exec", "--yes", "@dataform/cli"],
+        ):
+            if shutil.which(fallback[0]):
+                return fallback
+
+    return None
 
 
 def _run_dataform_command(command: list[str], cwd: Path, env: dict[str, str], timeout_seconds: int) -> dict[str, Any]:
@@ -210,8 +229,8 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
 
     if not files:
         raise ValueError("No Dataform project files were generated for this workflow.")
-    resolved_dataform_executable = shutil.which(dataform_executable)
-    if not resolved_dataform_executable:
+    resolved_dataform_command = _resolve_dataform_command(dataform_executable)
+    if not resolved_dataform_command:
         if _env("GCP_DATAFORM_REPOSITORY") and _env("GCP_DATAFORM_LOCATION"):
             try:
                 result = publish_dataform_project_to_repository(project, run=True)
@@ -237,7 +256,8 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
             return fallback
         raise RuntimeError(
             f"Dataform executable '{dataform_executable}' was not found and no GCP Dataform repository fallback is configured. "
-            "Install @dataform/cli or set GCP_DATAFORM_LOCATION and GCP_DATAFORM_REPOSITORY."
+            "Install @dataform/cli, set DATAFORM_EXECUTABLE to a valid command (for example 'npx --yes dataform'), "
+            "or configure GCP_DATAFORM_LOCATION and GCP_DATAFORM_REPOSITORY."
         )
 
     with tempfile.TemporaryDirectory(prefix="alteryx_dataform_publish_") as temp_root:
@@ -255,8 +275,8 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
 
         commands = []
         if _env_flag("DATAFORM_RUN_COMPILE", True):
-            commands.append([resolved_dataform_executable, "compile", str(project_dir)])
-        commands.append([resolved_dataform_executable, "run", str(project_dir)])
+            commands.append([*resolved_dataform_command, "compile", str(project_dir)])
+        commands.append([*resolved_dataform_command, "run", str(project_dir)])
         command_results: list[dict[str, Any]] = []
         for command in commands:
             result = _run_dataform_command(command, project_dir, run_env, timeout_seconds)
