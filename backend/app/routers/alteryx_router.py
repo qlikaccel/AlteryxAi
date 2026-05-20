@@ -6,6 +6,7 @@ import json
 import base64
 import csv
 import os
+import tempfile
 import zipfile
 from io import BytesIO
 import requests
@@ -69,6 +70,62 @@ MAX_BULK_UPLOAD_BYTES = 250 * 1024 * 1024
 # remain responsive even on a single-vCPU DigitalOcean dyno.
 PUBLISH_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("ALTERYX_PUBLISH_JOB_WORKERS", "4") or "4"))
 PUBLISH_JOBS: dict[str, dict[str, Any]] = {}
+PUBLISH_JOB_RUNTIME_ID = uuid.uuid4().hex
+PUBLISH_JOB_STORE_DIR = Path(os.getenv("ALTERYX_PUBLISH_JOB_STORE_DIR") or Path(tempfile.gettempdir()) / "alteryx_publish_jobs")
+PUBLISH_JOB_RUNNING_STALE_SECONDS = int(os.getenv("ALTERYX_PUBLISH_JOB_RUNNING_STALE_SECONDS", "1800") or "1800")
+
+
+def _job_file(job_id: str) -> Path:
+    safe_job_id = re.sub(r"[^A-Za-z0-9_-]+", "_", str(job_id or "")).strip("_")
+    return PUBLISH_JOB_STORE_DIR / f"{safe_job_id}.json"
+
+
+def _persist_publish_job(job: dict[str, Any]) -> None:
+    try:
+        PUBLISH_JOB_STORE_DIR.mkdir(parents=True, exist_ok=True)
+        _job_file(str(job.get("job_id") or "")).write_text(
+            json.dumps(job, default=str),
+            encoding="utf-8",
+        )
+    except Exception:
+        logger.warning("Unable to persist async job state for %s", job.get("job_id"), exc_info=True)
+
+
+def _load_publish_job(job_id: str) -> dict[str, Any] | None:
+    job = PUBLISH_JOBS.get(job_id)
+    if job:
+        return job
+    try:
+        path = _job_file(job_id)
+        if path.exists():
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                PUBLISH_JOBS[job_id] = loaded
+                return loaded
+    except Exception:
+        logger.warning("Unable to read async job state for %s", job_id, exc_info=True)
+    return None
+
+
+def _update_publish_job(job_id: str, **changes: Any) -> dict[str, Any]:
+    job = _load_publish_job(job_id) or {"job_id": job_id}
+    job.update(changes)
+    job["updated_at"] = int(time.time())
+    PUBLISH_JOBS[job_id] = job
+    _persist_publish_job(job)
+    return job
+
+
+def _expired_publish_job(job_id: str) -> dict[str, Any]:
+    return {
+        "job_id": job_id,
+        "target": "unknown",
+        "status": "failed",
+        "success": False,
+        "error": "Async job state is no longer available. The backend may have restarted while the job was running. Please rerun the analysis.",
+        "expired": True,
+        "updated_at": int(time.time()),
+    }
 
 
 def _start_publish_job(target: str, work) -> dict[str, Any]:
@@ -78,39 +135,41 @@ def _start_publish_job(target: str, work) -> dict[str, Any]:
         "target": target,
         "status": "running",
         "success": None,
+        "runtime_id": PUBLISH_JOB_RUNTIME_ID,
         "created_at": int(time.time()),
         "updated_at": int(time.time()),
     }
+    _persist_publish_job(PUBLISH_JOBS[job_id])
 
     def _runner() -> None:
         try:
+            logger.info("Async job started: job_id=%s target=%s", job_id, target)
             result = work()
-            PUBLISH_JOBS[job_id].update({
+            _update_publish_job(job_id, **{
                 "status": "completed",
                 "success": bool(result.get("success", True)) if isinstance(result, dict) else True,
                 "result": result,
-                "updated_at": int(time.time()),
             })
+            logger.info("Async job completed: job_id=%s target=%s", job_id, target)
         except HTTPException as exc:
-            PUBLISH_JOBS[job_id].update({
+            logger.warning("Async job failed with HTTPException: job_id=%s target=%s status=%s", job_id, target, exc.status_code)
+            _update_publish_job(job_id, **{
                 "status": "failed",
                 "success": False,
                 "error": exc.detail,
                 "status_code": exc.status_code,
-                "updated_at": int(time.time()),
             })
-        except Exception as exc:
-            logger.exception("Publish job failed")
-            PUBLISH_JOBS[job_id].update({
+        except BaseException as exc:
+            logger.exception("Async job failed: job_id=%s target=%s", job_id, target)
+            _update_publish_job(job_id, **{
                 "status": "failed",
                 "success": False,
                 "error": str(exc),
                 "traceback": traceback.format_exc()[-4000:],
-                "updated_at": int(time.time()),
             })
 
     PUBLISH_JOB_EXECUTOR.submit(_runner)
-    return PUBLISH_JOBS[job_id]
+    return _load_publish_job(job_id) or PUBLISH_JOBS[job_id]
 
 
 @router.get("/publish-jobs/{job_id}")
@@ -120,9 +179,28 @@ def get_publish_job(job_id: str, response: Response):
     # DigitalOcean's LB does not close the socket before our reply arrives.
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     response.headers["Connection"] = "keep-alive"
-    job = PUBLISH_JOBS.get(job_id)
+    job = _load_publish_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Publish job not found: {job_id}")
+        return _expired_publish_job(job_id)
+    if job.get("status") in {"running", "accepted"}:
+        if job.get("runtime_id") and job.get("runtime_id") != PUBLISH_JOB_RUNTIME_ID:
+            job = _update_publish_job(
+                job_id,
+                status="failed",
+                success=False,
+                expired=True,
+                error="Async job was interrupted because the backend restarted. Please rerun the analysis.",
+            )
+            return job
+        updated_at = int(job.get("updated_at") or job.get("created_at") or 0)
+        if updated_at and time.time() - updated_at > PUBLISH_JOB_RUNNING_STALE_SECONDS:
+            job = _update_publish_job(
+                job_id,
+                status="failed",
+                success=False,
+                expired=True,
+                error="Async job did not complete before the backend restarted or the job timed out. Please rerun the analysis.",
+            )
     return job
 
 
