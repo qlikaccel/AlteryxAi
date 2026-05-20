@@ -3336,8 +3336,8 @@ async def powerbi_advanced(
         if dax_content:
             try:
                 dax_text = dax_content.decode('utf-8')
-                measures_list = parse_dax(dax_text)
-                print(f"✅ Parsed {len(measures_list)} measures from DAX file:")
+                dax_measures = parse_dax(dax_text)
+                print(f"✅ Parsed {len(dax_measures)} measures from DAX file:")
                 for m in measures_list:
                     print(f"   - {m['name']}")
             except Exception as e:
@@ -3533,6 +3533,9 @@ async def download_pdf(payload: dict = Body(...)):
     Compares Alteryx and Power BI metrics
     """
     try:
+        # Log the incoming payload for debugging
+        print("Received payload for PDF generation:", payload)
+
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
         from reportlab.lib import colors
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -3541,7 +3544,7 @@ async def download_pdf(payload: dict = Body(...)):
         from datetime import datetime
         import io
         from fastapi.responses import StreamingResponse
-        
+
         # Extract data from payload
         qlik_metrics = payload.get("qlik_metrics", {})
         powerbi_metrics = payload.get("powerbi_metrics", {})
@@ -3550,7 +3553,18 @@ async def download_pdf(payload: dict = Body(...)):
         migration_status = payload.get("migration_status", "In Progress")
         publishing_method = payload.get("publishing_method", "CSV_EXPORT")
         tables_deployed = payload.get("tables_deployed", 1)
-        
+
+        # Log extracted data for debugging
+        print("Extracted data:", {
+            "qlik_metrics": qlik_metrics,
+            "powerbi_metrics": powerbi_metrics,
+            "app_name": app_name,
+            "table_name": table_name,
+            "migration_status": migration_status,
+            "publishing_method": publishing_method,
+            "tables_deployed": tables_deployed
+        })
+
         # ==============================
         # CALCULATE METRICS & DIFFERENCES
         # ==============================
@@ -3917,291 +3931,11 @@ async def download_pdf(payload: dict = Body(...)):
         )
     
     except Exception as e:
-        print(f"❌ Error downloading PDF: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Failed to download PDF: {str(e)}")
+        print(f"Error generating PDF report: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate PDF report.")
 
 
 # =====================================================
-
-if __name__ == "__main__":
-    import uvicorn
-    print("\n" + "="*80)
-    print(" " * 20 + "Qlik FastAPI Backend v2.0")
-    print("="*80)
-    print("\nFeatures:")
-    print("  [+] REST API for Qlik Cloud")
-    print("  [+] WebSocket connection to Qlik Engine")
-    print("  [+] Table and field discovery")
-    print("  [+] Script extraction")
-    print("  [+] Data retrieval from tables")
-    if SCRIPT_PARSER_AVAILABLE:
-        print("  [+] Script data extraction (INLINE data)")
-    else:
-        print("  [!] Script data extraction DISABLED (qlik_script_parser.py not found)")
-    print("\nStarting server...")
-    print("="*80 + "\n")
-    
-
-
-# ==================== PUBLISH DATASET (FIX 10) ====================
-# Wires loadscript_parser → powerbi_dataset_publisher in one REST call.
-
-# ==================== PARSE SCRIPT + CONVERT TO MQUERY ENDPOINTS ====================
-# These are called by the frontend qlikApi functions:
-#   parseLoadScript(script)          → POST /api/parse-script
-#   convertToMQuery(parsedScript, table_name) → POST /api/convert-mquery
-
-class ParseScriptRequest(BaseModel):
-    script: str
-
-class ConvertMQueryRequest(BaseModel):
-    parse_result: Dict[str, Any]    # output of /api/parse-script
-    table_name: str
-    base_path: str = "[DataSourcePath]"
-    connection_string: Optional[str] = None
-
-@app.post("/api/parse-script")
-async def parse_script_endpoint(request: ParseScriptRequest):
-    """
-    Parse a raw Qlik LoadScript and return structured table definitions.
-    Called by the frontend parseLoadScript() helper in qlikApi.
-    """
-    if not request.script.strip():
-        raise HTTPException(status_code=400, detail="Script is empty")
-
-    try:
-        from loadscript_parser import LoadScriptParser
-        parser = LoadScriptParser(request.script)
-        result = parser.parse()
-        return result
-    except Exception as e:
-        logger.error(f"Parse script error: {e}")
-        raise HTTPException(status_code=500, detail=f"Parse failed: {str(e)}")
-
-
-@app.post("/api/convert-mquery")
-async def convert_mquery_endpoint(request: ConvertMQueryRequest):
-    """
-    Convert a parsed LoadScript result to Power Query M for a specific table.
-    Called by the frontend convertToMQuery() helper in qlikApi.
-
-    Returns the M expression for the requested table PLUS any upstream
-    RESIDENT source tables (so the frontend can show the full dependency chain).
-    """
-    tables = (
-        request.parse_result.get("details", {}).get("tables", [])
-        or request.parse_result.get("tables", [])
-    )
-
-    if not tables:
-        raise HTTPException(status_code=400, detail="No tables found in parse_result")
-
-    try:
-        from mquery_converter import MQueryConverter
-        converter = MQueryConverter()
-        all_table_names = {t["name"] for t in tables}
-
-        # Find the requested table
-        target = next((t for t in tables if t["name"] == request.table_name), None)
-        if not target:
-            # Fuzzy match — case-insensitive
-            target = next(
-                (t for t in tables if t["name"].lower() == request.table_name.lower()),
-                None,
-            )
-        if not target:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Table '{request.table_name}' not found. Available: {sorted(all_table_names)}"
-            )
-
-        m_expr = converter.convert_one(
-            target,
-            base_path=request.base_path,
-            connection_string=request.connection_string,
-            all_table_names=all_table_names,
-        )
-
-        # For RESIDENT tables, also return the source table's M so the user
-        # can see both queries are needed in the dataset.
-        dep_queries: Dict[str, str] = {}
-        if target.get("source_type") == "resident":
-            src_name = target.get("source_path", "")
-            src_table = next((t for t in tables if t["name"] == src_name), None)
-            if src_table:
-                dep_queries[src_name] = converter.convert_one(
-                    src_table,
-                    base_path=request.base_path,
-                    connection_string=request.connection_string,
-                    all_table_names=all_table_names,
-                )
-
-        return {
-            "status":       "success",
-            "table_name":   request.table_name,
-            "source_type":  target.get("source_type", "unknown"),
-            "m_query":      m_expr,
-            "dependency_queries": dep_queries,   # upstream queries needed in the dataset
-            "message":      (
-                f"M Query generated for '{request.table_name}' "
-                f"[{target.get('source_type', 'unknown')}]. "
-                + (
-                    f"⚠️ This RESIDENT table depends on '{target.get('source_path')}' — "
-                    "include both queries in your Power BI dataset."
-                    if target.get("source_type") == "resident" else ""
-                )
-            ),
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Convert m query error: {e}")
-        raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
-
-
-class PublishDatasetRequest(BaseModel):
-    """Request body for /api/migration/publish-dataset"""
-    workspace_id:        Optional[str] = None   # falls back to POWERBI_WORKSPACE_ID env var
-    dataset_name:        str
-    access_token:        Optional[str] = None   # acquired automatically from .env if not supplied
-    app_id:              Optional[str] = None
-    raw_script:          Optional[str] = None   # supply directly if app_id not given
-    xmla_endpoint:       Optional[str] = None
-    base_data_path:      str = "[DataSourcePath]"
-    odbc_connection:     Optional[str] = None
-    relationships:       Optional[List[Dict[str, Any]]] = None
-    prefer_xmla:         bool = False            # default False — REST Push works on any workspace
-
-@app.post("/api/migration/publish-dataset")
-async def publish_dataset_endpoint(
-    request: PublishDatasetRequest,
-    ws_client: QlikWebSocketClient = Depends(get_qlik_websocket_client),
-):
-    """
-    Full pipeline: fetch loadscript → parse → generate M expressions → publish to Power BI.
-
-    Supply either app_id (fetches live from Qlik Cloud) or raw_script directly.
-    Access token is acquired automatically from POWERBI_* env vars (service principal)
-    if not supplied in the request body.
-    Returns dataset_id and workspace URL on success.
-    """
-    if not PUBLISHER_AVAILABLE:
-        raise HTTPException(
-            status_code=501,
-            detail="powerbi_dataset_publisher.py not found. Add it to your project directory.",
-        )
-
-    # ── Resolve workspace_id ────────────────────────────────────────────────
-    workspace_id = request.workspace_id or os.getenv("POWERBI_WORKSPACE_ID", "")
-    if not workspace_id:
-        raise HTTPException(
-            status_code=400,
-            detail="workspace_id not supplied and POWERBI_WORKSPACE_ID not set in .env"
-        )
-
-    # ── Acquire access token via service principal (client_credentials) ─────
-    # Uses POWERBI_TENANT_ID, POWERBI_CLIENT_ID, POWERBI_CLIENT_SECRET from .env.
-    # Falls back to request.access_token if supplied (e.g. from interactive login).
-    access_token = request.access_token or ""
-    if not access_token:
-        try:
-            import msal
-            tenant_id     = os.getenv("POWERBI_TENANT_ID", "")
-            client_id     = os.getenv("POWERBI_CLIENT_ID", "")
-            client_secret = os.getenv("POWERBI_CLIENT_SECRET", "")
-            if not all([tenant_id, client_id, client_secret]):
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Power BI credentials missing. Set POWERBI_TENANT_ID, "
-                        "POWERBI_CLIENT_ID, POWERBI_CLIENT_SECRET in .env "
-                        "or supply access_token in the request."
-                    ),
-                )
-            authority = f"https://login.microsoftonline.com/{tenant_id}"
-            app_msal = msal.ConfidentialClientApplication(
-                client_id, authority=authority, client_credential=client_secret
-            )
-            token_resp = app_msal.acquire_token_for_client(
-                scopes=["https://analysis.windows.net/powerbi/api/.default"]
-            )
-            access_token = token_resp.get("access_token", "")
-            if not access_token:
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"Failed to acquire Power BI token: {token_resp.get('error_description', 'Unknown error')}"
-                )
-            logger.info("✅ Power BI service principal token acquired")
-        except HTTPException:
-            raise
-        except ImportError:
-            raise HTTPException(
-                status_code=500,
-                detail="msal package not installed. Run: pip install msal"
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Token acquisition failed: {str(e)}")
-
-    # ── 1. Get script ───────────────────────────────────────────────────────
-    if request.app_id:
-        result = ws_client.get_app_tables_simple(request.app_id)
-        if not result.get("success"):
-            raise HTTPException(status_code=500, detail=f"Failed to fetch script: {result.get('error')}")
-        raw_script = result.get("script", "")
-    elif request.raw_script:
-        raw_script = request.raw_script
-    else:
-        raise HTTPException(status_code=400, detail="Provide either app_id or raw_script")
-
-    if not raw_script.strip():
-        raise HTTPException(status_code=404, detail="Script is empty")
-
-    # ── 2. Parse ────────────────────────────────────────────────────────────
-    try:
-        from loadscript_parser import LoadScriptParser
-        parse_result = LoadScriptParser(raw_script).parse()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Parse error: {e}")
-
-    if parse_result.get("status") == "error":
-        raise HTTPException(status_code=500, detail=f"Parse failed: {parse_result.get('message')}")
-
-    # ── 3. Publish ──────────────────────────────────────────────────────────
-    config = PublisherConfig(
-        workspace_id    = workspace_id,
-        dataset_name    = request.dataset_name,
-        access_token    = access_token,
-        xmla_endpoint   = request.xmla_endpoint,
-        base_data_path  = request.base_data_path,
-        odbc_connection = request.odbc_connection,
-    )
-
-    pub_result = publish_from_parse_result(
-        parse_result  = parse_result,
-        config        = config,
-        relationships = request.relationships or [],
-        prefer_xmla   = request.prefer_xmla,
-    )
-
-    if not pub_result.get("success"):
-        raise HTTPException(status_code=500, detail=f"Publish failed: {pub_result.get('error')}")
-
-    return {
-        "success":               True,
-        "dataset_id":            pub_result.get("dataset_id", ""),
-        "dataset_name":          pub_result.get("dataset_name"),
-        "method":                pub_result.get("method"),
-        "tables_deployed":       pub_result.get("tables_deployed"),
-        "relationships_applied": pub_result.get("relationships_applied"),
-        "duration_seconds":      pub_result.get("duration_seconds"),
-        "workspace_url":         f"https://app.powerbi.com/groups/{workspace_id}",
-        "parse_summary":         parse_result.get("summary", {}),
-    }
-
-# ==================== SERVER ENTRYPOINT ====================
 
 if __name__ == "__main__":
     import uvicorn

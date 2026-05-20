@@ -6,14 +6,14 @@ services:
     region: oregon
     branch: main
     repo: https://github.com/sorimdevs-tech/qlikscence.git
-    rootDirectory: /
-    buildCommand: pip install -r qlik_app/qlik/qlik-fastapi-backend/requirements.txt --no-cache-dir
-    startCommand: uvicorn qlik_app.qlik.qlik-fastapi-backend.main:app --host 0.0.0.0 --port $PORT
+    rootDirectory: AlteryxAi/backend
+    buildCommand: pip install -r requirements.txt --no-cache-dir
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.12"
       - key: BUILD_COMMAND
-        value: "pip install --upgrade pip && pip install pandas==2.2.0 --no-cache-dir && pip install -r qlik_app/qlik/qlik-fastapi-backend/requirements.txt --no-cache-dir"
+        value: "pip install --upgrade pip && pip install pandas==2.2.0 --no-cache-dir && pip install -r requirements.txt --no-cache-dir"
       - key: QLIK_CLIENT_ID
         fromGroup: qlik-secrets
       - key: QLIK_CLIENT_SECRET
@@ -32,9 +32,9 @@ services:
     region: oregon
     branch: main
     repo: https://github.com/sorimdevs-tech/qlikscence.git
-    rootDirectory: /
-    buildCommand: cd qlik_app/converter/csv && npm install && npm run build
-    staticPublishPath: qlik_app/converter/csv/dist
+    rootDirectory: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
     envVars:
       - key: VITE_API_URL
         fromService:
@@ -48,6 +48,3 @@ envVarGroups:
       - key: QLIK_CLIENT_ID
         sync: false
       - key: QLIK_CLIENT_SECRET
-        sync: false
-      - key: API_KEY
-        sync: false
