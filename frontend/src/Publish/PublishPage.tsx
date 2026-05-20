@@ -819,7 +819,7 @@ export default function PublishPage() {
 
   const openReconciliationPage = () => {
     localStorage.setItem("alteryx_reconciliation_report", JSON.stringify(publishReconciliationReport));
-    window.open(`${window.location.origin}/reconciliation`, "_blank", "noopener,noreferrer");
+    window.open(`${window.location.origin}/#/reconciliation`, "_blank", "noopener,noreferrer");
   };
 
   const runBigQueryValidation = useCallback(async (force = false) => {

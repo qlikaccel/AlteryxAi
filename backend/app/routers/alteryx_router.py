@@ -11,6 +11,9 @@ from io import BytesIO
 import requests
 import re
 import time
+import traceback
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Header, Query, Response, UploadFile
 from fastapi.responses import HTMLResponse
@@ -60,6 +63,67 @@ router = APIRouter(prefix="/api/alteryx", tags=["Alteryx"])
 logger = logging.getLogger(__name__)
 
 MAX_BULK_UPLOAD_BYTES = 250 * 1024 * 1024
+# FIX: bumped default workers from 2 → 4 so that heavy analysis jobs running
+# on iterative/batch macros do not starve the lightweight poll requests.
+# Each publish job runs CPU/IO-bound work; more threads let the event loop
+# remain responsive even on a single-vCPU DigitalOcean dyno.
+PUBLISH_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("ALTERYX_PUBLISH_JOB_WORKERS", "4") or "4"))
+PUBLISH_JOBS: dict[str, dict[str, Any]] = {}
+
+
+def _start_publish_job(target: str, work) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    PUBLISH_JOBS[job_id] = {
+        "job_id": job_id,
+        "target": target,
+        "status": "running",
+        "success": None,
+        "created_at": int(time.time()),
+        "updated_at": int(time.time()),
+    }
+
+    def _runner() -> None:
+        try:
+            result = work()
+            PUBLISH_JOBS[job_id].update({
+                "status": "completed",
+                "success": bool(result.get("success", True)) if isinstance(result, dict) else True,
+                "result": result,
+                "updated_at": int(time.time()),
+            })
+        except HTTPException as exc:
+            PUBLISH_JOBS[job_id].update({
+                "status": "failed",
+                "success": False,
+                "error": exc.detail,
+                "status_code": exc.status_code,
+                "updated_at": int(time.time()),
+            })
+        except Exception as exc:
+            logger.exception("Publish job failed")
+            PUBLISH_JOBS[job_id].update({
+                "status": "failed",
+                "success": False,
+                "error": str(exc),
+                "traceback": traceback.format_exc()[-4000:],
+                "updated_at": int(time.time()),
+            })
+
+    PUBLISH_JOB_EXECUTOR.submit(_runner)
+    return PUBLISH_JOBS[job_id]
+
+
+@router.get("/publish-jobs/{job_id}")
+def get_publish_job(job_id: str, response: Response):
+    # FIX: tell every upstream proxy/CDN not to cache this response so the
+    # frontend always gets a fresh status, and set Connection: keep-alive so
+    # DigitalOcean's LB does not close the socket before our reply arrives.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Connection"] = "keep-alive"
+    job = PUBLISH_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Publish job not found: {job_id}")
+    return job
 
 
 @router.get("/diagnostics/tokens")
@@ -1591,17 +1655,41 @@ def get_alteryx_workflow_analysis(
     workflow_id: str,
     sharepoint_url: str = Query(default=""),
     file_name: str = Query(default=""),
+    async_analysis: bool = Query(default=False, alias="async"),
 ):
-    workflow = _find_batch_workflow(batch_id, workflow_id)
-    m_query = generate_m_query(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
-    return {
-        "success": True,
-        "workflow": workflow,
-        "summary": generate_executive_summary(workflow),
-        "diagram": generate_workflow_diagram(workflow),
-        "mquery": m_query,
-        "validation": validate_migration(workflow),
-    }
+    # FIX: pre-load workflow metadata to decide whether to force async mode.
+    # Iterative macros, batch macros, and workflows with many nodes can take
+    # well over 30 seconds, which causes DigitalOcean's LB to return 504.
+    # We force async for those cases regardless of the caller's ?async= param.
+    workflow_data = _find_batch_workflow(batch_id, workflow_id)
+    nodes: list[dict[str, Any]] = workflow_data.get("workflowNodes") or []
+    tool_count = len(nodes)
+    has_macro = any(
+        str(n.get("type") or "").lower() in {
+            "iterativemacro", "batchmacro", "macro",
+            "iterative_macro", "batch_macro",
+        }
+        for n in nodes
+    )
+    # Thresholds: any macro type, or >30 nodes (empirically slow on 1-vCPU host)
+    force_async = async_analysis or has_macro or tool_count > 30
+
+    def _run_analysis() -> dict[str, Any]:
+        # Re-use the already-loaded workflow_data so we don't parse it twice
+        m_query = generate_m_query(workflow_data, sharepoint_url=sharepoint_url, file_name=file_name)
+        return {
+            "success": True,
+            "workflow": workflow_data,
+            "summary": generate_executive_summary(workflow_data),
+            "diagram": generate_workflow_diagram(workflow_data),
+            "mquery": m_query,
+            "validation": validate_migration(workflow_data),
+        }
+
+    if force_async:
+        job = _start_publish_job("workflow_analysis", _run_analysis)
+        return {**job, "success": True, "status": "accepted"}
+    return _run_analysis()
 
 
 @router.get("/batches/{batch_id}/workflows/{workflow_id}/mquery")
@@ -1819,33 +1907,40 @@ def publish_alteryx_workflow_python_to_bigquery(
     workflow_id: str,
     sharepoint_url: str = Query(default=""),
     file_name: str = Query(default=""),
+    async_publish: bool = Query(default=False, alias="async"),
 ):
-    workflow = _find_batch_workflow(batch_id, workflow_id)
-    if workflow.get("isMacroDefinition"):
-        raise HTTPException(
-            status_code=400,
-            detail="Select the parent .yxmd workflow for Publish Python to BigQuery.",
-        )
-    analysis_started = time.time()
-    project = generate_python_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
-    analysis_duration = round(time.time() - analysis_started, 2)
-    _assert_transform_publishable(project, "Python to BigQuery")
-    try:
-        result = publish_python_project_to_bigquery(project)
-        result["transformation_coverage"] = project.get("transformation_coverage") or {}
-        result["transform_plan"] = project.get("transform_plan") or {}
-        result["transform_publish_warning"] = _transform_publish_warning(project, "Python to BigQuery")
-        result["analysis_duration_seconds"] = analysis_duration
-        timings = result.setdefault("timings", {})
-        timings["analysis_seconds"] = analysis_duration
-        return result
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.exception("Failed to publish generated Python pipeline to BigQuery")
-        raise HTTPException(status_code=500, detail=f"Failed to publish Python pipeline to BigQuery: {exc}") from exc
+    def _run_publish() -> dict[str, Any]:
+        workflow = _find_batch_workflow(batch_id, workflow_id)
+        if workflow.get("isMacroDefinition"):
+            raise HTTPException(
+                status_code=400,
+                detail="Select the parent .yxmd workflow for Publish Python to BigQuery.",
+            )
+        analysis_started = time.time()
+        project = generate_python_project(workflow, sharepoint_url=sharepoint_url, file_name=file_name)
+        analysis_duration = round(time.time() - analysis_started, 2)
+        _assert_transform_publishable(project, "Python to BigQuery")
+        try:
+            result = publish_python_project_to_bigquery(project)
+            result["transformation_coverage"] = project.get("transformation_coverage") or {}
+            result["transform_plan"] = project.get("transform_plan") or {}
+            result["transform_publish_warning"] = _transform_publish_warning(project, "Python to BigQuery")
+            result["analysis_duration_seconds"] = analysis_duration
+            timings = result.setdefault("timings", {})
+            timings["analysis_seconds"] = analysis_duration
+            return result
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Failed to publish generated Python pipeline to BigQuery")
+            raise HTTPException(status_code=500, detail=f"Failed to publish Python pipeline to BigQuery: {exc}") from exc
+
+    if async_publish:
+        job = _start_publish_job("python_bigquery", _run_publish)
+        return {**job, "success": True, "status": "accepted"}
+    return _run_publish()
 
 
 @router.post("/batches/{batch_id}/workflows/{workflow_id}/dbt/publish-bigquery")

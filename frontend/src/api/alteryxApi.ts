@@ -529,7 +529,7 @@ export async function fetchAlteryxWorkflowAnalysis(
   sharePointUrl = "https://sorimtechnologies.sharepoint.com/Shared%20Documents/Forms/AllItems.aspx",
   fileName = "sales_data_1M.csv"
 ): Promise<any> {
-  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName, async: "true" });
   const res = await fetch(
     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/analysis?${params.toString()}`
   );
@@ -537,6 +537,10 @@ export async function fetchAlteryxWorkflowAnalysis(
 
   if (!res.ok) {
     throw new Error(data.detail || `Failed to analyze workflow (${res.status})`);
+  }
+
+  if (data?.job_id) {
+    return pollAlteryxPublishJob(data.job_id, "Failed to analyze workflow");
   }
 
   return data;
@@ -684,7 +688,7 @@ export async function publishAlteryxPythonToBigQuery(
   sharePointUrl = "",
   fileName = ""
 ): Promise<any> {
-  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName });
+  const params = new URLSearchParams({ sharepoint_url: sharePointUrl, file_name: fileName, async: "true" });
   const res = await fetch(
     `${BASE_URL}/api/alteryx/batches/${encodeURIComponent(batchId)}/workflows/${encodeURIComponent(workflowId)}/python/publish-bigquery?${params.toString()}`,
     { method: "POST" }
@@ -695,7 +699,67 @@ export async function publishAlteryxPythonToBigQuery(
     throw new Error(apiErrorMessage(data.detail, `Failed to publish Python pipeline to BigQuery (${res.status})`));
   }
 
+  if (data?.job_id) {
+    return pollAlteryxPublishJob(data.job_id, "Failed to publish Python pipeline to BigQuery");
+  }
+
   return data;
+}
+
+async function pollAlteryxPublishJob(jobId: string, fallbackMessage = "Publish job failed"): Promise<any> {
+  const deadline = Date.now() + 30 * 60 * 1000;
+  // FIX: exponential backoff (3s → 10s cap) reduces load-balancer pressure.
+  // Each poll uses an AbortController with a 25-second timeout so the fetch
+  // is cancelled before DigitalOcean's 30-second LB hard-kill fires.
+  // 404 responses are retried for the first 40 attempts because DigitalOcean
+  // can route the poll request to a different container instance that has not
+  // yet received the in-memory job record.
+  let pollInterval = 3000;
+  let attempt = 0;
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    // Grow interval: 3 → ~3.9 → ~5 → ~6.5 → ~8.4 → 10s (cap)
+    pollInterval = Math.min(Math.round(pollInterval * 1.3), 10_000);
+    attempt++;
+
+    let res: Response;
+    try {
+      const controller = new AbortController();
+      // Abort 5 s before the LB would kill the connection so we get a clean retry
+      const timeoutId = setTimeout(() => controller.abort(), 25_000);
+      res = await fetch(
+        `${BASE_URL}/api/alteryx/publish-jobs/${encodeURIComponent(jobId)}`,
+        { signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        // Request took > 25 s — just retry; the job is still running on the backend
+        continue;
+      }
+      throw err;
+    }
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      // 404 can legitimately happen when DigitalOcean routes the poll to a
+      // different container than where the job was started (in-memory dict).
+      // Retry for up to 40 attempts (~3 minutes with backoff) before giving up.
+      if (res.status === 404 && attempt < 40) continue;
+      throw new Error(apiErrorMessage(data.detail, `Failed to read publish job (${res.status})`));
+    }
+
+    if (data.status === "completed") {
+      return data.result || data;
+    }
+    if (data.status === "failed") {
+      throw new Error(apiErrorMessage(data.error || data.detail, fallbackMessage));
+    }
+    // status === "running" / "accepted" → keep polling
+  }
+  throw new Error(`${fallbackMessage} is still running after 30 minutes. Check DigitalOcean logs.`);
 }
 
 export async function fetchAlteryxBrdHtml(
@@ -828,7 +892,9 @@ export async function downloadValidationReportPdf(payload: {
   qlik_metrics: Record<string, any>;
   powerbi_metrics: Record<string, any>;
 }): Promise<Blob> {
-  const res = await fetch(`${BASE_URL}/report/download-pdf`, {
+  // FIX: /api/report/download-pdf so every platform (local Vite proxy,
+  // Render, DigitalOcean) routes this to the backend correctly.
+  const res = await fetch(`${BASE_URL}/api/report/download-pdf`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

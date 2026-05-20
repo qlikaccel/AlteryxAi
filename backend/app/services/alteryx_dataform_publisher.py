@@ -1,5 +1,6 @@
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -8,7 +9,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata
+from app.services.alteryx_dbt_publisher import fetch_bigquery_table_metadata, publish_dbt_project_to_bigquery
+from app.services.alteryx_dataform_repo_publisher import publish_dataform_project_to_repository
+from app.services.gcp_credentials import write_service_account_file_from_env
 
 
 def _env(name: str, default: str = "") -> str:
@@ -71,11 +74,52 @@ def _normalize_dataform_project_for_cli(project_dir: Path) -> None:
 
 
 def _write_service_account_json(work_dir: Path, env: dict[str, str]) -> None:
-    service_account_json = _env("GCP_SERVICE_ACCOUNT_JSON")
-    if service_account_json:
-        credentials_path = work_dir / "gcp_service_account.json"
-        credentials_path.write_text(service_account_json, encoding="utf-8")
-        env["GOOGLE_APPLICATION_CREDENTIALS"] = str(credentials_path)
+    write_service_account_file_from_env(work_dir, env)
+
+
+def _format_duration(value: str, default_seconds: int) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return f"{default_seconds}s"
+    if cleaned.isdigit():
+        return f"{int(cleaned)}s"
+    return cleaned
+
+
+def _resolve_dataform_command(dataform_executable: str) -> list[str] | None:
+    command_parts = shlex.split(dataform_executable)
+    if not command_parts:
+        return None
+
+    resolved = shutil.which(command_parts[0])
+    if resolved:
+        if os.name == "nt" and resolved.lower().endswith(".cmd"):
+            return ["cmd", "/c", *command_parts]
+        return command_parts
+
+    if len(command_parts) == 1:
+        executable_name = command_parts[0].strip().lower()
+        if executable_name in {"dataform", "dataform.exe", "@dataform/cli"}:
+            for fallback in (
+                ["npx", "--yes", "@dataform/cli"],
+                ["npx", "--yes", "dataform"],
+                ["npm", "exec", "--yes", "@dataform/cli"],
+                ["npm", "exec", "--yes", "dataform"],
+            ):
+                if shutil.which(fallback[0]):
+                    if os.name == "nt":
+                        return ["cmd", "/c", *fallback]
+                    return fallback
+        if shutil.which("npx"):
+            if os.name == "nt":
+                return ["cmd", "/c", "npx", "--yes", command_parts[0]]
+            return ["npx", "--yes", command_parts[0]]
+        if shutil.which("npm"):
+            if os.name == "nt":
+                return ["cmd", "/c", "npm", "exec", "--yes", command_parts[0]]
+            return ["npm", "exec", "--yes", command_parts[0]]
+
+    return None
 
 
 def _run_dataform_command(command: list[str], cwd: Path, env: dict[str, str], timeout_seconds: int) -> dict[str, Any]:
@@ -109,6 +153,27 @@ def _env_flag(name: str, default: bool = False) -> bool:
     if value == "":
         return default
     return value.lower() in {"1", "true", "yes", "y"}
+
+
+def _publish_dbt_fallback(project: dict[str, Any], reason: str) -> dict[str, Any] | None:
+    if not _env_flag("DATAFORM_BIGQUERY_FALLBACK_TO_DBT", True):
+        return None
+    dbt_project = project.get("dbt_project")
+    if not isinstance(dbt_project, dict) or not dbt_project.get("files"):
+        return None
+    result = publish_dbt_project_to_bigquery(dbt_project)
+    result.update({
+        "target": "dataform",
+        "status": "published_via_dbt_fallback" if result.get("success", True) else "failed_via_dbt_fallback",
+        "used_dbt_fallback": True,
+        "fallback_reason": reason,
+        "message": (
+            "Dataform native publish was unavailable, so the equivalent dbt project was published to BigQuery successfully."
+            if result.get("success", True)
+            else result.get("message", "Dataform native publish failed and dbt fallback also failed.")
+        ),
+    })
+    return result
 
 
 def _format_dataform_failure(result: dict[str, Any]) -> str:
@@ -183,6 +248,7 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
     location = _env("GCP_BIGQUERY_LOCATION", "US")
     dataform_executable = _env("DATAFORM_EXECUTABLE", "dataform")
     timeout_seconds = int(_env("DATAFORM_COMMAND_TIMEOUT_SECONDS", "600") or "600")
+    dataform_cli_timeout = _format_duration(_env("DATAFORM_CLI_TIMEOUT_SECONDS", "1200"), 1200)
     project_name = str(project.get("project_name") or "alteryx_dataform_project")
     final_table_name = str(project.get("final_table_name") or project_name.removesuffix("_dataform"))
     final_model = f"{project_id}.{target_dataset}.{final_table_name}"
@@ -191,11 +257,34 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
 
     if not files:
         raise ValueError("No Dataform project files were generated for this workflow.")
-    resolved_dataform_executable = shutil.which(dataform_executable)
-    if not resolved_dataform_executable:
+    resolved_dataform_command = _resolve_dataform_command(dataform_executable)
+    if not resolved_dataform_command:
+        if _env("GCP_DATAFORM_REPOSITORY") and _env("GCP_DATAFORM_LOCATION"):
+            try:
+                result = publish_dataform_project_to_repository(project, run=True)
+                result.update({
+                    "target": "dataform",
+                    "project_id": project_id,
+                    "target_dataset": target_dataset,
+                    "source_dataset": source_dataset,
+                    "bigquery_location": location,
+                    "project_name": project_name,
+                    "final_table_name": final_table_name,
+                    "final_model": final_model,
+                    "used_dataform_api_fallback": True,
+                })
+                return result
+            except Exception as exc:
+                fallback = _publish_dbt_fallback(project, f"Dataform API fallback failed: {exc}")
+                if fallback is not None:
+                    return fallback
+                raise
+        fallback = _publish_dbt_fallback(project, f"Dataform executable '{dataform_executable}' was not found.")
+        if fallback is not None:
+            return fallback
         raise RuntimeError(
-            f"Dataform executable '{dataform_executable}' was not found. "
-            "Install @dataform/cli and set DATAFORM_EXECUTABLE=dataform."
+            f"Dataform executable '{dataform_executable}' was not found and no GCP_DATAFORM_REPOSITORY and GCP_DATAFORM_LOCATION are configured. "
+            "Set DATAFORM_EXECUTABLE to a valid command, install @dataform/cli, or configure GCP_DATAFORM_LOCATION and GCP_DATAFORM_REPOSITORY."
         )
 
     with tempfile.TemporaryDirectory(prefix="alteryx_dataform_publish_") as temp_root:
@@ -213,8 +302,8 @@ def publish_dataform_project_to_bigquery(project: dict[str, Any]) -> dict[str, A
 
         commands = []
         if _env_flag("DATAFORM_RUN_COMPILE", True):
-            commands.append([resolved_dataform_executable, "compile", str(project_dir)])
-        commands.append([resolved_dataform_executable, "run", str(project_dir)])
+            commands.append([*resolved_dataform_command, "compile", str(project_dir), "--timeout", dataform_cli_timeout])
+        commands.append([*resolved_dataform_command, "run", str(project_dir), "--timeout", dataform_cli_timeout])
         command_results: list[dict[str, Any]] = []
         for command in commands:
             result = _run_dataform_command(command, project_dir, run_env, timeout_seconds)

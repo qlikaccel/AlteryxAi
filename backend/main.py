@@ -152,8 +152,10 @@ app.add_middleware(
         "https://qlikai-ld54.onrender.com",
         "https://qlikaiv2-web.onrender.com",
         "https://qlikai-app-ltmrv.ondigitalocean.app",
+        # FIX: actual AlteryxAI DigitalOcean frontend domain
+        "https://alteryxai-j3p9s.ondigitalocean.app",
     ],
-    allow_origin_regex=r"http://localhost:\d+|http://127\.0\.0\.1:\d+|https://.*\.onrender\.com",
+    allow_origin_regex=r"http://localhost:\d+|http://127\.0\.0\.1:\d+|https://.*\.onrender\.com|https://.*\.ondigitalocean\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -3523,10 +3525,11 @@ async def list_powerbi_datasets():
 
 
 # =====================================================
-# PDF REPORT GENERATION
+# PDF REPORT GENERATION — route is under /api so every deployment platform
+# (local Vite proxy, Render, DigitalOcean) forwards it to the backend correctly.
 # =====================================================
 
-@app.post("/report/download-pdf")
+@app.post("/api/report/download-pdf")
 async def download_pdf(payload: dict = Body(...)):
     """
     Generate and download Validation & Reconciliation PDF report
@@ -4225,4 +4228,13 @@ if __name__ == "__main__":
         print("  [!] Dataset publisher DISABLED (powerbi_dataset_publisher.py not found)")
     print("\nStarting server...")
     print("="*80 + "\n")
-    uvicorn.run("main:app", host="127.0.0.1", port=port, reload=False)
+    # FIX: timeout_keep_alive=75 keeps the connection open longer than
+    # DigitalOcean's 30-second LB hard-kill window so that poll responses
+    # for running publish jobs are never silently dropped.
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=False,
+        timeout_keep_alive=75,
+    )
