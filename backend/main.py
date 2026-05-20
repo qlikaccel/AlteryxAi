@@ -148,6 +148,7 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
         "https://qlik-frontend.onrender.com",
+        "https://alteryx-ai-v1.onrender.com",
         "https://qlik-sense-cloud.onrender.com",
         "https://qlikai-ld54.onrender.com",
         "https://qlikaiv2-web.onrender.com",
