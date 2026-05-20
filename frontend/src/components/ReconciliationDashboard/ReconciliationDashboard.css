@@ -3,6 +3,8 @@
   padding: 28px;
   color: #172026;
   background: #f7f9fb;
+  margin-bottom: 50px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .reconciliation-page-note {
